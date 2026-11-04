@@ -2081,17 +2081,28 @@ MILESTONE3 = [
         "The cases of `connection_unittest` and the connection tests of `port_unittest.cc` pass (`unit.P2pConnection`, "
         "`unit.P2pConnectionCall`); PR #1021."),
     _m3("1.4", "port-allocation", "Port allocation",
-        "Gathering candidates on every interface -> network enumeration and a port allocator that opens ports as networks appear",
-        ["p2p/network_manager.h", "p2p/port_allocator.h", "p2p/basic_port_allocator.h", "p2p/ice_credentials_iterator.h"],
-        ["P2pNetworkManager", "P2pPortAllocator", "P2pBasicPortAllocator", "P2pIceCredentialsIterator"],
-        "An allocator session on a multi-homed emulated host opens a port per network and per protocol, reports "
-        "candidates as they are gathered and gathers again when a network is added or removed (continual gathering).",
+        "Gathering candidates on every interface -> network enumeration and a port allocator that opens ports as networks "
+        "appear: UDP, server-reflexive, relay and ICE-TCP (RFC 6544) host candidates",
+        ["p2p/network_manager.h", "p2p/port_allocator.h", "p2p/basic_port_allocator.h", "p2p/ice_credentials_iterator.h",
+         "p2p/tcp_port.h"],
+        ["P2pNetworkManager", "P2pPortAllocator", "P2pBasicPortAllocator", "P2pIceCredentialsIterator", "P2pTcpPort"],
+        "An allocator session on a multi-homed emulated host opens a port per network and per protocol (UDP, STUN, TURN, "
+        "TCP), reports candidates as they are gathered and gathers again when a network is added or removed (continual "
+        "gathering). Two TCP ports connect over the emulated TCP (active to passive, an accepted socket handed to the "
+        "connection), reconnect after the far end closes, and drop a socket bound to another network's address.",
         "`rtc_base/network.{h,cc}` (the manager part), `p2p/base/{port_allocator,basic_port_allocator}.{h,cc}`, "
-        "`p2p/base/ice_credentials_iterator.{h,cc}`",
-        ["10.5"],
+        "`p2p/base/ice_credentials_iterator.{h,cc}`, `p2p/base/tcp_port.{h,cc}` (`TCPPort`, `TCPConnection`)",
+        ["10.5", "10.22"],
         "Requirement C3 part 5. The allocator is set up as `PeerConnection` sets it up (flags, candidate filter, "
-        "pool size, TURN servers).",
-        "The cases of `basic_port_allocator_unittest.cc` that need no real sockets, on the emulated network; PRs #1025 and #1030."),
+        "pool size, TURN servers, TCP candidates on as `kTcpCandidatePolicyEnabled`). Its last phase makes a `TCPPort` "
+        "(#1151): a passive host candidate on a listen socket (`allow_tcp_listen`, on by default) or an active one at "
+        "the discard port, with libwebrtc's reconnect state machine over 1.9's sockets.",
+        "The cases of `basic_port_allocator_unittest.cc` that need no real sockets, on the emulated network, with "
+        "libwebrtc's counts (TCP ports included); `tcp_port_unittest.cc`'s cases (`unit.P2pTcpPort`, all but the IPv6 "
+        "one). The ICE comparison runs both stacks with TCP candidates on and with UDP blocked "
+        "(`unit.P2pIceCompare` `TcpOnlyPathConnectsAsLibwebrtc`): the same values as libwebrtc M157 on every seed. "
+        "PRs #1025, #1030 and the PR for #1151.",
+        other_tests="`sm_ice_compare`'s ICE-TCP table (UDP blocked at one or both endpoints; #1151)."),
     _m3("1.5", "ice-controller", "The ICE controller",
         "Deciding which pair to ping, use and switch to -> libwebrtc's `BasicIceController` and the wrapping active controller",
         ["p2p/ice_controller_interface.h", "p2p/basic_ice_controller.h", "p2p/active_ice_controller_interface.h",

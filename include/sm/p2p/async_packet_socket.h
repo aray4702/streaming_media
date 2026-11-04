@@ -95,6 +95,7 @@ inline constexpr int kSocketEAddrInUse = 48;
 inline constexpr int kSocketEAddrNotAvail = 49;
 inline constexpr int kSocketENotConn = 57;
 inline constexpr int kSocketEBadF = 9;
+inline constexpr int kSocketEPipe = 32;
 inline constexpr int kSocketEInProgress = 36;
 inline constexpr int kSocketEConnReset = 54;
 inline constexpr int kSocketEIsConn = 56;

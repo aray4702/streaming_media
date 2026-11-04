@@ -680,12 +680,13 @@ adapter type), `DisableEquivalentPhases`, the candidate filter (a public host ad
 `CandidatePairable`, `SanitizeCandidate`'s related-address rules, pooled sessions and continual gathering
 (networks that go away are pruned with their candidates removed; new ones are gathered on). The UDP and STUN
 cases of `basic_port_allocator_unittest.cc` and `port_allocator_unittest.cc` are in
-`tests/unit/p2p/port_allocator_test.cc`, their counts less libwebrtc's TCP ports. Differences:
+`tests/unit/p2p/port_allocator_test.cc`, with libwebrtc's counts (its TCP ports included since #1151, 10.22).
+Differences:
 
 | Item | libwebrtc M157 | This library | Why |
 |---|---|---|---|
 | Time | Network thread, posted and delayed tasks, `SafeTask` | The session queues what libwebrtc posts and runs it, and its ports, in `Process(now)` at `NextProcessTime()`; it owns its ports and deletes a destroyed one at the end of that call | The library's time model, as 10.3 |
-| TCP ports | `TCPPort` in the last phase | The phase runs and makes nothing | C4 |
+| TCP ports | `TCPPort` in the last phase, passive with `allow_tcp_listen` (on by default) | Same: `TCPPort` (10.22, #1151) | Ported |
 | TURN ports | `TurnPortFactory` by default | `TurnPortFactory` by default too (10.7, #1031), or the `RelayPortFactoryInterface` the caller gives. DTLS TURN servers are not added as STUN servers (no `PROTO_DTLS`) | C4 |
 | mDNS, local network access, VPN list, `TurnCustomizer` | mDNS obfuscation when the network manager has a responder; permission factory; `set_vpn_list` | None (`MdnsObfuscationEnabled` false, as with no responder; access granted) | Host-stack features (C11, C12) |
 | Field trials | `WebRTC-UseTurnServerAsStunServer`, `WebRTC-IPv6Default` | At their defaults (enabled); the second is `PeerConnectionAllocatorConfig::ipv6_default` | Defaults as libwebrtc |
@@ -770,7 +771,7 @@ connect, accept, refusal and close (FIN with error 0). Every case of `async_tcp_
 | `AsyncListenSocket` | New socket as a raw pointer the subscriber takes | The subscriber moves a `std::unique_ptr` out; an untaken socket is closed | Ownership in the type |
 | TLS (`OPT_TLS`, `OPT_TLS_INSECURE`, `OPT_TLS_FAKE`) | `SSLAdapter`, `AsyncSSLSocket` | `OPT_TLS` and `OPT_TLS_INSECURE` wrap the socket in an `SslAdapter` (10.12, #1035); `OPT_TLS_FAKE` returns nullptr | Fake TLS is not used in a call (10.12) |
 | Factory methods | Pure virtual | Default to nullptr | Test fakes without TCP keep compiling |
-| `TCPPort` (ICE-TCP candidates) | `p2p/base/tcp_port.*` | Not ported | Not part of C4 (#1034) |
+| `TCPPort` (ICE-TCP candidates) | `p2p/base/tcp_port.*` | Ported on these sockets (10.22, #1151) | Ported |
 
 ### 10.9 The ICE agent (`src/p2p/p2p_transport_channel.cc`, C3 part 6, #1002)
 
@@ -1192,6 +1193,43 @@ answer; the build without data channels). Differences:
 | SCTP transport owner | One `SctpTransport` per `JsepTransport`, from the transport controller's SCTP factory | The endpoint creates one when SCTP starts, on the DTLS transport the data mid ended up on after BUNDLE | Same association on the wire; one negotiation per call (no renegotiation), so the transport can't move later |
 | Options | `always_negotiate_data_channels`, SCTP SNAP (`sctp-init`), `max_sctp_streams_` from the config | Left out; 65535 streams (`kMaxSctpStreams`) | libwebrtc's defaults (off, off, the default) |
 | Error detail | `DATA_CHANNEL_FAILURE` on a rejected section's error | `kOperationErrorWithData` without the detail | The library's `RtcErrorDetailType` has no data channel value |
+
+### 10.22 ICE-TCP host candidates (`src/p2p/tcp_port.cc`, #1151)
+
+Ported as a unit from `p2p/base/tcp_port.{h,cc}` (`TCPPort`, `TCPConnection`), with `AllocationSequence::CreateTCPPorts`
+of `p2p/client/basic_port_allocator.cc`, on 10.8's packet sockets (RFC 4571's 2-byte length framing, which RFC 6544
+uses; the listener's `AsyncTcpSocket` on accepted sockets). Same behaviour and constants: one TCP host candidate per
+network in the allocator's last phase, passive at the listen socket's address with `allow_tcp_listen` (on by default,
+as `PortAllocator`), active at the best IP and the discard port 9 without a listener, with the host TCP type preference
+90 (`ICE_TYPE_PREFERENCE_HOST_TCP`); `CreateConnection`'s rules (TCP and SSLTCP only; no connection to a remote active
+candidate unless peer-reflexive, nor to one without tcptype and port, nor from another port, nor SSLTCP from this
+port); an accepted socket waiting in the port (its STUN goes to `Port::OnReadPacket` with `PROTO_TCP`, so the ICE agent
+makes a peer-reflexive active candidate) until a connection takes it; outgoing connections not connected until the
+connect event; `OnConnect`'s check that the socket is bound to an address of the network (loopback and the any address
+allowed); the reconnect state machine (`pretending_to_be_writable_`, a reconnect only on an outgoing connection's next
+send or check, data refused until the first STUN response on the new socket, the connection destroyed if still
+pretending `kConnectionWriteConnectTimeout` 5 s after the close); a connection that closes before it ever connected
+destroyed asynchronously; a client socket that can't be made failing the pair and pruning it on the next task; and
+`TCP_NODELAY` on the port's options for accepted sockets. `tcp_port_unittest.cc` is in
+`tests/unit/p2p/tcp_port_test.cc` on the emulated network's TCP, with the candidate, connection-rule, reconnection
+timeout and connect-failure cases next to it; the allocator's cases (`port_allocator_test.cc`) count libwebrtc's TCP
+ports. The ICE comparison (`compare/webrtc/ice_scenarios.h`, `ice_compare.cc`) runs both stacks with RTCConfiguration's
+default TCP candidate policy (libwebrtc's TCP through its `BasicPacketSocketFactory` on the same emulated TCP), and
+adds `TcpScenarios()`: UDP blocked at one or both endpoints (`P2PTransportChannelMatrixTest`'s BLOCK_UDP), where only
+the TCP pairs connect. Both stacks give the same values on every seed of every table (NAT matrix, loss, network
+changes, relays, ICE-TCP), pinned in `P2pIceCompare.ChecksMatchLibwebrtc`, `RelayMatchesLibwebrtc`,
+`TcpRelayMatchesLibwebrtc`, `TcpOnlyPathConnectsAsLibwebrtc` and `P2pIceCompareTls.TlsRelayMatchesLibwebrtc`.
+Differences:
+
+| Item | libwebrtc M157 | This library | Why |
+|---|---|---|---|
+| Time | Network thread; `OnClose` posts a delayed destroy, `CreateOutgoingTcpSocket` posts `FailAndPrune` (both `SafeTask`s on the connection) | `now` on the calls that may send; the port's `Process(now)` at `NextProcessTime()` runs the posted `FailAndPrune` and the reconnection timeouts of the connections it still holds (a connection already destroyed has none, as the `SafeTask`). A socket close carries no time: it is timed at the latest time the port has seen (its last call, packet or connect), as `TurnPort` does (10.10) | The library's time model, as 10.3 |
+| Port and connection lifetime | `WeakPtr<Port>` in the connection; `~Port` destroys the connections after `~TCPPort` | A plain pointer cleared by `Shutdown()` (10.4); `~TCPPort` destroys its connections first, while they can still reach the port | Same observable behaviour without weak pointers |
+| Accepted sockets | Raw pointers in `incoming_`, deleted by `~TCPPort` | `std::unique_ptr`s, moved to the connection that takes one | Ownership in the type (10.8) |
+| SSLTCP | `OPT_TLS_FAKE` client sockets (`AsyncSSLSocket`) | The factory makes none (10.8), so such a pair fails as when a socket can't be made | Fake TLS is not used in a call (10.8, 10.12) |
+| `CopyPortInformationToPacketInfo` | Fills the sent packet's `PacketInfo` (protocol, network) | Not filled | `PacketOptions` carries no packet info (10.9) |
+| `TCPPortNotDiscardedIfBoundToTemporaryIP` | IPv6 temporary address | Not run | The emulated network is IPv4 and `Network` keeps plain addresses (10.10, 10.14) |
+| `NotifyClosedForTest` | Closes the socket from the test | The far end closes it (the server port deleted) | Not in the library's socket interface |
 
 ## Open questions for the Owner
 

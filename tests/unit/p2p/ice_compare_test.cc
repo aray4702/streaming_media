@@ -93,7 +93,9 @@ SM_TEST(P2pIceCompare, RecoversAfterNetworkChange) {
 // transaction ids repeat after 64, and StunRequestManager::Send drops a check whose id is still pending. libwebrtc's
 // side draws its ids from a real random source. With ids that don't repeat (InstallTestCryptoWithUniqueIds, as
 // sm_ice_compare now installs) our side gives libwebrtc M157's values from #1044's table (CI compare-webrtc, 5 seeds),
-// cell for cell.
+// cell for cell. Since #1151 both sides gather TCP host candidates (RTCConfiguration's default), so the TCP pairs are
+// checked too: the values are libwebrtc's from sm_ice_compare on #1151 (the same per seed on both stacks). The lossy
+// rows moved because the TCP traffic takes loss draws; the pairs that need a relay checked 418 times before too.
 SM_TEST(P2pIceCompare, ChecksMatchLibwebrtc) {
   sm::p2p::testing::InstallTestCryptoWithUniqueIds();
   struct Row {
@@ -102,14 +104,14 @@ SM_TEST(P2pIceCompare, ChecksMatchLibwebrtc) {
     double checks_at_connect;
     double checks_total;
   };
-  // libwebrtc's column of #1044's table, means of seeds 1-5.
+  // libwebrtc's column, means of seeds 1-5, TCP candidates on (#1151).
   const Row kLibwebrtc[] = {
-      {"open-open", 40, 2.0, 16.0},          {"open-cone", 88, 4.0, 33.0},
-      {"cone-cone", 88, 4.0, 50.0},          {"port-port", 136, 6.0, 50.0},
-      {"cone-sym", 136, 6.0, 53.0},          {"sym-addr", 232, 10.0, 53.0},
-      {"port-sym", -1, 0.0, 418.0},          {"sym-sym", -1, 0.0, 418.0},
-      {"cone-port-loss5", 165, 7.2, 50.0},   {"open-open-loss20", 270, 8.6, 26.2},
-      {"cone-port-loss20", 434, 18.4, 61.0}, {"port-port-loss20", 501, 21.0, 63.4},
+      {"open-open", 40, 2.0, 16.0},             {"open-cone", 88, 4.0, 33.0},
+      {"cone-cone", 88, 4.0, 50.0},             {"port-port", 136, 6.0, 50.0},
+      {"cone-sym", 136, 6.0, 53.0},             {"sym-addr", 232, 10.0, 53.0},
+      {"port-sym", -1, 0.0, 418.0},             {"sym-sym", -1, 0.0, 418.0},
+      {"cone-port-loss5", 155.2, 6.8, 50.0},    {"open-open-loss20", 241.6, 8.0, 25.2},
+      {"cone-port-loss20", 452.8, 18.2, 131.4}, {"port-port-loss20", 520, 20.8, 132.4},
   };
   const std::vector<Scenario> scenarios = Scenarios();
   for (const Row& row : kLibwebrtc) {
@@ -177,8 +179,10 @@ SM_TEST(P2pIceCompare, RelayScenariosConnectThroughTurn) {
 
 // Relay (#1055): libwebrtc M157's column of the relay table (CI compare-webrtc on #1056, means of seeds 1-5; our side
 // gave the same values on every seed). The pair and relay columns are the controlling side's selected local/remote
-// candidate types and each endpoint's relay protocol; at 5% loss sym-sym picks either side's relay by seed (3 of 5
-// prflx/relay, 2 of 5 relay/prflx on both stacks).
+// candidate types and each endpoint's relay protocol; at 5% loss sym-sym picks either side's relay by seed (4 of 5
+// prflx/relay, 1 of 5 relay/prflx on both stacks). With TCP candidates on (#1151) both stacks also check the TCP
+// pairs, which can't connect through these NATs: 418 checks in 10 s, as the pairs without a relay; values from
+// sm_ice_compare on #1151.
 SM_TEST(P2pIceCompare, RelayMatchesLibwebrtc) {
   sm::p2p::testing::InstallTestCryptoWithUniqueIds();
   struct Row {
@@ -191,11 +195,11 @@ SM_TEST(P2pIceCompare, RelayMatchesLibwebrtc) {
     const char* relay;
   };
   const Row kLibwebrtc[] = {
-      {"port-sym-turnudp", 252, 12.0, 70.0, {4.0, 8.0, 0, 0}, "srflx/relay", "-/udp"},
-      {"sym-port-turnudp", 252, 12.0, 65.0, {4.0, 8.0, 0, 0}, "prflx/relay", "-/udp"},
-      {"sym-sym-turnudp", 252, 12.0, 67.0, {4.0, 10.0, 0, 0}, "prflx/relay", "-/udp"},
+      {"port-sym-turnudp", 252, 12.0, 418.0, {4.0, 8.0, 0, 0}, "srflx/relay", "-/udp"},
+      {"sym-port-turnudp", 252, 12.0, 418.0, {4.0, 8.0, 0, 0}, "prflx/relay", "-/udp"},
+      {"sym-sym-turnudp", 252, 12.0, 418.0, {4.0, 10.0, 0, 0}, "prflx/relay", "-/udp"},
       {"open-open-turnudp-relayonly", 190, 4.0, 16.0, {4.0, 2.0, 0, 0}, "relay/relay", "udp/udp"},
-      {"sym-sym-turnudp-loss5", 310, 14.4, 70.8, {4.8, 7.6, 0, 0}, "", ""},
+      {"sym-sym-turnudp-loss5", 328.8, 15.2, 418.0, {4.8, 7.8, 0, 0}, "", ""},
   };
   const std::vector<Scenario> scenarios = RelayScenarios();
   for (const Row& row : kLibwebrtc) {
@@ -226,22 +230,71 @@ SM_TEST(P2pIceCompare, RelayMatchesLibwebrtc) {
     SM_EXPECT_NEAR(at_connect / 5, row.checks_at_connect, 0.05);
     SM_EXPECT_NEAR(total / 5, row.checks_total, 0.05);
     for (int t = 0; t < kNumTurnRequests; ++t) SM_EXPECT_NEAR(turn[t] / 5, row.turn[t], 0.05);
-    if (!*row.pair) SM_EXPECT_EQ(relay_on_ep1, 3);
+    if (!*row.pair) SM_EXPECT_EQ(relay_on_ep1, 4);
   }
 }
 
 // Relay over TCP (#1055 part 2): libwebrtc M157's column of the TURN over TCP rows (sm_ice_compare; the same on
-// every seed, and our side gave the same values on every seed). The requests are counted as the TURN server receives
-// them. The NAT pairs connect when the UDP ones do (the relayed remote candidate is in place before the first check
-// succeeds); relay only connects 30 ms later than over UDP, the TCP connect to the server (one round trip).
+// every seed, and our side gave the same values on every seed; checks with TCP candidates on, #1151). The requests
+// are counted as the TURN server receives them. The NAT pairs connect when the UDP ones do (the relayed remote
+// candidate is in place before the first check succeeds); relay only connects 30 ms later than over UDP, the TCP
+// connect to the server (one round trip).
 SM_TEST(P2pIceCompare, TcpRelayMatchesLibwebrtc) {
   sm::p2p::testing::InstallTestCryptoWithUniqueIds();
   const ice_compare_relay::Row kLibwebrtc[] = {
-      {"port-sym-turntcp", 252, 12.0, 68.0, {4.0, 7.0, 0, 0}, "srflx/relay", "-/tcp"},
-      {"sym-port-turntcp", 252, 12.0, 63.0, {4.0, 7.0, 0, 0}, "prflx/relay", "-/tcp"},
-      {"sym-sym-turntcp", 252, 12.0, 63.0, {4.0, 8.0, 0, 0}, "prflx/relay", "-/tcp"},
+      {"port-sym-turntcp", 252, 12.0, 418.0, {4.0, 7.0, 0, 0}, "srflx/relay", "-/tcp"},
+      {"sym-port-turntcp", 252, 12.0, 418.0, {4.0, 7.0, 0, 0}, "prflx/relay", "-/tcp"},
+      {"sym-sym-turntcp", 252, 12.0, 418.0, {4.0, 8.0, 0, 0}, "prflx/relay", "-/tcp"},
       {"open-open-turntcp-relayonly", 220, 4.0, 16.0, {4.0, 2.0, 0, 0}, "relay/relay", "tcp/tcp"},
   };
   const std::vector<Scenario> scenarios = StreamRelayScenarios();
   for (const ice_compare_relay::Row& row : kLibwebrtc) ice_compare_relay::ExpectMatches(scenarios, row);
+}
+
+// ICE-TCP (#1151): with UDP blocked to and from an endpoint (P2PTransportChannelMatrixTest's BLOCK_UDP), the call
+// connects over TCP: one side's TCPConnection connects actively to the other's passive host candidate, and the
+// passive side pairs it as a peer-reflexive TCP candidate. libwebrtc M157's column from sm_ice_compare on #1151 (the
+// same on every seed, and on both stacks): connect time, checks and the controlling side's selected pair. Without TCP
+// candidates (before #1151) none of these connected.
+SM_TEST(P2pIceCompare, TcpOnlyPathConnectsAsLibwebrtc) {
+  sm::p2p::testing::InstallTestCryptoWithUniqueIds();
+  struct Row {
+    const char* name;
+    double connect_ms;
+    double checks_at_connect;
+    double checks_total;
+    const char* pair;
+  };
+  const Row kLibwebrtc[] = {
+      {"open-blockudp", 184, 8.0, 54.0, "prflx/host tcp"},
+      {"blockudp-open", 184, 8.0, 54.0, "prflx/host tcp"},
+      {"blockudp-blockudp", 184, 8.0, 54.0, "prflx/host tcp"},
+      {"port-blockudp", 232, 10.0, 234.0, "prflx/host tcp"},
+      {"blockudp-port", 232, 10.0, 234.0, "host/prflx tcp"},
+  };
+  const std::vector<Scenario> scenarios = TcpScenarios();
+  SM_ASSERT_EQ(scenarios.size(), std::size(kLibwebrtc));
+  for (const Row& row : kLibwebrtc) {
+    const Scenario* s = nullptr;
+    for (const Scenario& c : scenarios) {
+      if (c.name == row.name) s = &c;
+    }
+    SM_ASSERT_TRUE(s != nullptr);
+    int connected = 0;
+    double ms = 0, at_connect = 0, total = 0;
+    for (int seed = 1; seed <= 5; ++seed) {
+      const Result r = RunSm(*s, seed);
+      if (r.connected) {
+        ++connected;
+        ms += r.connect_ms;
+        at_connect += r.checks_at_connect;
+        SM_EXPECT_EQ(r.pair, std::string(row.pair));
+      }
+      total += r.checks_total;
+    }
+    SM_EXPECT_EQ(connected, 5);
+    SM_EXPECT_NEAR(ms / 5, row.connect_ms, 1.0);
+    SM_EXPECT_NEAR(at_connect / 5, row.checks_at_connect, 0.05);
+    SM_EXPECT_NEAR(total / 5, row.checks_total, 0.05);
+  }
 }

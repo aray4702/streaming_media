@@ -2,11 +2,10 @@
 // p2p/base/port_allocator_unittest.cc and
 // p2p/client/basic_port_allocator_unittest.cc, with the library's time model
 // in place of the simulated clock. libwebrtc's fixture has a host TCP port
-// on every network; there are no TCP ports until C4, so each expected count
-// here is libwebrtc's less its TCP ports (noted at each case). The STUN
-// cases run over the emulated network (#985) with a STUN server; the others
-// on a socket factory that binds any address, as libwebrtc's virtual socket
-// server does.
+// on every network, and so does this one since TCPPort (#1151): the expected
+// counts are libwebrtc's. The STUN cases run over the emulated network (#985)
+// with a STUN server; the others on a socket factory that binds any address,
+// UDP and TCP listen sockets, as libwebrtc's virtual socket server does.
 #include <algorithm>
 #include <memory>
 #include <optional>
@@ -68,33 +67,67 @@ class FakeSocket final : public AsyncPacketSocket {
   SocketAddress local_;
 };
 
-// Binds any address, in the range if one is given (VirtualSocketServer).
+// A TCP listen socket that nobody connects to.
+class FakeListenSocket final : public AsyncListenSocket {
+ public:
+  explicit FakeListenSocket(SocketAddress local) : local_(local) {}
+  State GetState() const override { return State::kBound; }
+  SocketAddress GetLocalAddress() const override { return local_; }
+
+ private:
+  SocketAddress local_;
+};
+
+// Binds any address, in the range if one is given, for UDP and TCP listen
+// sockets (VirtualSocketServer: one port table).
 class FakeFactory final : public PacketSocketFactory {
  public:
   std::unique_ptr<AsyncPacketSocket> CreateUdpSocket(const SocketAddress& a, uint16_t min_port,
                                                      uint16_t max_port) override {
     if (!udp_enabled) return nullptr;
-    uint16_t port = min_port == 0 && max_port == 0 ? next_++ : static_cast<uint16_t>(min_port + in_range_++);
-    if (max_port != 0 && port > max_port) return nullptr;
+    const uint16_t port = NextPort(min_port, max_port);
+    if (port == 0) return nullptr;
     ++created;
     return std::make_unique<FakeSocket>(SocketAddress(a.ipaddr(), port));
   }
+  std::unique_ptr<AsyncListenSocket> CreateServerTcpSocket(const SocketAddress& a, uint16_t min_port, uint16_t max_port,
+                                                           int /*opts*/) override {
+    if (!tcp_listen_enabled) return nullptr;
+    const uint16_t port = NextPort(min_port, max_port);
+    if (port == 0) return nullptr;
+    return std::make_unique<FakeListenSocket>(SocketAddress(a.ipaddr(), port));
+  }
   bool udp_enabled = true;
+  bool tcp_listen_enabled = true;  // VirtualSocketServer's set_tcp_listen_enabled.
   int created = 0;
 
  private:
+  uint16_t NextPort(uint16_t min_port, uint16_t max_port) {
+    const uint16_t port = min_port == 0 && max_port == 0 ? next_++ : static_cast<uint16_t>(min_port + in_range_++);
+    return max_port != 0 && port > max_port ? 0 : port;
+  }
   uint16_t next_ = 49152;
   uint16_t in_range_ = 0;
 };
 
 // Lets a test turn socket creation off (VirtualSocketServer's
-// set_udp_sockets_enabled) on any factory.
+// set_udp_sockets_enabled and set_tcp_sockets_enabled together) on any
+// factory.
 class GatedFactory final : public PacketSocketFactory {
  public:
   explicit GatedFactory(PacketSocketFactory* inner) : inner_(inner) {}
   std::unique_ptr<AsyncPacketSocket> CreateUdpSocket(const SocketAddress& a, uint16_t min_port,
                                                      uint16_t max_port) override {
     return enabled ? inner_->CreateUdpSocket(a, min_port, max_port) : nullptr;
+  }
+  std::unique_ptr<AsyncListenSocket> CreateServerTcpSocket(const SocketAddress& a, uint16_t min_port, uint16_t max_port,
+                                                           int opts) override {
+    return enabled ? inner_->CreateServerTcpSocket(a, min_port, max_port, opts) : nullptr;
+  }
+  std::unique_ptr<AsyncPacketSocket> CreateClientTcpSocket(Timestamp now, const SocketAddress& local,
+                                                           const SocketAddress& remote,
+                                                           const PacketSocketTcpOptions& options) override {
+    return enabled ? inner_->CreateClientTcpSocket(now, local, remote, options) : nullptr;
   }
   bool enabled = true;
 
@@ -528,8 +561,8 @@ SM_TEST(P2pBasicPortAllocator, MaxIpv6NetworksLimit) {
   }
 }
 
-// IPv6 only with PORTALLOCATOR_ENABLE_IPV6 (TestEnableIPv6Addresses, less
-// its two TCP candidates).
+// IPv6 only with PORTALLOCATOR_ENABLE_IPV6 (TestEnableIPv6Addresses): UDP and
+// TCP host candidates on each network.
 SM_TEST(P2pBasicPortAllocator, EnableIPv6Addresses) {
   for (bool enable : {false, true}) {
     Fixture f(Fixture::kFake, /*with_stun_server=*/false);
@@ -540,10 +573,12 @@ SM_TEST(P2pBasicPortAllocator, EnableIPv6Addresses) {
     f.CreateSession();
     f.session->StartGettingPorts(f.now);
     SM_ASSERT_TRUE(f.RunUntilDone());
-    SM_EXPECT_EQ(f.ports.size(), size_t{enable ? 2u : 1u});
-    SM_EXPECT_EQ(f.candidates.size(), size_t{enable ? 2u : 1u});
+    SM_EXPECT_EQ(f.ports.size(), size_t{enable ? 4u : 2u});
+    SM_EXPECT_EQ(f.candidates.size(), size_t{enable ? 4u : 2u});
     SM_EXPECT_EQ(f.HasCandidate(IceCandidateType::kHost, "udp", kClientIPv6), enable);
     SM_EXPECT_TRUE(f.HasCandidate(IceCandidateType::kHost, "udp", kClientIp));
+    SM_EXPECT_EQ(f.HasCandidate(IceCandidateType::kHost, "tcp", kClientIPv6), enable);
+    SM_EXPECT_TRUE(f.HasCandidate(IceCandidateType::kHost, "tcp", kClientIp));
   }
 }
 
@@ -558,19 +593,20 @@ SM_TEST(P2pBasicPortAllocator, LoopbackNetworkInterface) {
   SM_EXPECT_EQ(f.candidates.size(), size_t{1});
 }
 
-// TestGetAllPortsWithMinimumStepDelay: host and srflx over UDP (libwebrtc
-// also a TCP host candidate: 3 candidates, 3 ports). No NAT, so the srflx
-// address is the host's.
+// TestGetAllPortsWithMinimumStepDelay: host and srflx over UDP and a TCP host
+// candidate: 3 candidates, 3 ports. No NAT, so the srflx address is the
+// host's.
 SM_TEST(P2pBasicPortAllocator, GetAllPortsWithMinimumStepDelay) {
   Fixture f(Fixture::kPublic);
   f.AddInterface(kClientIp);
   f.CreateSession();
   f.session->StartGettingPorts(f.now);
   SM_ASSERT_TRUE(f.RunUntilDone());
-  SM_EXPECT_EQ(f.candidates.size(), size_t{2});
-  SM_EXPECT_EQ(f.ports.size(), size_t{2});
+  SM_EXPECT_EQ(f.candidates.size(), size_t{3});
+  SM_EXPECT_EQ(f.ports.size(), size_t{3});
   SM_EXPECT_TRUE(f.HasCandidate(IceCandidateType::kHost, "udp", kClientIp));
   SM_EXPECT_TRUE(f.HasCandidate(IceCandidateType::kSrflx, "udp", kClientIp));
+  SM_EXPECT_TRUE(f.HasCandidate(IceCandidateType::kHost, "tcp", kClientIp));
 }
 
 // TestGetAllPortsWithOneSecondStepDelay: the UDP phase at once, the relay
@@ -587,9 +623,11 @@ SM_TEST(P2pBasicPortAllocator, GetAllPortsWithOneSecondStepDelay) {
   SM_EXPECT_TRUE(f.now - start < TimeDelta::Millis(100));  // One STUN round trip.
   SM_EXPECT_FALSE(f.done);
   SM_ASSERT_TRUE(f.RunUntilDone());
-  // Done when the last (TCP) phase ran, two step delays in.
+  // Done when the last (TCP) phase ran, two step delays in, with its candidate.
   SM_EXPECT_EQ((f.now - start).ms(), 2000);
-  SM_EXPECT_EQ(f.candidates.size(), size_t{2});
+  SM_EXPECT_EQ(f.candidates.size(), size_t{3});
+  SM_EXPECT_TRUE(f.HasCandidate(IceCandidateType::kHost, "tcp", kClientIp));
+  SM_EXPECT_EQ(f.ports.size(), size_t{3});
   f.session->StopGettingPorts(f.now);
 }
 
@@ -627,23 +665,29 @@ SM_TEST(P2pBasicPortAllocator, SameNetworkDownAndUpWhenSessionNotStopped) {
   f.CreateSession();
   f.session->StartGettingPorts(f.now);
   SM_ASSERT_TRUE(f.RunUntilDone());
-  SM_EXPECT_EQ(f.candidates.size(), size_t{2});
-  SM_EXPECT_EQ(f.ports.size(), size_t{2});
+  SM_EXPECT_EQ(f.candidates.size(), size_t{3});
+  SM_EXPECT_EQ(f.ports.size(), size_t{3});
   f.done = false;
   f.candidates.clear();
-  // No sockets while the network is down: the any-address fallback gathers nothing.
+  // No sockets while the network is down: the any-address fallback gathers
+  // nothing but its TCP port's active candidate at the any address, which is
+  // not signalled.
   f.gate->enabled = false;
   f.network_manager.RemoveInterface(kClientIp);
   f.Advance(TimeDelta::Seconds(1));
   SM_EXPECT_EQ(f.candidates.size(), size_t{0});
-  SM_EXPECT_EQ(f.ports.size(), size_t{0});  // Pruned.
-  SM_EXPECT_EQ(f.removed.size(), size_t{2});
+  // The network's three ports are pruned; the any address's TCP port is ready.
+  SM_EXPECT_EQ(std::count_if(f.ports.begin(), f.ports.end(),
+                             [](Port* p) { return p->network()->GetBestIP() == kClientIp; }),
+               std::ptrdiff_t{0});
+  SM_EXPECT_EQ(f.removed.size(), size_t{3});
+  f.ports.clear();
   f.gate->enabled = true;
   f.done = false;
   f.AddInterface(kClientIp, "test_net0");
   SM_ASSERT_TRUE(f.RunUntilDone());
-  SM_EXPECT_EQ(f.candidates.size(), size_t{2});
-  SM_EXPECT_EQ(f.ports.size(), size_t{2});
+  SM_EXPECT_EQ(f.candidates.size(), size_t{3});
+  SM_EXPECT_EQ(f.ports.size(), size_t{3});
   SM_EXPECT_EQ(f.regathering, 2);  // Down, then up.
 }
 
@@ -654,7 +698,8 @@ SM_TEST(P2pBasicPortAllocator, SameNetworkDownAndUpWhenSessionStopped) {
   f.CreateSession();
   f.session->StartGettingPorts(f.now);
   SM_ASSERT_TRUE(f.RunUntilDone());
-  SM_EXPECT_EQ(f.candidates.size(), size_t{2});
+  SM_EXPECT_EQ(f.candidates.size(), size_t{3});
+  SM_EXPECT_EQ(f.ports.size(), size_t{3});
   f.session->StopGettingPorts(f.now);
   f.candidates.clear();
   f.ports.clear();
@@ -710,7 +755,8 @@ SM_TEST(P2pBasicPortAllocator, ClearGettingPorts) {
   SM_ASSERT_TRUE(f.RunUntilDone());
 }
 
-// TestGetAllPortsPortRange.
+// TestGetAllPortsPortRange (no STUN server here: the UDP and TCP host
+// candidates; libwebrtc's 3 with its srflx one).
 SM_TEST(P2pBasicPortAllocator, GetAllPortsPortRange) {
   Fixture f(Fixture::kFake, /*with_stun_server=*/false);
   f.AddInterface(kClientIp);
@@ -720,7 +766,8 @@ SM_TEST(P2pBasicPortAllocator, GetAllPortsPortRange) {
   f.CreateSession();
   f.session->StartGettingPorts(f.now);
   SM_ASSERT_TRUE(f.RunUntilDone());
-  SM_ASSERT_EQ(f.candidates.size(), size_t{1});
+  SM_ASSERT_EQ(f.candidates.size(), size_t{2});
+  SM_EXPECT_EQ(f.ports.size(), size_t{2});
   for (const Candidate& c : f.candidates) {
     SM_EXPECT_TRUE(c.address().port() >= kMinPort && c.address().port() <= kMaxPort);
   }
@@ -755,8 +802,8 @@ SM_TEST(P2pBasicPortAllocator, DisableAllPorts) {
   SM_EXPECT_EQ(f.candidates.size(), size_t{0});
 }
 
-// TestGetAllPortsNoUdpSockets: no UDP socket can be made (libwebrtc then
-// has only its TCP candidate); done with none.
+// TestGetAllPortsNoUdpSockets: no UDP socket can be made; only the TCP host
+// candidate.
 SM_TEST(P2pBasicPortAllocator, GetAllPortsNoUdpSockets) {
   Fixture f;
   f.AddInterface(kClientIp);
@@ -764,8 +811,26 @@ SM_TEST(P2pBasicPortAllocator, GetAllPortsNoUdpSockets) {
   f.CreateSession();
   f.session->StartGettingPorts(f.now);
   SM_ASSERT_TRUE(f.RunUntilDone());
-  SM_EXPECT_EQ(f.candidates.size(), size_t{0});
-  SM_EXPECT_EQ(f.ports.size(), size_t{0});
+  SM_EXPECT_EQ(f.candidates.size(), size_t{1});
+  SM_EXPECT_EQ(f.ports.size(), size_t{1});
+  SM_EXPECT_TRUE(f.HasCandidate(IceCandidateType::kHost, "tcp", kClientIp));
+}
+
+// TestGetAllPortsNoUdpSocketsNoTcpListen: nor a TCP listen socket; the TCP
+// port still gives its active candidate (RFC 6544's discard port 9).
+SM_TEST(P2pBasicPortAllocator, GetAllPortsNoUdpSocketsNoTcpListen) {
+  Fixture f;
+  f.AddInterface(kClientIp);
+  f.fake.udp_enabled = false;
+  f.fake.tcp_listen_enabled = false;
+  f.CreateSession();
+  f.session->StartGettingPorts(f.now);
+  SM_ASSERT_TRUE(f.RunUntilDone());
+  SM_ASSERT_EQ(f.candidates.size(), size_t{1});
+  SM_EXPECT_EQ(f.ports.size(), size_t{1});
+  SM_EXPECT_TRUE(f.HasCandidate(IceCandidateType::kHost, "tcp", kClientIp));
+  SM_EXPECT_EQ(f.candidates[0].tcptype(), std::string(TCPTYPE_ACTIVE_STR));
+  SM_EXPECT_EQ(f.candidates[0].address().port(), DISCARD_PORT);
 }
 
 // TestCandidatePriorityOfMultipleInterfaces: the networks' preferences
@@ -792,8 +857,8 @@ SM_TEST(P2pBasicPortAllocator, SessionUsesOwnCandidateFilter) {
   f.allocator->SetCandidateFilter(CF_RELAY);
   f.session->StartGettingPorts(f.now);
   SM_ASSERT_TRUE(f.RunUntilDone());
-  SM_EXPECT_EQ(f.candidates.size(), size_t{2});  // libwebrtc 3, with TCP.
-  SM_EXPECT_EQ(f.ports.size(), size_t{2});
+  SM_EXPECT_EQ(f.candidates.size(), size_t{3});
+  SM_EXPECT_EQ(f.ports.size(), size_t{3});
 }
 
 // TestCandidateFilterWithHostOnly (shared socket: one UDP port).
@@ -805,8 +870,8 @@ SM_TEST(P2pBasicPortAllocator, CandidateFilterWithHostOnly) {
   f.CreateSession();
   f.session->StartGettingPorts(f.now);
   SM_ASSERT_TRUE(f.RunUntilDone());
-  SM_EXPECT_EQ(f.candidates.size(), size_t{1});  // libwebrtc 2: UDP and TCP host.
-  SM_EXPECT_EQ(f.ports.size(), size_t{1});
+  SM_EXPECT_EQ(f.candidates.size(), size_t{2});  // Host UDP/TCP candidates only.
+  SM_EXPECT_EQ(f.ports.size(), size_t{2});       // UDP/TCP ports only.
   for (const Candidate& c : f.candidates) SM_EXPECT_TRUE(c.is_local());
 }
 
@@ -837,8 +902,8 @@ SM_TEST(P2pBasicPortAllocator, CandidateFilterWithReflexiveOnlyAndNoNat) {
   f.CreateSession();
   f.session->StartGettingPorts(f.now);
   SM_ASSERT_TRUE(f.RunUntilDone());
-  SM_EXPECT_EQ(f.candidates.size(), size_t{1});  // libwebrtc 2: UDP and TCP host.
-  SM_EXPECT_EQ(f.ports.size(), size_t{1});
+  SM_EXPECT_EQ(f.candidates.size(), size_t{2});  // Local UDP + TCP candidate.
+  SM_EXPECT_EQ(f.ports.size(), size_t{2});       // UDP and TCP ports will be in ready state.
   for (const Candidate& c : f.candidates) SM_EXPECT_TRUE(c.is_local());
 }
 
@@ -851,9 +916,10 @@ SM_TEST(P2pBasicPortAllocator, SharedSocketWithoutNat) {
   f.CreateSession();
   f.session->StartGettingPorts(f.now);
   SM_ASSERT_TRUE(f.RunUntilDone());
-  SM_EXPECT_EQ(f.candidates.size(), size_t{1});  // libwebrtc 2, with TCP.
-  SM_EXPECT_EQ(f.ports.size(), size_t{1});
+  SM_EXPECT_EQ(f.candidates.size(), size_t{2});
+  SM_EXPECT_EQ(f.ports.size(), size_t{2});
   SM_EXPECT_TRUE(f.HasCandidate(IceCandidateType::kHost, "udp", kClientIp));
+  SM_EXPECT_TRUE(f.HasCandidate(IceCandidateType::kHost, "tcp", kClientIp));
 }
 
 // TestSharedSocketWithNat: host and srflx from the one UDP port.
@@ -864,8 +930,8 @@ SM_TEST(P2pBasicPortAllocator, SharedSocketWithNat) {
   f.CreateSession();
   f.session->StartGettingPorts(f.now);
   SM_ASSERT_TRUE(f.RunUntilDone());
-  SM_EXPECT_EQ(f.candidates.size(), size_t{2});  // libwebrtc 3, with TCP.
-  SM_EXPECT_EQ(f.ports.size(), size_t{1});       // libwebrtc 2, with TCP.
+  SM_EXPECT_EQ(f.candidates.size(), size_t{3});
+  SM_EXPECT_EQ(f.ports.size(), size_t{2});
   SM_EXPECT_TRUE(f.HasCandidate(IceCandidateType::kHost, "udp", kPrivateIp));
   SM_EXPECT_TRUE(f.HasCandidate(IceCandidateType::kSrflx, "udp", kNatIp));
   const Candidate& srflx = *std::find_if(f.candidates.begin(), f.candidates.end(),
@@ -874,17 +940,19 @@ SM_TEST(P2pBasicPortAllocator, SharedSocketWithNat) {
   SM_EXPECT_TRUE(srflx.related_address().ipaddr() == kPrivateIp);
 }
 
-// Without a shared socket a NAT gives a UDP port and a STUN port.
+// Without a shared socket a NAT gives a UDP port and a STUN port (and the TCP
+// port).
 SM_TEST(P2pBasicPortAllocator, NonSharedSocketWithNat) {
   Fixture f(Fixture::kNat);
   f.AddInterface(kPrivateIp);
   f.CreateSession();
   f.session->StartGettingPorts(f.now);
   SM_ASSERT_TRUE(f.RunUntilDone());
-  SM_EXPECT_EQ(f.candidates.size(), size_t{2});
-  SM_EXPECT_EQ(f.ports.size(), size_t{2});
+  SM_EXPECT_EQ(f.candidates.size(), size_t{3});
+  SM_EXPECT_EQ(f.ports.size(), size_t{3});
   SM_EXPECT_TRUE(f.HasCandidate(IceCandidateType::kHost, "udp", kPrivateIp));
   SM_EXPECT_TRUE(f.HasCandidate(IceCandidateType::kSrflx, "udp", kNatIp));
+  SM_EXPECT_TRUE(f.HasCandidate(IceCandidateType::kHost, "tcp", kPrivateIp));
 }
 
 // TestNetworkPermissionBlocked: gather on the any address, reporting the
@@ -917,8 +985,8 @@ SM_TEST(P2pBasicPortAllocator, SetCandidateFilterAfterCandidatesGathered) {
   SM_ASSERT_TRUE(f.RunUntil([&] { return peeked->CandidatesAllocationDone(); }));
   const size_t initial_candidates = peeked->ReadyCandidates().size();
   const size_t initial_ports = peeked->ReadyPorts().size();
-  SM_EXPECT_EQ(initial_candidates, size_t{2});
-  SM_EXPECT_EQ(initial_ports, size_t{2});
+  SM_EXPECT_EQ(initial_candidates, size_t{3});  // UDP host, srflx, TCP host.
+  SM_EXPECT_EQ(initial_ports, size_t{3});
   f.allocator->SetCandidateFilter(CF_RELAY);
   f.session = f.allocator->TakePooledSession(kContentName, 1, kIceUfrag0, kIcePwd0);
   SM_ASSERT_TRUE(f.session != nullptr);
@@ -942,12 +1010,13 @@ SM_TEST(P2pBasicPortAllocator, WiderFilterResurfacesCandidates) {
   f.CreateSession();
   f.session->StartGettingPorts(f.now);
   SM_ASSERT_TRUE(f.RunUntilDone());
-  SM_ASSERT_EQ(f.candidates.size(), size_t{1});
+  SM_ASSERT_EQ(f.candidates.size(), size_t{2});  // The UDP and TCP host candidates.
   SM_EXPECT_TRUE(f.candidates[0].is_local());
+  SM_EXPECT_TRUE(f.candidates[1].is_local());
   f.session->SetCandidateFilter(CF_ALL);
-  SM_ASSERT_EQ(f.candidates.size(), size_t{2});
-  SM_EXPECT_TRUE(f.candidates[1].is_stun());
-  SM_EXPECT_EQ(f.session->ReadyCandidates().size(), size_t{2});
+  SM_ASSERT_EQ(f.candidates.size(), size_t{3});
+  SM_EXPECT_TRUE(f.candidates[2].is_stun());
+  SM_EXPECT_EQ(f.session->ReadyCandidates().size(), size_t{3});
 }
 
 // SetStunKeepaliveIntervalForPorts.
@@ -959,13 +1028,19 @@ SM_TEST(P2pBasicPortAllocator, SetStunKeepaliveIntervalForPorts) {
   SM_ASSERT_TRUE(pooled != nullptr);
   SM_ASSERT_TRUE(f.RunUntil([&] { return pooled->CandidatesAllocationDone(); }));
   const auto ports = pooled->ReadyPorts();
-  SM_EXPECT_EQ(ports.size(), size_t{2});
+  SM_EXPECT_EQ(ports.size(), size_t{3});  // UDP, STUN and TCP.
+  // CheckStunKeepaliveIntervalOfAllReadyPorts: the UDP ports (UDPPort and StunPort).
+  int udp_ports = 0;
   for (Port* p : ports) {
+    if (p->GetProtocol() != PROTO_UDP) continue;
+    ++udp_ports;
     SM_EXPECT_TRUE(static_cast<const UDPPort*>(p)->stun_keepalive_delay() == TimeDelta::Millis(123));
   }
+  SM_EXPECT_EQ(udp_ports, 2);
   // A new interval reaches the ready ports.
   f.allocator->SetConfiguration(f.now, f.allocator->stun_servers(), {}, 1, NO_PRUNE, 456);
   for (Port* p : pooled->ReadyPorts()) {
+    if (p->GetProtocol() != PROTO_UDP) continue;
     SM_EXPECT_TRUE(static_cast<const UDPPort*>(p)->stun_keepalive_delay() == TimeDelta::Millis(456));
   }
 }
@@ -1043,11 +1118,13 @@ SM_TEST(P2pBasicPortAllocator, PortsTakeSessionSettings) {
   f.session->set_generation(3);
   f.session->StartGettingPorts(f.now);
   SM_ASSERT_TRUE(f.RunUntilDone());
-  SM_ASSERT_EQ(f.ports.size(), size_t{1});
-  SM_EXPECT_TRUE(f.ports[0]->send_retransmit_count_attribute());
-  SM_EXPECT_EQ(f.ports[0]->generation(), 3u);
-  SM_EXPECT_EQ(f.ports[0]->component(), ICE_CANDIDATE_COMPONENT_RTP);
-  SM_EXPECT_EQ(f.ports[0]->content_name(), std::string("test content"));
+  SM_ASSERT_EQ(f.ports.size(), size_t{2});  // UDP and TCP.
+  for (Port* p : f.ports) {
+    SM_EXPECT_TRUE(p->send_retransmit_count_attribute());
+    SM_EXPECT_EQ(p->generation(), 3u);
+    SM_EXPECT_EQ(p->component(), ICE_CANDIDATE_COMPONENT_RTP);
+    SM_EXPECT_EQ(p->content_name(), std::string("test content"));
+  }
 }
 
 // RegatherOnFailedNetworks: a network whose ports have no connection has
@@ -1058,15 +1135,14 @@ SM_TEST(P2pBasicPortAllocator, RegatherOnFailedNetworks) {
   f.CreateSession();
   f.session->StartGettingPorts(f.now);
   SM_ASSERT_TRUE(f.RunUntilDone());
-  SM_ASSERT_EQ(f.ports.size(), size_t{1});
-  Port* first = f.ports[0];
+  SM_ASSERT_EQ(f.ports.size(), size_t{2});  // UDP and TCP.
   f.candidates.clear();
   f.session->RegatherOnFailedNetworks(f.now);
   SM_EXPECT_EQ(f.regathering, 1);
-  SM_EXPECT_EQ(f.removed.size(), size_t{1});
-  SM_ASSERT_TRUE(f.RunUntil([&] { return f.candidates.size() == 1; }));
-  SM_ASSERT_EQ(f.ports.size(), size_t{1});
-  SM_EXPECT_TRUE(f.ports[0] != first);
+  SM_EXPECT_EQ(f.removed.size(), size_t{2});
+  SM_EXPECT_EQ(f.ports.size(), size_t{0});  // Both pruned.
+  SM_ASSERT_TRUE(f.RunUntil([&] { return f.candidates.size() == 2; }));
+  SM_ASSERT_EQ(f.ports.size(), size_t{2});  // New ones.
 }
 
 // RegatherOnFailedNetworks as BasicPortAllocatorSession::GetFailedNetworks: a
@@ -1079,8 +1155,9 @@ SM_TEST(P2pBasicPortAllocator, RegatherOnFailedNetworksKeepsNetworksWithConnecti
   f.CreateSession();
   f.session->StartGettingPorts(f.now);
   SM_ASSERT_TRUE(f.RunUntilDone());
-  SM_ASSERT_EQ(f.ports.size(), size_t{2});
-  Port* with_connection = f.ports[0];
+  SM_ASSERT_EQ(f.ports.size(), size_t{4});  // UDP and TCP on each network.
+  Port* with_connection = *std::find_if(f.ports.begin(), f.ports.end(),
+                                        [](Port* p) { return p->GetProtocol() == PROTO_UDP; });
   Candidate remote;
   remote.set_address(*SocketAddress::FromString("1.2.3.4:5000"));
   remote.set_username("rfrag");
@@ -1091,14 +1168,14 @@ SM_TEST(P2pBasicPortAllocator, RegatherOnFailedNetworksKeepsNetworksWithConnecti
   f.candidates.clear();
   f.session->RegatherOnFailedNetworks(f.now);
   SM_EXPECT_EQ(f.regathering, 1);
-  // Only the other network's candidate is removed.
-  SM_ASSERT_EQ(f.removed.size(), size_t{1});
-  SM_EXPECT_TRUE(f.removed[0].network_name() != with_connection->network()->name());
+  // Only the other network's candidates (UDP and TCP) are removed.
+  SM_ASSERT_EQ(f.removed.size(), size_t{2});
+  for (const Candidate& c : f.removed) SM_EXPECT_TRUE(c.network_name() != with_connection->network()->name());
 
   // With a connection on every network, nothing has failed.
   f.regathering = 0;
   f.removed.clear();
-  SM_ASSERT_TRUE(f.RunUntil([&] { return f.candidates.size() == 1; }));
+  SM_ASSERT_TRUE(f.RunUntil([&] { return f.candidates.size() == 2; }));
   for (Port* port : f.session->ReadyPorts()) {
     if (port->connections().empty()) port->CreateConnection(f.now, remote, Port::ORIGIN_MESSAGE);
   }
@@ -1116,7 +1193,7 @@ SM_TEST(P2pBasicPortAllocator, PrunedPortsAreDestroyed) {
   f.session->StartGettingPorts(f.now);
   SM_ASSERT_TRUE(f.RunUntilDone());
   auto* bpas = static_cast<BasicPortAllocatorSession*>(f.session.get());
-  SM_EXPECT_EQ(bpas->AllPortsForTesting().size(), size_t{1});
+  SM_EXPECT_EQ(bpas->AllPortsForTesting().size(), size_t{2});  // UDP and TCP.
   f.session->PruneAllPorts(f.now);
   f.Advance(TimeDelta::Millis(1));
   SM_EXPECT_EQ(bpas->AllPortsForTesting().size(), size_t{0});
@@ -1192,8 +1269,8 @@ SM_TEST(P2pNetworkManager, AnyAddressNetworksAndDefaultLocalAddress) {
   SM_EXPECT_TRUE(TruncateIp(kClientIPv6, 36) == Ip("2401:fa00::"));
 }
 
-// NetworkChangeDuringGatheringDoesNotDuplicateTcp (UDP here): networks-changed
-// signals while the first sequence runs make no second host port on the
+// NetworkChangeDuringGatheringDoesNotDuplicateTcp: networks-changed signals
+// while the first sequence runs make no second host port (UDP or TCP) on the
 // same network; a network added while gathering gets its own sequence.
 SM_TEST(P2pBasicPortAllocator, NetworkChangeDuringGathering) {
   Fixture f(Fixture::kFake, /*with_stun_server=*/false);
@@ -1206,8 +1283,10 @@ SM_TEST(P2pBasicPortAllocator, NetworkChangeDuringGathering) {
   f.network_manager.NotifyNetworksChanged();
   f.network_manager.NotifyNetworksChanged();
   SM_ASSERT_TRUE(f.RunUntilDone());
-  SM_EXPECT_EQ(f.candidates.size(), size_t{1});
-  SM_EXPECT_EQ(f.ports.size(), size_t{1});
+  SM_EXPECT_EQ(f.candidates.size(), size_t{2});
+  SM_EXPECT_EQ(f.ports.size(), size_t{2});
+  SM_EXPECT_EQ(std::count_if(f.ports.begin(), f.ports.end(), [](Port* p) { return p->GetProtocol() == PROTO_TCP; }),
+               std::ptrdiff_t{1});
   SM_EXPECT_EQ(static_cast<BasicPortAllocatorSession*>(f.session.get())->sequence_count(), size_t{1});
 
   // A second network while the session gathers (default step delay).
@@ -1220,8 +1299,8 @@ SM_TEST(P2pBasicPortAllocator, NetworkChangeDuringGathering) {
   SM_ASSERT_FALSE(g.done);
   g.AddInterface(kClientIp2, "eth1");
   SM_ASSERT_TRUE(g.RunUntilDone());
-  SM_EXPECT_EQ(g.candidates.size(), size_t{2});
-  SM_EXPECT_EQ(g.ports.size(), size_t{2});
+  SM_EXPECT_EQ(g.candidates.size(), size_t{4});
+  SM_EXPECT_EQ(g.ports.size(), size_t{4});
   SM_EXPECT_TRUE(g.HasCandidate(IceCandidateType::kHost, "udp", kClientIp2));
   SM_EXPECT_EQ(g.regathering, 1);
 }
@@ -1235,20 +1314,25 @@ SM_TEST(P2pBasicPortAllocator, NetworkWithConnectionIsNotFailed) {
   f.CreateSession();
   f.session->StartGettingPorts(f.now);
   SM_ASSERT_TRUE(f.RunUntilDone());
-  SM_ASSERT_EQ(f.ports.size(), size_t{2});
-  Port* eth0 = f.ports[0]->network()->name() == "eth0" ? f.ports[0] : f.ports[1];
-  Port* eth1 = eth0 == f.ports[0] ? f.ports[1] : f.ports[0];
+  SM_ASSERT_EQ(f.ports.size(), size_t{4});  // UDP and TCP on each network.
+  auto udp_port_on = [&](std::string_view name) {
+    return *std::find_if(f.ports.begin(), f.ports.end(), [&](Port* p) {
+      return p->network()->name() == name && p->GetProtocol() == PROTO_UDP;
+    });
+  };
+  Port* eth0 = udp_port_on("eth0");
+  Port* eth1 = udp_port_on("eth1");
   eth0->SetIceRole(ICEROLE_CONTROLLING);
   Candidate remote(ICE_CANDIDATE_COMPONENT_RTP, "udp", SocketAddress(Ip("33.33.33.33"), 4000), 1, "rufrag",
                    "rpasswordrpasswordrpass", IceCandidateType::kHost, 0, "f");
   SM_ASSERT_TRUE(eth0->CreateConnection(f.now, remote, Port::ORIGIN_MESSAGE) != nullptr);
   f.candidates.clear();
   f.session->RegatherOnFailedNetworks(f.now);
-  // Only eth1's port is pruned and regathered.
-  SM_ASSERT_EQ(f.removed.size(), size_t{1});
-  SM_EXPECT_TRUE(f.removed[0].address().ipaddr() == kClientIp2);
-  SM_ASSERT_TRUE(f.RunUntil([&] { return f.candidates.size() == 1; }));
-  SM_EXPECT_TRUE(f.candidates[0].address().ipaddr() == kClientIp2);
+  // Only eth1's ports (UDP and TCP) are pruned and regathered.
+  SM_ASSERT_EQ(f.removed.size(), size_t{2});
+  for (const Candidate& c : f.removed) SM_EXPECT_TRUE(c.address().ipaddr() == kClientIp2);
+  SM_ASSERT_TRUE(f.RunUntil([&] { return f.candidates.size() == 2; }));
+  for (const Candidate& c : f.candidates) SM_EXPECT_TRUE(c.address().ipaddr() == kClientIp2);
   SM_EXPECT_TRUE(std::find(f.ports.begin(), f.ports.end(), eth0) != f.ports.end());
   SM_EXPECT_TRUE(std::find(f.ports.begin(), f.ports.end(), eth1) == f.ports.end());
 }
