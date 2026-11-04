@@ -165,8 +165,9 @@ Two scenarios are outside the conditions the targets cover (up to 5% random loss
 ### On real networks
 
 - The library's TURN client against the self-hosted coturn on Amazon Lightsail (Oregon), from a home network: allocations, permissions, channel binds and relayed data both ways pass over UDP, TCP and TLS (`interop.Coturn`, #1054).
-- Calls between the web app, the iOS app's controller and the AI server through the Lightsail signaling service and TURN relay, direct and relay-only, with the conversation metrics measured at the caller: [real-network calls](docs/results/real-network-calls.md) (#1121, #1124,
-  #1126).
+- Calls between the web app, the iOS app's controller and the AI server through the Lightsail signaling service and TURN relay, direct and relay-only, with the conversation metrics measured at the caller: [real-network calls](docs/results/real-network-calls.md) (#1121, #1124, #1126).
+- **iOS app video** ([#1133](https://github.com/aray4702/streaming_media/issues/1133)): SmCall draws every received frame on the GPU (Metal, as libwebrtc's `RTCMTLVideoView`), at the received frame rate. In the simulator, from a 30 fps Chrome camera, it drew 95-100% of the decoded frames at 28-30 fps; before, a 10 Hz poll capped it at 10 fps. Verified on a real iPhone by the Owner.
+- **Barge-in on iOS** ([#1124](https://github.com/aray4702/streaming_media/issues/1124)): SmCall uses iOS voice processing (VoiceProcessingIO's echo canceller and AGC, with the software AEC3 and AGC off), as libwebrtc's iOS client does; AEC3 stays the default elsewhere. In real calls through Lightsail, barge-ins stopped: iOS chain 8 of 8, our desktop chain (AEC3) 16 of 16, Chrome with its own audio processing 11 of 12. Early in a call, AEC3 catches the same barge-ins as libwebrtc's APM on the same audio (4 of 5 at 1 s into the first reply, 5 of 5 after its transparent mode turns on). Verified on a real iPhone by the Owner.
 
 ## Building
 
