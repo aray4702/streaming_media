@@ -84,7 +84,7 @@ The library:
 
 | App | What it is |
 |---|---|
-| iOS app (SmCall, `apps/ios`) | SwiftUI calling app: calls the AI server or a web user by room code; GPU video at the received frame rate; iOS voice processing, as libwebrtc's iOS client |
+| iOS app (SmCall, `apps/ios`) | SwiftUI calling app, verified on a real iPhone: calls the AI server or a web user by room code; GPU video at the received frame rate; iOS voice processing, as libwebrtc's iOS client |
 | Web app (`apps/web`) | One page on the browser's WebRTC (Chrome), plus the signaling service (`apps/signaling`) |
 | AI server (`apps/ai_server`) | Answers `ai-` rooms with the library, a turn detector and a reply source; caller-side results in [real-network calls](docs/results/real-network-calls.md) |
 
@@ -249,7 +249,6 @@ docs/                                                    research, design, algor
 
 **Next steps, in the order the Owner chooses:**
 
-- **Check the latest iOS app on a real iPhone.** In a call from Chrome, the video should be smooth (GPU rendering, [#1133](https://github.com/aray4702/streaming_media/issues/1133)). With iOS voice processing, a barge-in over the speaker should stop the AI ([#1124](https://github.com/aray4702/streaming_media/issues/1124)). Both are checked in the simulator only.
 - **A real AI model.** The AI server answers with scripted speech-like audio behind `AiReplySource`; a model (speech in, speech out) plugs in there. Its generation time adds directly to the response delay.
 - **Protecting the Lightsail server.** Its `/turn` endpoint hands short-lived TURN credentials to anyone who asks. The options are:
   - a shared app key;
