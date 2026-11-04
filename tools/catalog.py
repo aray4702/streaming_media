@@ -2101,7 +2101,7 @@ MILESTONE3 = [
         "libwebrtc's counts (TCP ports included); `tcp_port_unittest.cc`'s cases (`unit.P2pTcpPort`, all but the IPv6 "
         "one). The ICE comparison runs both stacks with TCP candidates on and with UDP blocked "
         "(`unit.P2pIceCompare` `TcpOnlyPathConnectsAsLibwebrtc`): the same values as libwebrtc M157 on every seed. "
-        "PRs #1025, #1030 and the PR for #1151.",
+        "PRs #1025, #1030 and #1155 (#1151).",
         other_tests="`sm_ice_compare`'s ICE-TCP table (UDP blocked at one or both endpoints; #1151)."),
     _m3("1.5", "ice-controller", "The ICE controller",
         "Deciding which pair to ping, use and switch to -> libwebrtc's `BasicIceController` and the wrapping active controller",
