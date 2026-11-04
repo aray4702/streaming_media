@@ -16,6 +16,10 @@
 // AsyncStunTCPSocket), over a webrtc::Socket that is this library's emulated TCP socket (TcpSocket below), in the role
 // of the VirtualSocketServer's stream socket in libwebrtc's tests. TLS is libwebrtc's OpenSSLAdapter on its BoringSSL.
 // The TURN server's TLS listener and our side's TLS client run sm::tls (TlsSslAdapter) on the same BoringSSL.
+//
+// TCP candidates (#1151): libwebrtc's TCPPort gets its listen socket and its TCP connections from the same
+// BasicPacketSocketFactory (CreateServerTcpSocket: bind, AsyncTcpListenSocket's listen and accept, AsyncTCPSocket on
+// each accepted socket), so both stacks run RTCConfiguration's default TCP candidate policy on the emulated TCP.
 #include <execinfo.h>
 #include <unistd.h>
 
@@ -156,6 +160,11 @@ int ToErrno(int e) {
 class TcpSocket final : public w::Socket {
  public:
   TcpSocket(SimTime* sim, const Topology* topo, int i) : sim_(sim), topo_(topo), i_(i) {}
+  // An accepted connection (Accept).
+  TcpSocket(SimTime* sim, const Topology* topo, int i, std::unique_ptr<sm::p2p::Socket> socket)
+      : sim_(sim), topo_(topo), i_(i) {
+    Adopt(std::move(socket));
+  }
 
   w::SocketAddress GetLocalAddress() const override {
     return socket_ ? ToW(socket_->GetLocalAddress()) : w::SocketAddress(w::IPAddress(INADDR_ANY), 0);
@@ -181,13 +190,23 @@ class TcpSocket final : public w::Socket {
     if (timestamp) *timestamp = sim_->Now().us();
     return Result(socket_->Recv(Now(), std::span(static_cast<uint8_t*>(pv), cb)));
   }
-  int Listen(int) override {
-    error_ = EOPNOTSUPP;
-    return -1;
+  int Listen(int backlog) override {
+    if (!socket_) return NotConnected();
+    return Result(socket_->Listen(backlog));
   }
-  w::Socket* Accept(w::SocketAddress*) override {
-    error_ = EOPNOTSUPP;
-    return nullptr;
+  w::Socket* Accept(w::SocketAddress* paddr) override {
+    if (!socket_) {
+      NotConnected();
+      return nullptr;
+    }
+    sm::p2p::SocketAddress addr;
+    std::unique_ptr<sm::p2p::Socket> accepted = socket_->Accept(Now(), &addr);
+    if (!accepted) {
+      error_ = ToErrno(socket_->GetError());
+      return nullptr;
+    }
+    if (paddr) *paddr = ToW(addr);
+    return new TcpSocket(sim_, topo_, i_, std::move(accepted));
   }
   int Close() override { return socket_ ? Result(socket_->Close()) : 0; }
   int GetError() const override { return error_; }
@@ -216,7 +235,10 @@ class TcpSocket final : public w::Socket {
   sm::Timestamp Now() const { return ToSm(sim_->Now()); }
   void Make(uint32_t ip) {
     if (socket_) return;
-    socket_ = topo_->HostFor(i_, ip)->CreateStreamSocket(sm::p2p::IpFamily::kV4);
+    Adopt(topo_->HostFor(i_, ip)->CreateStreamSocket(sm::p2p::IpFamily::kV4));
+  }
+  void Adopt(std::unique_ptr<sm::p2p::Socket> socket) {
+    socket_ = std::move(socket);
     socket_->SubscribeReadEvent(this, [this](sm::p2p::Socket*, sm::Timestamp) { NotifyReadEvent(this); });
     socket_->SubscribeWriteEvent(this, [this](sm::p2p::Socket*, sm::Timestamp) { NotifyWriteEvent(this); });
     socket_->SubscribeConnectEvent(this, [this](sm::p2p::Socket*, sm::Timestamp) { NotifyConnectEvent(this); });
@@ -254,8 +276,8 @@ class TcpSocketFactory final : public w::SocketFactory {
   int i_;
 };
 
-// UDP as AsyncUDPSocket, as the comparison runs with TCP candidates off; client TCP (TURN over TCP and TLS) through
-// libwebrtc's BasicPacketSocketFactory on the emulated TCP.
+// UDP as AsyncUDPSocket; TCP (TCPPort's listen socket and connections, TURN over TCP and TLS) through libwebrtc's
+// BasicPacketSocketFactory on the emulated TCP.
 class SocketFactory final : public w::PacketSocketFactory {
  public:
   // Endpoint i's sockets live on the host of the interface they bind to (Topology::HostFor), as ours.
@@ -268,9 +290,10 @@ class SocketFactory final : public w::PacketSocketFactory {
     if (!socket) return nullptr;
     return std::make_unique<UdpSocket>(sim_, std::move(socket));
   }
-  std::unique_ptr<w::AsyncListenSocket> CreateServerTcpSocket(const w::Environment&, const w::SocketAddress&,
-                                                              uint16_t, uint16_t, int) override {
-    return nullptr;
+  std::unique_ptr<w::AsyncListenSocket> CreateServerTcpSocket(const w::Environment& env,
+                                                              const w::SocketAddress& local_address, uint16_t min_port,
+                                                              uint16_t max_port, int opts) override {
+    return tcp_.CreateServerTcpSocket(env, local_address, min_port, max_port, opts);
   }
   std::unique_ptr<w::AsyncPacketSocket> CreateClientTcpSocket(const w::Environment& env,
                                                               const w::SocketAddress& local_address,
@@ -372,9 +395,10 @@ void Stage(const char* what) {
 }
 
 // PeerConnection::InitializePortAllocator_n (pc/peer_connection.cc) with RTCConfiguration's defaults
-// (api/peer_connection_interface.h), as sm::p2p::ConfigureAsPeerConnection does on our side, and TCP candidates off
-// (ice_scenarios.h). The defaults are written out rather than read from a default-constructed RTCConfiguration, whose
-// out-of-line constructor in libwebrtc.a this build would have to match field for field:
+// (api/peer_connection_interface.h), as sm::p2p::ConfigureAsPeerConnection does on our side, TCP candidates on
+// (tcp_candidate_policy = kTcpCandidatePolicyEnabled, #1151). The defaults are written out rather than read from a
+// default-constructed RTCConfiguration, whose out-of-line constructor in libwebrtc.a this build would have to match
+// field for field:
 // disable_ipv6_on_wifi = false, candidate_network_policy = kCandidateNetworkPolicyAll,
 // disable_link_local_networks = false, type = kAll (CF_ALL), max_ipv6_networks = kDefaultMaxIPv6Networks,
 // ice_candidate_pool_size = 0, prune_turn_ports = false and turn_port_prune_policy = NO_PRUNE (GetTurnPortPrunePolicy),
@@ -388,7 +412,7 @@ void ConfigureAsPeerConnection(w::PortAllocator* allocator, const w::ServerAddre
   uint32_t flags = allocator->flags();
   flags |= w::PORTALLOCATOR_ENABLE_SHARED_SOCKET | w::PORTALLOCATOR_ENABLE_IPV6 | w::PORTALLOCATOR_ENABLE_IPV6_ON_WIFI;
   // WebRTC-IPv6Default is not disabled with the default field trials; disable_ipv6_on_wifi is false.
-  flags |= w::PORTALLOCATOR_DISABLE_TCP;  // kTcpCandidatePolicyDisabled; RTCConfiguration's default enables TCP.
+  // tcp_candidate_policy is kTcpCandidatePolicyEnabled: PORTALLOCATOR_DISABLE_TCP stays off.
   allocator->set_flags(flags);
   allocator->set_step_delay(w::kMinimumStepDelay);
   allocator->SetCandidateFilter(candidate_filter);  // ConvertIceTransportTypeToCandidateFilter(kAll or kRelay).
@@ -497,9 +521,10 @@ Result RunWebrtc(const Scenario& s, uint64_t seed) {
     return true;
   };
 
-  auto pair = [&] {
+  auto pair = [&] {  // As RunSm.
     const w::Connection* sel = ep[0].ch->selected_connection();
-    return std::string(sel->local_candidate().type_name()) + "/" + std::string(sel->remote_candidate().type_name());
+    return PairName(sel->local_candidate().type_name(), sel->remote_candidate().type_name(),
+                    sel->local_candidate().protocol());
   };
   auto relay = [&] {  // As RunSm.
     std::string out;
@@ -707,8 +732,8 @@ int main(int argc, char** argv) {
                  sizeof(w::P2PTransportChannel), sizeof(w::IceConfig), sizeof(w::BasicPortAllocator));
   }
 
-  std::printf("ICE against libwebrtc M157 (#1004): P2PTransportChannel set up as PeerConnection, UDP and STUN, "
-              "%d seeds, ours / libwebrtc\n\n",
+  std::printf("ICE against libwebrtc M157 (#1004): P2PTransportChannel set up as PeerConnection, UDP, STUN and TCP "
+              "candidates, %d seeds, ours / libwebrtc\n\n",
               seeds);
   std::printf("| scenario | connected | connect ms | pair (local/remote) | checks at connect | checks in %d s | gap |\n",
               static_cast<int>(kRunTime.us() / 1000000));
@@ -746,6 +771,46 @@ int main(int argc, char** argv) {
                 ours.checks_total, theirs.checks_total, gap.empty() ? "" : gap.c_str() + 1);
   }
   std::printf("\n%d of %zu scenarios differ.\n", gaps, Scenarios().size());
+
+  // ICE-TCP (#1151): UDP blocked, so only the TCP pairs connect.
+  std::printf("\nICE-TCP: UDP blocked to and from the blockudp endpoints (BLOCK_UDP), %d s runs. Ours / libwebrtc\n\n",
+              static_cast<int>(kRunTime.us() / 1000000));
+  std::printf("| scenario | connected | connect ms | pair (local/remote) | checks at connect | checks in %d s | gap |\n",
+              static_cast<int>(kRunTime.us() / 1000000));
+  std::printf("|---|---|---|---|---|---|---|\n");
+  int tcp_gaps = 0;
+  for (const Scenario& s : TcpScenarios()) {
+    Summary ours, theirs;
+    for (int seed = 1; seed <= seeds; ++seed) {
+      if (verbose) std::fprintf(stderr, "%s seed %d: ours...\n", s.name.c_str(), seed);
+      const Result a = RunSm(s, seed);
+      if (verbose) std::fprintf(stderr, "%s seed %d: libwebrtc...\n", s.name.c_str(), seed);
+      const Result b = RunWebrtc(s, seed);
+      ours.Add(a);
+      theirs.Add(b);
+      if (verbose) {
+        std::fprintf(stderr, "%s seed %d: ours %d %.1f ms %s %d/%d; libwebrtc %d %.1f ms %s %d/%d\n", s.name.c_str(),
+                     seed, a.connected, a.connect_ms, a.pair.c_str(), a.checks_at_connect, a.checks_total,
+                     b.connected, b.connect_ms, b.pair.c_str(), b.checks_at_connect, b.checks_total);
+      }
+    }
+    ours.Finish();
+    theirs.Finish();
+    std::string gap;
+    if (ours.connected != theirs.connected) gap += " connected";
+    if (ours.connected && theirs.connected && Differs(ours.connect_ms, theirs.connect_ms, 10)) gap += " connect_ms";
+    if (ours.Pairs() != theirs.Pairs()) gap += " pair";
+    if (ours.connected && theirs.connected && Differs(ours.checks_at_connect, theirs.checks_at_connect, 1)) {
+      gap += " checks_at_connect";
+    }
+    if (Differs(ours.checks_total, theirs.checks_total, 1)) gap += " checks_total";
+    if (!gap.empty()) ++tcp_gaps;
+    std::printf("| %s | %d/%d / %d/%d | %s / %s | %s / %s | %.1f / %.1f | %.1f / %.1f | %s |\n", s.name.c_str(),
+                ours.connected, ours.runs, theirs.connected, theirs.runs, ours.Ms().c_str(), theirs.Ms().c_str(),
+                ours.Pairs().c_str(), theirs.Pairs().c_str(), ours.checks_at_connect, theirs.checks_at_connect,
+                ours.checks_total, theirs.checks_total, gap.empty() ? "" : gap.c_str() + 1);
+  }
+  std::printf("\n%d of %zu ICE-TCP scenarios differ.\n", tcp_gaps, TcpScenarios().size());
 
   // Network changes (#1004 part 2).
   std::printf("\nRecovery after a network change: endpoint changeN's interface goes away and another appears %d s "
@@ -843,6 +908,5 @@ int main(int argc, char** argv) {
   };
   relay_table(RelayScenarios(), "TURN over UDP");
   relay_table(StreamRelayScenarios(), "TURN over TCP and TLS; turn counted as the server receives them");
-  std::printf("Not run yet: TCP candidates.\n");
   return 0;
 }

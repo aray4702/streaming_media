@@ -34,9 +34,9 @@ SM_TEST(P2pIceCompareTls, TlsRelayMatchesLibwebrtc) {
   sm::p2p::testing::InstallTestCryptoWithUniqueIds();
   InstallTls();
   const ice_compare_relay::Row kLibwebrtc[] = {
-      {"port-sym-turntls", 300, 14.0, 70.0, {4.0, 7.0, 0, 0}, "srflx/relay", "-/tls"},
-      {"sym-port-turntls", 300, 14.0, 65.0, {4.0, 7.0, 0, 0}, "prflx/relay", "-/tls"},
-      {"sym-sym-turntls", 300, 14.0, 65.0, {4.0, 8.0, 0, 0}, "prflx/relay", "-/tls"},
+      {"port-sym-turntls", 300, 14.0, 418.0, {4.0, 7.0, 0, 0}, "srflx/relay", "-/tls"},
+      {"sym-port-turntls", 300, 14.0, 418.0, {4.0, 7.0, 0, 0}, "prflx/relay", "-/tls"},
+      {"sym-sym-turntls", 300, 14.0, 418.0, {4.0, 8.0, 0, 0}, "prflx/relay", "-/tls"},
       {"open-open-turntls-relayonly", 250, 4.0, 16.0, {4.0, 2.0, 0, 0}, "relay/relay", "tls/tls"},
   };
   const std::vector<sm::ice_compare::Scenario> scenarios = sm::ice_compare::StreamRelayScenarios();

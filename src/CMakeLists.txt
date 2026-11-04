@@ -83,6 +83,7 @@ sm_add_library(p2p DEPS sm::core SOURCES
   p2p/port.cc
   p2p/stun_port.cc
   p2p/turn_port.cc
+  p2p/tcp_port.cc
   p2p/connection.cc
   p2p/network_manager.cc
   p2p/port_allocator.cc

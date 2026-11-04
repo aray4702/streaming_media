@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <set>
 
+#include "sm/p2p/tcp_port.h"
 #include "sm/p2p/turn_port.h"
 
 namespace sm::p2p {
@@ -879,8 +880,14 @@ void AllocationSequence::CreateUDPPorts() {
 }
 
 void AllocationSequence::CreateTCPPorts() {
-  if (IsFlagSet(PORTALLOCATOR_DISABLE_TCP)) return;
-  // TCPPort comes with C4 (TCP candidates); libwebrtc makes one here.
+  if (IsFlagSet(PORTALLOCATOR_DISABLE_TCP)) return;  // "TCP ports disabled, skipping."
+  const BasicPortAllocator& allocator = *session_->allocator();
+  std::unique_ptr<Port> port =
+      TCPPort::Create(session_->now_, PortArgs(), static_cast<uint16_t>(allocator.min_port()),
+                      static_cast<uint16_t>(allocator.max_port()), allocator.allow_tcp_listen());
+  // Since TCPPort is not created using shared socket, `port` will not be
+  // added to the dequeue.
+  if (port) session_->AddAllocatedPort(std::move(port), this);
 }
 
 void AllocationSequence::CreateStunPorts() {

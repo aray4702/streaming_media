@@ -10,7 +10,9 @@
 // delay apart (1 s by default): UDP (a UDPPort for the host candidate, and a
 // StunPort for the server-reflexive ones, or the UDPPort itself gathers both
 // on a shared socket with PORTALLOCATOR_ENABLE_SHARED_SOCKET), then relay
-// (TURN), then TCP, and completes. IPv6 networks are used only with
+// (TURN), then TCP (a TCPPort, sm/p2p/tcp_port.h, #1151: a passive host
+// candidate on a listen socket, or an active one when allow_tcp_listen is
+// off), and completes. IPv6 networks are used only with
 // PORTALLOCATOR_ENABLE_IPV6 (and IPv6 Wi-Fi only with ..._IPV6_ON_WIFI).
 // Phases another sequence already covers on the same network and best IP are
 // skipped. Each port's candidates are signalled through the candidate filter
@@ -32,8 +34,7 @@
 // call that destroyed it.
 //
 // Differences from libwebrtc:
-// - No TCP ports yet (C4 part 2): the TCP phase makes nothing. Relay ports
-//   come from the RelayPortFactoryInterface the caller gives, or by default a
+// - Relay ports come from the RelayPortFactoryInterface the caller gives, or by default a
 //   TurnPortFactory (sm/p2p/turn_port.h, #1031), as libwebrtc; TURN to the
 //   server is UDP only until C4 part 4.
 //   PortConfiguration does not add DTLS TURN servers as STUN servers
