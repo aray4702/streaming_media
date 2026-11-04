@@ -16,6 +16,7 @@ DelayBasedBwe::Config DelayCfg(const GccConfig& g) {
 ProbeControllerV2Config ProbeCfg2(const GccConfig& g) {
   ProbeControllerV2Config c;
   c.events = g.events;
+  c.recovery_probing = g.recovery_probing;
   return c;
 }
 // GoogCcNetworkController GetBandwidthLimitedCause.
@@ -46,6 +47,11 @@ constexpr double kProbeDropThroughputFraction = 0.85;
 // (goog_cc_network_control.cc).
 constexpr double kDefaultPaceMultiplier = 2.5;
 constexpr double kDefaultPaceMultiplierWithSendSideBwe = 1.1;
+// Issue #14: how far above its minimum the feedback RTT may be for a recovery probe.
+constexpr TimeDelta kRecoveryRttMargin = TimeDelta::Millis(50);
+// Issue #14: the highest loss fraction (of 256, the last receiver report's) for a recovery probe: 2%, the
+// low-loss threshold of libwebrtc's classic loss-based estimate (kDefaultLowLossThreshold).
+constexpr uint8_t kRecoveryMaxFractionLoss = 5;
 }  // namespace
 
 GccConfig ConvertConstraints(GccConfig cfg) {
@@ -212,6 +218,12 @@ NetworkControlUpdate GccController::OnTransportFeedback(const TransportFeedback&
   for (const auto& r : results) {
     if (r.received()) last_feedback_max_rtt_ = std::max(last_feedback_max_rtt_.value_or(TimeDelta::Zero()), now - r.send_time);
   }
+  if (last_feedback_max_rtt_ && cfg_.recovery_probing) {
+    // Issue #14: recovery probes only on a clear path: the feedback RTT near its minimum and little loss.
+    min_feedback_rtt_ = std::min(min_feedback_rtt_, *last_feedback_max_rtt_);
+    probe2_.SetRecoveryPathClear(*last_feedback_max_rtt_ <= min_feedback_rtt_ + kRecoveryRttMargin &&
+                                 ssbe_.fraction_loss() <= kRecoveryMaxFractionLoss);
+  }
   // GoogCcNetworkController::OnTransportPacketsFeedback.
   first_feedback_received_ = true;
   {
@@ -238,6 +250,7 @@ NetworkControlUpdate GccController::OnTransportFeedback(const TransportFeedback&
   acked_v2_.OnPacketResults(SortedByReceiveTime(results));
   std::optional<DataRate> acked = acked_v2_.bitrate();
   ssbe_.SetAcknowledgedRate(acked, now);
+  if (acked && cfg_.recovery_probing) probe2_.OnAcknowledgedRate(*acked, now);
   for (const auto& r : SortedByReceiveTime(results)) {
     if (r.probe_cluster >= 0) probe_est_.OnPacketResult(r);
   }
@@ -307,6 +320,7 @@ NetworkControlUpdate GccController::ResetEstimate(DataRate rate, Timestamp now) 
   // RouteChange: a new probe estimator, and the probe controller starts over.
   probe_est_ = ProbeBitrateEstimator();
   probe2_.Reset(now);
+  min_feedback_rtt_ = TimeDelta::PlusInfinity();  // Issue #14: a new path has its own RTT.
   if (cfg_.enable_probing) probes = probe2_.SetBitrates(cfg_.min_rate, target_, cfg_.max_rate, now);
   SM_EVENT(cfg_.events, now, "gcc", "reset", rate.bps(), 0);
   return MakeUpdate(now, RegisterProbes(std::move(probes)));

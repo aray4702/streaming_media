@@ -657,6 +657,162 @@ SM_TEST(ProbeControllerV2, ProbesAreCappedAtTwiceMaxAllocated) {
   SM_EXPECT_EQ(probes[1].rate.bps(), 1000);
 }
 
+// --- Recovery probing (issue #14, beyond libwebrtc) ------------------------------------
+
+namespace {
+constexpr TimeDelta kRecoveryInterval = TimeDelta::Seconds(5);
+
+// Started with recovery probing on, exponential probing timed out, the link delivering
+// 5000 bps (the acknowledged rate) and then the estimate held at 1000 bps (a fifth) from
+// `*low`, on a path with no standing queue.
+ProbeControllerV2 HeldLow(Timestamp* low, bool recovery = true, DataRate acked = Bps(5000)) {
+  ProbeControllerV2Config cfg;
+  cfg.recovery_probing = recovery;
+  ProbeControllerV2 c(cfg);
+  c.OnNetworkAvailability(true, kT0);
+  c.SetBitrates(kMinBitrate, kStartBitrate, kMaxBitrate, kT0);
+  c.SetRecoveryPathClear(true);
+  Timestamp now = kT0 + kExponentialProbingTimeout;
+  c.SetEstimatedBitrate(Bps(5000), kDelay, now);
+  c.OnAcknowledgedRate(acked, now);
+  c.Process(now);
+  now += TimeDelta::Seconds(1);
+  c.SetEstimatedBitrate(Bps(1000), kDelay, now);
+  *low = now;
+  return c;
+}
+}  // namespace
+
+SM_TEST(ProbeControllerV2, RecoveryProbeAfterAHoldBelowHalfTheDeliveredRate) {
+  Timestamp low;
+  ProbeControllerV2 c = HeldLow(&low);
+  // Not before the estimate has been low for a whole interval (the queue drains first).
+  SM_EXPECT_TRUE(c.Process(low + kRecoveryInterval - TimeDelta::Millis(1)).empty());
+  auto probes = c.Process(low + kRecoveryInterval);
+  SM_ASSERT_EQ(probes.size(), 1u);
+  SM_EXPECT_EQ(probes[0].rate.bps(), 2000);  // 2x the estimate, no more.
+  // A recovery cluster: marked, and the usual 5 packets and 15 ms of the probe rate.
+  SM_EXPECT_TRUE(probes[0].recovery);
+  SM_EXPECT_EQ(probes[0].min_bytes.bytes(), 4);  // 2000 bps x 15 ms = 3.75 bytes.
+  SM_EXPECT_EQ(c.state(), ProbeControllerV2::State::kWaitingForProbingResult);
+  // A result above 0.7 of the probe rate probes further at 2x the result, as exponential
+  // probing does, and the further probe is a recovery probe too.
+  probes = c.SetEstimatedBitrate(Bps(1900), kDelay, low + kRecoveryInterval + TimeDelta::Millis(200));
+  SM_ASSERT_EQ(probes.size(), 1u);
+  SM_EXPECT_EQ(probes[0].rate.bps(), 3800);
+  SM_EXPECT_TRUE(probes[0].recovery);
+}
+
+SM_TEST(ProbeControllerV2, RecoveryProbeNeverAboveTheDeliveredRate) {
+  Timestamp low;
+  ProbeControllerV2 c = HeldLow(&low);
+  Timestamp now = low + TimeDelta::Seconds(1);
+  c.SetEstimatedBitrate(Bps(2400), kDelay, now);  // Still below half of 5000.
+  auto probes = c.Process(low + kRecoveryInterval);
+  SM_ASSERT_EQ(probes.size(), 1u);
+  SM_EXPECT_EQ(probes[0].rate.bps(), 4800);
+  // A failed probe: the estimate stays low, and the next probe waits a whole interval.
+  now = low + kRecoveryInterval + TimeDelta::Seconds(1);
+  c.SetEstimatedBitrate(Bps(1200), kDelay, now);
+  SM_EXPECT_TRUE(c.Process(now).empty());
+  SM_EXPECT_TRUE(c.Process(low + 2 * kRecoveryInterval - TimeDelta::Millis(1)).empty());
+  probes = c.Process(low + 2 * kRecoveryInterval);
+  SM_ASSERT_EQ(probes.size(), 1u);
+  SM_EXPECT_EQ(probes[0].rate.bps(), 2400);
+}
+
+SM_TEST(ProbeControllerV2, NoRecoveryProbeUnlessEnabledAsLibwebrtc) {
+  Timestamp low;
+  ProbeControllerV2 c = HeldLow(&low, /*recovery=*/false);
+  for (int s = 0; s <= 30; ++s) SM_EXPECT_TRUE(c.Process(low + TimeDelta::Seconds(s)).empty());
+}
+
+SM_TEST(ProbeControllerV2, RecoveryLevelIsTheDeliveredRateNotTheEstimate) {
+  // The estimate reached 5000 bps but the link delivered only 1500: 1000 is not below half of it.
+  Timestamp low;
+  ProbeControllerV2 c = HeldLow(&low, /*recovery=*/true, /*acked=*/Bps(1500));
+  for (int s = 0; s <= 30; ++s) SM_EXPECT_TRUE(c.Process(low + TimeDelta::Seconds(s)).empty());
+}
+
+SM_TEST(ProbeControllerV2, NoRecoveryProbeWhileDelayLossOrRttLimited) {
+  for (auto cause : {BandwidthLimitedCause::kDelayBasedLimitedDelayIncreased, BandwidthLimitedCause::kLossLimitedBwe,
+                     BandwidthLimitedCause::kLossLimitedBweIncreasing, BandwidthLimitedCause::kRttBasedBackOffHighRtt}) {
+    Timestamp low;
+    ProbeControllerV2 c = HeldLow(&low);
+    c.SetEstimatedBitrate(Bps(1000), cause, low + TimeDelta::Seconds(1));
+    SM_EXPECT_TRUE(c.Process(low + kRecoveryInterval).empty());
+    // Back to a delay-based limit with the detector normal: the probe goes out.
+    c.SetEstimatedBitrate(Bps(1000), kDelay, low + kRecoveryInterval);
+    SM_EXPECT_EQ(c.Process(low + kRecoveryInterval).size(), 1u);
+  }
+}
+
+SM_TEST(ProbeControllerV2, NoRecoveryProbeWhileAQueueStands) {
+  Timestamp low;
+  ProbeControllerV2 c = HeldLow(&low);
+  c.SetRecoveryPathClear(false);  // The feedback RTT is well above its minimum.
+  SM_EXPECT_TRUE(c.Process(low + kRecoveryInterval).empty());
+  c.SetRecoveryPathClear(true);
+  SM_EXPECT_EQ(c.Process(low + kRecoveryInterval + TimeDelta::Millis(25)).size(), 1u);
+}
+
+SM_TEST(ProbeControllerV2, NoRecoveryProbeWhenApplicationLimited) {
+  Timestamp low;
+  ProbeControllerV2 c = HeldLow(&low);
+  c.SetAlrStartTime(low);  // The sender does not use the estimate it has.
+  SM_EXPECT_TRUE(c.Process(low + kRecoveryInterval).empty());
+  c.SetAlrStartTime(std::nullopt);
+  SM_EXPECT_EQ(c.Process(low + kRecoveryInterval).size(), 1u);
+}
+
+SM_TEST(ProbeControllerV2, NoRecoveryProbeOnceTheDeliveredRateIsOld) {
+  Timestamp low;
+  ProbeControllerV2 c = HeldLow(&low);
+  SM_EXPECT_EQ(c.Process(low + kRecoveryInterval).size(), 1u);
+  // The 5000 bps level was set 1 s before `low`; 30 s after it, it is forgotten.
+  Timestamp now = low + TimeDelta::Seconds(29) + TimeDelta::Millis(1);
+  SM_EXPECT_TRUE(c.Process(now).empty());
+  c.OnAcknowledgedRate(Bps(1000), now);
+  SM_EXPECT_TRUE(c.Process(now + 2 * kRecoveryInterval).empty());
+}
+
+SM_TEST(ProbeBitrateEstimatorV2, RecoveryClusterCountsOnlyWhenTheLinkKeptUp) {
+  const Timestamp ref = Timestamp::Seconds(1000);
+  auto run = [&](bool recovery, int64_t arrival_spacing_ms) {
+    ProbeBitrateEstimator est;
+    ProbeCluster c;
+    c.id = 1;
+    c.min_probes = 5;
+    c.min_bytes = DataSize::Bytes(4000);
+    c.recovery = recovery;
+    est.SetClusterInfo(c);
+    std::optional<DataRate> measured;
+    for (int i = 0; i < 5; ++i) {
+      PacketResult r;
+      r.send_time = ref + TimeDelta::Millis(10 * i);
+      r.receive_time = ref + TimeDelta::Millis(10 + arrival_spacing_ms * i);
+      r.size = DataSize::Bytes(1000);
+      r.probe_cluster = 1;
+      if (auto m = est.OnPacketResult(r)) measured = m;
+    }
+    return measured;
+  };
+  // Saturated (received at half the send rate): libwebrtc's estimator reports 0.95 x the
+  // receive rate; a recovery cluster reports nothing, so the estimate stays.
+  auto plain = run(false, 20);
+  SM_ASSERT_TRUE(plain.has_value());
+  SM_EXPECT_NEAR(static_cast<double>(plain->bps()), 0.95 * 400000, 10);
+  SM_EXPECT_FALSE(run(true, 20).has_value());
+  // Unsaturated: the same result either way.
+  auto kept_up = run(true, 10);
+  SM_ASSERT_TRUE(kept_up.has_value());
+  SM_EXPECT_NEAR(static_cast<double>(kept_up->bps()), 800000, 10);
+}
+
+SM_TEST(GccController, RecoveryProbingSwitch) {
+  SM_EXPECT_TRUE(GccConfig{}.recovery_probing);  // On by default (issue #14); false restores libwebrtc.
+}
+
 // --- ProbeBitrateEstimator (libwebrtc mode) ---------------------------------------------
 
 namespace {

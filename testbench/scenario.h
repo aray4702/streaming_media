@@ -174,6 +174,10 @@ struct Scenario {
   // libwebrtc sends on the video stream's RTX SSRC and flushes with it
   // (cc::PacingControllerConfig::keyframe_flush_padding; issue #437). On by default, as libwebrtc.
   bool keyframe_flush_padding = true;
+  // `recovery_probing on|off`: GoogCC's probe controller sends a recovery probe after a long hold
+  // well below the rate the link delivered (cc::GccConfig::recovery_probing; issue #14, beyond
+  // libwebrtc). On by default; `off` is libwebrtc's behaviour.
+  bool recovery_probing = true;
   // `h264_missing_packets on|off`: the receiver's packet buffer holds a complete H.264 delta frame
   // while a sequence number before it is missing, as libwebrtc's PacketBuffer `missing_packets_`
   // (timing::PacketBufferConfig::missing_packets; issue #453). On by default, as libwebrtc.

@@ -83,6 +83,9 @@ struct GccConfig {
   // StreamsConfig::requests_alr_probing, which a screen-share stream
   // sets; periodic ALR probes are off otherwise.
   bool periodic_alr_probing = false;
+  // Recovery probing after a long hold at a low rate (issue #14, beyond libwebrtc:
+  // ProbeControllerV2Config::recovery_probing). False restores libwebrtc.
+  bool recovery_probing = true;
   EventSink* events = nullptr;
   // When set, rows are appended as libwebrtc's RtcEventLog would log them
   // (delay-based and loss-based updates when they change) and the target when it
@@ -221,6 +224,7 @@ class GccController : public MetricsSource {
   DataRate target_;
   DataRate last_reported_;
   std::optional<TimeDelta> last_feedback_max_rtt_;
+  TimeDelta min_feedback_rtt_ = TimeDelta::PlusInfinity();  // Issue #14: recovery probing.
   bool last_feedback_delay_updated_ = false;
   bool last_feedback_used_ = false;
   TimeDelta last_rtt_ = TimeDelta::Zero();

@@ -985,7 +985,23 @@ ALGORITHMS = [
                       "first probe goes out at 3990 ms, with the first audio packet of 200 RTP bytes, and its "
                       "estimate stays at 300 kbps, while the library probed at 104 kbps at 10 ms and fell to 75-100 "
                       "kbps. Over seeds 1-10 the target goes 140 -> 209 kbps (libwebrtc 212), padding 30 -> 62 kbps "
-                      "(61) and the queue maximum 6 -> 58 ms (45); `issue_62_audio_only_probing` locks it in."),
+                      "(61) and the queue maximum 6 -> 58 ms (45); `issue_62_audio_only_probing` locks it in. "
+                      "Deviation (Owner, #14, stage:later; docs/fixes/14-capacity-recovery.md): recovery probing. "
+                      "libwebrtc probes after a drop only within 5 s of it and in or just after an ALR "
+                      "(`RequestProbe`), so after a long hold at a low rate its target climbs back additively from a "
+                      "stale link-capacity estimate: on `capacity_drop` both stacks take about 15 s to settle after the "
+                      "capacity returns. When the estimate has been below half the highest acknowledged rate of the "
+                      "last 30 s for 5 s, the limit is the delay-based estimate with the detector normal, the sender is "
+                      "not application-limited and the path is clear (the feedback RTT within 50 ms of its minimum, the "
+                      "reported loss at most 2%), `ProbeControllerV2::Process` "
+                      "sends a probe at 2x the estimate (never above that rate), at most every 5 s, and probes further "
+                      "at 2x a result above 0.7 of the probe rate. A recovery cluster's result counts only if the link "
+                      "kept up (receive rate >= 0.9 x send rate), so probes into a full link (the capacity still low, or "
+                      "a competing flow) leave the estimate alone. `GccConfig::recovery_probing` (on by default; false, "
+                      "or the test bench's `recovery_probing off`, restores libwebrtc). Seeds 1-10: "
+                      "`capacity_drop` settles in 1.3 s after the capacity returns (was 14.9 s; libwebrtc 14.9 s), with "
+                      "the queue and freezes unchanged and loss 1.8 -> 1.4%; the whole suite on 10 seeds has no cell behind "
+                      "libwebrtc. `issue_14_capacity_recovery` locks it in."),
     dict(id="5.7", slug="bitrate-allocator", title="Bitrate allocation among streams",
          problems=["Sharing bandwidth among streams -> bitrate allocator, with per-stream priority and min/max bitrate"],
          headers=["cc/bitrate_allocator.h", "cc/bitrate_allocator_v2.h"], unit=["BitrateAllocator", "BitrateAllocatorV2"], e2e=["E2E_BitrateAllocator"],

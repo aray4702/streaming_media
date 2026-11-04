@@ -985,6 +985,7 @@ rtp::SessionConfig MakeSessionConfig(const Scenario& s, EventLog& events, uint32
   c.send_side.control_handler = s.control_handler;
   c.send_side.expected_packet_overhead = s.expected_packet_overhead;  // Issue #577.
   c.send_side.pacer.controller.keyframe_flush_padding = s.keyframe_flush_padding;
+  c.send_side.gcc.recovery_probing = s.recovery_probing;  // Issue #14.
   // RtpVideoSender::OnBitrateUpdated computes the overhead rate for rtp_config_.max_packet_size, the same
   // limit its packetizer uses (libwebrtc's default 1460, rtp_rtcp_impl2.cc:149):
   // the bench's packets are that size, so the overhead is too (issue #151): the packetizer's

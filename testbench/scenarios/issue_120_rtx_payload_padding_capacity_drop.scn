@@ -3,6 +3,9 @@ describe Capacity drops from 2.5 Mbps to 500 kbps at 10 s and recovers at 25 s, 
 # libwebrtc (CI compare-webrtc, probe_v2_capacity_drop, 10 seeds): net.padding_kbps 0.3, net.rtx_kbps 29.6, freezes 2.2 (2538 ms).
 # Before #120 (main, seeds 1-5): padding 0.55-1.99 kbps of empty 224 B placeholders, RTX 29-41 kbps; after: padding 0.24-0.79, RTX 29-41.
 # Acceptance (issue #120): net.padding_kbps and net.rtx_kbps within the parity band of libwebrtc's.
+# libwebrtc's probing only (#14): recovery probing, which goes beyond libwebrtc, adds its probe clusters' padding
+# (about 1 kbps here); this scenario keeps measuring the RTX payload padding against libwebrtc's.
+recovery_probing off
 duration 40s
 at 0s  capacity=2500kbps delay=30ms queue=400ms
 at 10s capacity=500kbps

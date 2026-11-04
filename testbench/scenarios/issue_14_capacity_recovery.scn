@@ -1,0 +1,20 @@
+name issue_14_capacity_recovery
+describe Capacity drops from 2.5 Mbps to 500 kbps at 10 s and returns at 25 s: the target settles within 10 s of the return
+# #14 (stage:later, beyond libwebrtc M157, which takes as long as main did: cc.max_settle_ms 14870 on seeds 1-10 of
+# capacity_drop's link). Before the fix (main dd070af), seeds 1-10: max_settle 13800 15000 15000 15000 15000 15000 15000
+# 14900 15000 15000 (mean 14870, unsettled on 8 of 10). After (recovery probing): 1200 1400 1300 1400 1600 1200 1500 1200
+# 1200 1100 (mean 1310), with cc.queue_p95_ms, video.freeze_total_ms unchanged and net.loss_pct 1.8 -> 1.4.
+# Target (issue #14): cc.max_settle_ms < 5000 (reached here; the Owner's gate is the 10 s rule of program.md 6.3).
+seed 1
+duration 40s
+at 0s  capacity=2500kbps delay=30ms queue=400ms
+at 10s capacity=500kbps
+at 25s capacity=2500kbps
+expect cc.max_settle_ms < 10000
+expect cc.unsettled == 0
+# Safety (Owner, #14): the probes must not make the queue, loss or freezes worse than on main (seeds 1-10 at most 306 ms, 1.98%, 3325 ms).
+expect cc.queue_p95_ms < 320
+expect net.loss_pct < 1.7
+expect video.freeze_total_ms < 3500
+# The probes' extra traffic (Owner, #14): padding 0.3-0.97 kbps on main, 1.0-1.9 kbps with recovery probing (seeds 1-10).
+expect net.padding_kbps < 2.5
