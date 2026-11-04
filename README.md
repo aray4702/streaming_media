@@ -68,7 +68,7 @@ The library:
 
 | Section | Algorithms |
 |---|---|
-| 1. Connectivity | STUN, ICE agent with controller and ICE-lite, TURN over UDP, TCP and TLS, SDP offer/answer and an endpoint that sets up ICE, DTLS-SRTP and RTP from SDP (#1062-#1064); small-group mesh of 3-4 (#1072) |
+| 1. Connectivity | STUN, ICE agent with controller and ICE-lite, TURN over UDP, TCP and TLS, ICE-TCP host candidates (#1155), remote mDNS (`.local`) candidates resolved as libwebrtc does (#1156), SDP offer/answer and an endpoint that sets up ICE, DTLS-SRTP and RTP from SDP (#1062-#1064); small-group mesh of 3-4 (#1072) |
 | 2. Security | TLS and DTLS 1.2/1.3 on both backends (BoringSSL, mbedTLS), DTLS-SRTP, SRTP (libsrtp) |
 | 3. Packet loss | NACK/RTX, XOR FEC, RED, PLC, keyframe requests (PLI/FIR/LNTF), NACK/FEC protection selection |
 | 4. Jitter and timing | packet buffer, RTCP stats/RTT, delay manager, WSOLA time stretching, NetEq-lite audio jitter buffer, video jitter + render timing |
@@ -89,7 +89,7 @@ The library:
 | AI server (`apps/ai_server`) | Answers `ai-` rooms with the library, a turn detector and a reply source; caller-side results in [real-network calls](docs/results/real-network-calls.md) |
 
 
-The native build passes 590 of 590 ctest tests on macOS arm64 (main 8677716f plus #1112, 2026-11-02; `interop.Coturn` skips without a local coturn), and the iOS simulator build passes its 238 unit tests (Xcode 27.2, the CI job's flags). The older full runs on WebAssembly (Node), ASan+UBSan and `-fno-exceptions -fno-rtti` cover sections 3-8 only ([details](docs/results/README.md)). Android and embedded Linux ARM are cross-built in CI.
+The native build passes 603 of 603 ctest tests on macOS arm64 (main with #1156, 2026-11-04; `interop.Coturn` skips without a local coturn), and the iOS simulator build passes its 238 unit tests (Xcode 27.2, the CI job's flags). The older full runs on WebAssembly (Node), ASan+UBSan and `-fno-exceptions -fno-rtti` cover sections 3-8 only ([details](docs/results/README.md)). Android and embedded Linux ARM are cross-built in CI.
 
 **Stage 1 (parity with libwebrtc) has no open gaps** on main: see [Benchmarks](#benchmarks).
 
@@ -99,21 +99,23 @@ All numbers below come from the [test bench](testbench/README.md): a whole call 
 
 ### Classic WebRTC features vs libwebrtc
 
-The `compare-webrtc` CI job runs every one-way scenario through this library and through libwebrtc M157 over the same emulated links, 10 seeds each, and publishes the [parity report](https://raw.githubusercontent.com/aray4702/streaming_media/parity-data/parity.md) and the [side-by-side table](https://raw.githubusercontent.com/aray4702/streaming_media/parity-data/compare-webrtc.txt). On main 85708f32 (2026-11-03):
+The `compare-webrtc` CI job runs every one-way scenario through this library and through libwebrtc M157 over the same emulated links, 10 seeds each, and publishes the [parity report](https://raw.githubusercontent.com/aray4702/streaming_media/parity-data/parity.md) and the [side-by-side table](https://raw.githubusercontent.com/aray4702/streaming_media/parity-data/compare-webrtc.txt). On main 18404b4f (2026-11-04):
 
-- **165 scenarios: 0 behind libwebrtc, 28 cells ahead of it.** A cell counts when the means differ by more than the parity band, which is the larger of the tie floor, 5% and one standard deviation of libwebrtc's seeds.
-- **The 28 ahead cells** are in 7 scenarios with heavy loss, a policed link, shallow-buffer drops, or a long outage of the feedback path. Since #795, when the link shows no sign of congestion the sender drains its queue within 150 ms instead of holding up to 2 s, and after a feedback gap the encoder ramps back up instead of jumping. Setting `uncongested_queue_time_limit` to 0 restores libwebrtc's behaviour.
+- **166 scenarios: 0 behind libwebrtc, 69 cells ahead of it.** A cell counts when the means differ by more than the parity band, which is the larger of the tie floor, 5% and one standard deviation of libwebrtc's seeds.
+- **The 69 ahead cells** are in 21 scenarios. Two changes beyond libwebrtc account for them, each with a switch that restores libwebrtc's behaviour:
+  - **#795:** when the link shows no sign of congestion, the sender drains its queue within 150 ms instead of holding up to 2 s, and after a feedback gap the encoder ramps back up instead of jumping (`uncongested_queue_time_limit`).
+  - **#14:** a recovery probe brings the rate back after the link capacity returns, in about 1.3 s instead of about 15 s (`GccConfig::recovery_probing`).
 
-  | Scenario | Audio mouth-to-ear p95 | Video end-to-end p95 | A/V offset p95 |
+  | Scenario | Audio mouth-to-ear p95 | Video end-to-end p95 | Other |
   |---|---|---|---|
-  | 20% random loss (`issue_536_loss20_av_sync`) | 240 / 728 ms | 512 / 1,776 ms | 355 / 1,173 ms |
-  | 45 s feedback outage (`issue_536_reverse_outage_45s`) | 312 / 2,070 ms | 324 / 2,307 ms | 147 / 1,595 ms |
-  | Policed link (`issue_12_lossbwe_policer`) | 343 / 1,047 ms | 2,051 / 4,019 ms | 1,887 / 3,445 ms |
-  | Shallow-buffer drops (`issue_21_shallow_drop_repair`) | 483 / 763 ms | | |
+  | 20% random loss (`issue_536_loss20_av_sync`) | 240 / 728 ms | 512 / 1,776 ms | A/V offset 355 / 1,173 ms |
+  | 45 s feedback outage (`issue_536_reverse_outage_45s`) | 312 / 2,070 ms | 324 / 2,307 ms | A/V offset 147 / 1,595 ms |
+  | Policed link (`issue_12_lossbwe_policer`) | 343 / 1,047 ms | 2,051 / 4,019 ms | A/V offset 1,887 / 3,445 ms |
+  | Capacity drops and returns (`capacity_drop`) | 824 / 824 ms | 545 / 540 ms | settles in 1,340 / 14,630 ms; link use 82.8% / 54.8% |
 
   (this library / libwebrtc)
-- **The other pairs:** of the 3,586 metric/scenario pairs, 3,476 tie within the tie floor. 68 lean towards this library and 42 towards libwebrtc, all inside the band. In the first comparison (2026-10-14), libwebrtc was better on 88 pairs and this library on 51.
-- **Not compared:** `sm_compare` runs one-way calls, so it skips the 20 two-way (user and AI) scenarios, the 3 mesh scenarios, and 7 that libwebrtc can't run the same way.
+- **The other pairs:** of the 3,609 metric/scenario pairs, 3,456 tie within the tie floor. 110 lean towards this library and 43 towards libwebrtc, all inside the band. In the first comparison (2026-10-14), libwebrtc was better on 88 pairs and this library on 51.
+- **Not compared:** `sm_compare` runs one-way calls, so it skips the 20 two-way (user and AI) scenarios, the 3 mesh scenarios, and 8 that libwebrtc can't run the same way. The ICE comparison (`sm_ice_compare`) runs separately, including ICE-TCP and mDNS paths, and matches libwebrtc on every seed.
 
 A sample of the table (mean of 10 seeds, this library / libwebrtc):
 
@@ -123,9 +125,9 @@ A sample of the table (mean of 10 seeds, this library / libwebrtc):
 | random_loss_5pct: 2 Mbps, 40 ms | 0.3% / 0.3% | 236 / 228 ms | 415 / 479 ms | 253 / 253 ms | 72.2% / 72.2% | 29.9 / 30.2 ms |
 | burst_loss: 3% in bursts of ~6 | 1.4% / 1.4% | 299 / 288 ms | 413 / 419 ms | 284 / 276 ms | 75.9% / 76.1% | 46.0 / 46.6 ms |
 | high_jitter: 40 ms jitter, reordering | 0.2% / 0.2% | 247 / 249 ms | 0 / 0 ms | 181 / 181 ms | 22.9% / 22.9% | 4.7 / 4.7 ms |
-| capacity_drop: 2.5 Mbps to 500 kbps and back | 0.9% / 0.9% | 824 / 824 ms | 3,076 / 3,076 ms | 543 / 540 ms | 54.8% / 54.8% | 287 / 287 ms |
+| capacity_drop: 2.5 Mbps to 500 kbps and back | 0.9% / 0.9% | 824 / 824 ms | 3,076 / 3,076 ms | 545 / 540 ms | 82.8% / 54.8% | 287 / 287 ms |
 | bufferbloat: 1 Mbps, 2 s router buffer | 0.1% / 0.1% | 191 / 191 ms | 0 / 0 ms | 115 / 113 ms | 90.1% / 90.1% | 44.1 / 44.2 ms |
-| cross_traffic: 1.5 Mbps flow joins a 3 Mbps link | 0.5% / 0.5% | 494 / 494 ms | 0 / 0 ms | 226 / 226 ms | 72.9% / 72.9% | 164 / 164 ms |
+| cross_traffic: 1.5 Mbps flow joins a 3 Mbps link | 0.5% / 0.5% | 495 / 495 ms | 0 / 0 ms | 228 / 226 ms | 74.1% / 72.9% | 164 / 164 ms |
 | issue_23_outage_3s: 3 s outage | 10.1% / 10.1% | 199 / 199 ms | 3,184 / 3,185 ms | 113 / 113 ms | 85.8% / 85.8% | 39.1 / 39.1 ms |
 | audio_only_lossy: 10% loss with jitter | 0.5% / 0.5% | 155 / 152 ms | | | 77.0% / 77.1% | 4.1 / 3.6 ms |
 
@@ -243,10 +245,10 @@ docs/                                                    research, design, algor
 
 ## Next steps and open questions
 
-**Where it stands (2026-11-03):**
-- **Library:** it covers sections 1-10. Against libwebrtc M157 it is 0 behind and 28 ahead ([Benchmarks](#benchmarks)).
+**Where it stands (2026-11-04):**
+- **Library:** it covers sections 1-10. Against libwebrtc M157 it is 0 behind and 69 ahead ([Benchmarks](#benchmarks)).
 - **Apps:** the iOS app, the web app and the AI server run on real networks through the Lightsail host ([Status](#status)).
-- **Requirements:** 71 of 97 are done (`tools/requirements.json`); 25 are not assessed yet, and C13 is open.
+- **Requirements:** 96 of 97 are done (`tools/requirements.json`); C13 (Android) is open.
 
 **Next steps, in the order the Owner chooses:**
 
@@ -255,15 +257,9 @@ docs/                                                    research, design, algor
   - a shared app key;
   - credentials only inside a joined call, with a short lifetime and a rate limit;
   - user sign-in.
-- **Assessing the 25 new requirements.** F1.1–F1.12, F2.1–F2.5, F9.6–F9.9 and F10.1–F10.4 cover the components documented in [Algorithms](docs/algorithms/README.md).
 - **Android (C13).** Unplanned: the Owner moved it to the backlog so the iOS and web apps came first.
 
-**Known open issues:**
-
-- [#14](https://github.com/aray4702/streaming_media/issues/14) (`stage:later`): bitrate takes 15+ s to recover after the link improves.
-- [#148](https://github.com/aray4702/streaming_media/issues/148) (`stage:later`): upscaling 360p to 720p takes 20 ms a frame.
-- [#633](https://github.com/aray4702/streaming_media/issues/633): the test bench uses about 15 MB per simulated minute.
-- [#969](https://github.com/aray4702/streaming_media/issues/969): the response-delay metric with the AI source counts the source's first chunk.
+**Known open issues:** none. Recently fixed: ICE-TCP host candidates ([#1151](https://github.com/aray4702/streaming_media/issues/1151)), remote mDNS candidates ([#1152](https://github.com/aray4702/streaming_media/issues/1152)), bitrate recovery after the link improves ([#14](https://github.com/aray4702/streaming_media/issues/14)), test bench memory on long calls ([#633](https://github.com/aray4702/streaming_media/issues/633)).
 
 **Open questions:**
 
