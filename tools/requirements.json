@@ -1168,8 +1168,14 @@
    "catalog": "1.1",
    "title": "STUN messages",
    "acceptance": "Documented in docs/algorithms/ (1.1) with its files, libwebrtc M157 counterpart and tests; its parity rows are same or ported; no open req:F1.1 item. Whether it behaves as libwebrtc is judged with C2 (milestone 3, #944).",
-   "status": "unassessed",
-   "evidence": "Added with the milestone 3 algorithm pages (#1139); the work was done under C2."
+   "status": "done",
+   "evidence": "`api/transport/stun.{h,cc}` ported (#1014); `p2p/base/stun_request` and the test STUN server with `InstallStunCryptoFromTls` (#1015); STUN fuzzer after libwebrtc's stun_parser/stun_validator fuzzers (#1019, #1022). Done under C2 (done 2026-11-01).",
+   "verification": "Page docs/algorithms/1-connectivity/1.1-stun.md lists its headers (all present), the libwebrtc M157 counterpart and its suites; tools/gen_docs.py regenerates it unchanged. Local run on main dd070af5 (2026-11-03, macOS arm64, `native` preset): unit.Stun, StunRequest, StunRequestReentrance, StunServer, StunTestCrypto and StunTls pass (84 cases); fuzz.stun replays its corpus. Parity 10.1: ported as a unit; its rows are the crypto hooks (installed from sm::tls, C1), refusing instead of aborting on caller errors, nullptr for a getter of the wrong value type, and the WebRTC.Stun.Integrity.* histograms not kept. None leaves us behind libwebrtc in a call. No req:F1.1 label exists and no open issue concerns it. Main CI 41758504387 on dd070af5 passed (host macos-15 ctest, sanitizers, wasm, ios, testbench, compare-webrtc, ci-ok).",
+   "verified": "pass",
+   "start": "",
+   "end": "2026-11-01",
+   "depends_on": [],
+   "cost": ""
   },
   {
    "id": "F1.2",
@@ -1178,8 +1184,14 @@
    "catalog": "1.2",
    "title": "Ports and candidates",
    "acceptance": "Documented in docs/algorithms/ (1.2) with its files, libwebrtc M157 counterpart and tests; its parity rows are same or ported; no open req:F1.2 item. Whether it behaves as libwebrtc is judged with C3 (milestone 3, #944).",
-   "status": "unassessed",
-   "evidence": "Added with the milestone 3 algorithm pages (#1139); the work was done under C3."
+   "status": "done",
+   "evidence": "Port, UDPPort and StunPort with host and server-reflexive candidates (#1020, issue #999) on the packet sockets of the emulated network (#1010, issue #996). Done under C3 (done 2026-11-02).",
+   "verification": "Page docs/algorithms/1-connectivity/1.2-ports-candidates.md lists its headers (all present), the libwebrtc M157 counterpart and its suites; tools/gen_docs.py regenerates it unchanged. Local run on main dd070af5 (2026-11-03, macOS arm64, `native` preset): unit.P2pCandidate, P2pIpAddress, P2pSocketAddress, P2pNetwork, P2pPort, P2pUdpPort and P2pStunPort pass (53 cases). Parity 10.3: ported as a unit with libwebrtc's constants (type and local preferences, foundations, keepalive and timeouts); its rows are the time model, connections (ported, 10.4), local network access (granted, as libwebrtc without a permission factory), field trials at libwebrtc's defaults, the foundation crypto through the STUN hooks, and network enumeration (10.5). Hostnames: no local mDNS obfuscation, as native libwebrtc without an mDNS responder; STUN servers are given as IP addresses (the apps resolve names with getaddrinfo, e.g. apps/ai_server/ai_server.cc). Remote hostname candidates are F1.6 and F1.10. The row 'Candidate SDP parsing: not ported' is out of date: ParseCandidateString was ported in #1073 (10.16). No req:F1.2 label exists and no open issue concerns it. Main CI 41758504387 on dd070af5 passed (host macos-15 ctest, sanitizers, wasm, ios, testbench, compare-webrtc, ci-ok).",
+   "verified": "pass",
+   "start": "",
+   "end": "2026-11-02",
+   "depends_on": [],
+   "cost": ""
   },
   {
    "id": "F1.3",
@@ -1188,8 +1200,14 @@
    "catalog": "1.3",
    "title": "Connections: candidate-pair checks",
    "acceptance": "Documented in docs/algorithms/ (1.3) with its files, libwebrtc M157 counterpart and tests; its parity rows are same or ported; no open req:F1.3 item. Whether it behaves as libwebrtc is judged with C3 (milestone 3, #944).",
-   "status": "unassessed",
-   "evidence": "Added with the milestone 3 algorithm pages (#1139); the work was done under C3."
+   "status": "done",
+   "evidence": "Connection: candidate-pair checks, ICE roles, nomination and consent freshness (#1021, issue #1000). Done under C3 (done 2026-11-02).",
+   "verification": "Page docs/algorithms/1-connectivity/1.3-connections.md lists its headers (all present), the libwebrtc M157 counterpart and its suites; tools/gen_docs.py regenerates it unchanged. Local run on main dd070af5 (2026-11-03, macOS arm64, `native` preset): unit.P2pConnection and P2pConnectionCall pass (34 cases: connection_unittest and port_unittest's connection cases, no loss, 10% loss on 5 seeds, an outage). Parity 10.4: ported as a unit with p2p_constants' timeouts, the RTT rules and the check's attributes; its rows are the time model, a plain pointer for WeakPtr, the STUN transactions (same), DTLS-in-STUN (off by default in M157), the IceEventLog (observability), stats timestamps in the caller's time base, the GOOG-DELTA-ACK error type and the RTT EMA and rate trackers (the same code and window, #1024). None leaves us behind libwebrtc in a call. No req:F1.3 label exists and no open issue concerns it. Main CI 41758504387 on dd070af5 passed (host macos-15 ctest, sanitizers, wasm, ios, testbench, compare-webrtc, ci-ok).",
+   "verified": "pass",
+   "start": "",
+   "end": "2026-11-02",
+   "depends_on": [],
+   "cost": ""
   },
   {
    "id": "F1.4",
@@ -1198,8 +1216,14 @@
    "catalog": "1.4",
    "title": "Port allocation",
    "acceptance": "Documented in docs/algorithms/ (1.4) with its files, libwebrtc M157 counterpart and tests; its parity rows are same or ported; no open req:F1.4 item. Whether it behaves as libwebrtc is judged with C3 (milestone 3, #944).",
-   "status": "unassessed",
-   "evidence": "Added with the milestone 3 algorithm pages (#1139); the work was done under C3."
+   "status": "open",
+   "evidence": "BasicPortAllocator and NetworkManager (#1025, issue #1001) and PeerConnection's allocator setup, ConfigureAsPeerConnection (#1030), under C3 (done 2026-11-02). Open: no ICE-TCP host candidates. AllocationSequence::CreateTCPPorts makes no port (src/p2p/basic_port_allocator.cc: 'TCPPort comes with C4'), while libwebrtc M157 gathers TCP host candidates by default (RTCConfiguration::tcp_candidate_policy = kTcpCandidatePolicyEnabled, api/peer_connection_interface.h; p2p/client/basic_port_allocator.cc CreateTCPPorts makes a TCPPort).",
+   "verification": "Page docs/algorithms/1-connectivity/1.4-port-allocation.md lists its headers (all present), the libwebrtc M157 counterpart and its suites; tools/gen_docs.py regenerates it unchanged. Local run on main dd070af5 (2026-11-03, macOS arm64, `native` preset): unit.P2pBasicPortAllocator, P2pPortAllocator, P2pNetworkManager and P2pIceCredentialsIterator pass (52 cases). Parity 10.5's row 'TCP ports: the phase runs and makes nothing' defers to C4, but 10.8's row 'TCPPort (ICE-TCP candidates): not ported' says it is not part of C4 (#1034). C4 closed without it, and no Owner decision records it as a deviation. The ICE comparison turns libwebrtc's TCP candidates off for this reason (compare/webrtc/ice_scenarios.h, compare/webrtc/ice_compare.cc, #1044), so C3's match with libwebrtc was measured with that default changed. Missing: port p2p/base/tcp_port.{h,cc} (TCPPort, TCPConnection) on 10.8's sockets, gather it in the TCP phase, and compare with TCP candidates on; or an Owner decision that makes ICE-TCP an approved deviation. The other rows (time model, TURN port factory, mDNS/VPN/TurnCustomizer left to the host, field trials at their defaults, StaticNetworkManager) don't leave us behind. No req:F1.4 label exists and no open issue concerns it. Main CI 41758504387 on dd070af5 passed (host macos-15 ctest, sanitizers, wasm, ios, testbench, compare-webrtc, ci-ok).",
+   "verified": "partial",
+   "start": "",
+   "end": "",
+   "depends_on": [],
+   "cost": ""
   },
   {
    "id": "F1.5",
@@ -1208,8 +1232,14 @@
    "catalog": "1.5",
    "title": "The ICE controller",
    "acceptance": "Documented in docs/algorithms/ (1.5) with its files, libwebrtc M157 counterpart and tests; its parity rows are same or ported; no open req:F1.5 item. Whether it behaves as libwebrtc is judged with C3 (milestone 3, #944).",
-   "status": "unassessed",
-   "evidence": "Added with the milestone 3 algorithm pages (#1139); the work was done under C3."
+   "status": "done",
+   "evidence": "BasicIceController and WrappingActiveIceController (#1028, issue #1002); the side-by-side comparison with libwebrtc's ICE, sm_ice_compare (#1044, #1050, #1051, relays #1056, #1066). Done under C3 (done 2026-11-02).",
+   "verification": "Page docs/algorithms/1-connectivity/1.5-ice-controller.md lists its headers (all present), the libwebrtc M157 counterpart and its suites; tools/gen_docs.py regenerates it unchanged. Local run on main dd070af5 (2026-11-03, macOS arm64, `native` preset): unit.P2pBasicIceController, P2pWrappingActiveIceController and P2pIceCompare pass (26 cases; P2pIceCompare.NatMatrixMatchesLibwebrtc, ChecksMatchLibwebrtc, RecoversAfterNetworkChange, RelayMatchesLibwebrtc, TcpRelayMatchesLibwebrtc; P2pIceCompareTls.TlsRelayMatchesLibwebrtc). Parity 10.6: ported as a unit with libwebrtc's ping intervals, timeouts, kMinImprovement, sort order, pruning and semi-aggressive nomination; its rows are the time model, IsValid's error type, IceConfig built from RtcIceConfiguration (the same fields and defaults) and test fakes for gmock. None leaves us behind. The comparison runs both stacks with TCP candidates off (F1.4). No req:F1.5 label exists and no open issue concerns it. Main CI 41758504387 on dd070af5 passed (host macos-15 ctest, sanitizers, wasm, ios, testbench, compare-webrtc, ci-ok).",
+   "verified": "pass",
+   "start": "",
+   "end": "2026-11-02",
+   "depends_on": [],
+   "cost": ""
   },
   {
    "id": "F1.6",
@@ -1218,8 +1248,14 @@
    "catalog": "1.6",
    "title": "The ICE agent (P2PTransportChannel)",
    "acceptance": "Documented in docs/algorithms/ (1.6) with its files, libwebrtc M157 counterpart and tests; its parity rows are same or ported; no open req:F1.6 item. Whether it behaves as libwebrtc is judged with C3 (milestone 3, #944).",
-   "status": "unassessed",
-   "evidence": "Added with the milestone 3 algorithm pages (#1139); the work was done under C3."
+   "status": "open",
+   "evidence": "P2PTransportChannel (#1039), IceConfig and the P2PTransportChannelPingTest cases (#1043), multihomed failover (#1047), issue #1002, under C3 (done 2026-11-02). Open: a remote hostname (mDNS .local) candidate is dropped, not resolved. libwebrtc's P2PTransportChannel::ResolveHostnameCandidate resolves it with the AsyncDnsResolverFactory that PeerConnection always has (pc/peer_connection.cc checks it is set; p2p/base/basic_async_resolver_factory.cc).",
+   "verification": "Page docs/algorithms/1-connectivity/1.6-ice-agent.md lists its headers (all present), the libwebrtc M157 counterpart and its suites; tools/gen_docs.py regenerates it unchanged. Local run on main dd070af5 (2026-11-03, macOS arm64, `native` preset): unit.P2pTransportChannel, P2pTransportChannelPing, P2pTransportChannelMultihomed and P2pIceConfig pass (85 cases). Parity 10.9's row 'Hostname candidates: not ported' gives the reason as 'mDNS is the host stack's (C11)', but C11 (done 2026-11-03) did not add it, and no Owner decision records it as a deviation. A browser that hides its local addresses (Chrome without a media permission, WebRtcHideLocalIpsWithMdns; apps/ios/simulator_video.sh turns that off for its run) signals only mDNS host candidates, so a call on one LAN can't use the host pair that libwebrtc would. Missing: hostnames in SocketAddress and Candidate, resolution in AddRemoteCandidate as libwebrtc does it, and keeping them in SDP (F1.10); or an Owner decision. The other rows (time model, local network access, STUN dictionary with no writer, DTLS-in-STUN off in M157, field trials at their defaults, event log and histograms, NetworkRoute, packet type, DCHECKs) don't leave us behind in a call. 'Stats: candidate_stats_list not filled' leaves unpaired local candidates out of the stats (observability, see F10.2). Two libwebrtc cases are not ported (IPv6; the STUN dictionary). No req:F1.6 label exists and no open issue concerns it. Main CI 41758504387 on dd070af5 passed (host macos-15 ctest, sanitizers, wasm, ios, testbench, compare-webrtc, ci-ok).",
+   "verified": "partial",
+   "start": "",
+   "end": "",
+   "depends_on": [],
+   "cost": ""
   },
   {
    "id": "F1.7",
@@ -1228,8 +1264,14 @@
    "catalog": "1.7",
    "title": "ICE-lite for the AI server",
    "acceptance": "Documented in docs/algorithms/ (1.7) with its files, libwebrtc M157 counterpart and tests; its parity rows are same or ported; no open req:F1.7 item. Whether it behaves as libwebrtc is judged with C3 (milestone 3, #944).",
-   "status": "unassessed",
-   "evidence": "Added with the milestone 3 algorithm pages (#1139); the work was done under C3."
+   "status": "done",
+   "evidence": "IceLiteAgent, libwebrtc's FakeIceLiteAgent, and DtlsTransport::SetFakeIceLite (#1045, issue #1003). Done under C3 (done 2026-11-02).",
+   "verification": "Page docs/algorithms/1-connectivity/1.7-ice-lite.md lists its headers (all present), the libwebrtc M157 counterpart and its suites; tools/gen_docs.py regenerates it unchanged. Local run on main dd070af5 (2026-11-03, macOS arm64, `native` preset): unit.P2pIceLite passes (4 cases: a full agent through each NAT type and from a public address, and a client network change); P2pDtlsTransport.FakeIceLiteHandshakeTimeout passes in unit.P2pDtlsTransport. Parity 10.12: libwebrtc's test agent ported unchanged; its rows are the deferred update in the time model, an assert for a reported ping, use in the library for the AI server (the behaviour is the test agent's) and the lite state (as libwebrtc). None leaves us behind. No req:F1.7 label exists and no open issue concerns it. Main CI 41758504387 on dd070af5 passed (host macos-15 ctest, sanitizers, wasm, ios, testbench, compare-webrtc, ci-ok).",
+   "verified": "pass",
+   "start": "",
+   "end": "2026-11-02",
+   "depends_on": [],
+   "cost": ""
   },
   {
    "id": "F1.8",
@@ -1238,8 +1280,14 @@
    "catalog": "1.8",
    "title": "TURN client (UDP, TCP, TLS)",
    "acceptance": "Documented in docs/algorithms/ (1.8) with its files, libwebrtc M157 counterpart and tests; its parity rows are same or ported; no open req:F1.8 item. Whether it behaves as libwebrtc is judged with C4 (milestone 3, #944).",
-   "status": "unassessed",
-   "evidence": "Added with the milestone 3 algorithm pages (#1139); the work was done under C4."
+   "status": "done",
+   "evidence": "TURN client over UDP and sim::TurnServer (#1041, issue #1031), TURN over TCP and TLS and REST credentials (#1049, issue #1036), interop.Coturn (#1052), ICE through the emulated TURN server vs libwebrtc (#1056, #1066). Done under C4 (done 2026-11-02).",
+   "verification": "Page docs/algorithms/1-connectivity/1.8-turn-client.md lists its headers (all present), the libwebrtc M157 counterpart and its suites; tools/gen_docs.py regenerates it unchanged. Local run on main dd070af5 (2026-11-03, macOS arm64, `native` preset): unit.P2pTurnPort, P2pTurnPortTcp, P2pTurnPortTls, P2pTurnRestCredentials and P2pTurnServer pass (56 cases); fuzz.turn replays its corpus; interop.Coturn is skipped here (no coturn installed; 6/6 at C4). Parity 10.10 and 10.14: ported as a unit with libwebrtc's constants (permission and refresh timers, 401/438 retries, redirect checks, allowed ports, relay preferences); their rows are the time model, TURN servers given as IP addresses (the apps resolve names with getaddrinfo, e.g. apps/ai_server/ai_server.cc), no TurnCustomizer (none by default), the connect event with `now`, test-server details, and tests that need IPv6, DNS or local network access. TURN over DTLS (PROTO_DTLS, only for a `turns:` URL with `transport=udp`) is not ported; it is opt-in configuration, not a default. None leaves us behind with libwebrtc's defaults. No req:F1.8 label exists and no open issue concerns it. Main CI 41758504387 on dd070af5 passed (host macos-15 ctest, sanitizers, wasm, ios, testbench, compare-webrtc, ci-ok).",
+   "verified": "pass",
+   "start": "",
+   "end": "2026-11-02",
+   "depends_on": [],
+   "cost": ""
   },
   {
    "id": "F1.9",
@@ -1248,8 +1296,14 @@
    "catalog": "1.9",
    "title": "TCP packet sockets",
    "acceptance": "Documented in docs/algorithms/ (1.9) with its files, libwebrtc M157 counterpart and tests; its parity rows are same or ported; no open req:F1.9 item. Whether it behaves as libwebrtc is judged with C4 (milestone 3, #944).",
-   "status": "unassessed",
-   "evidence": "Added with the milestone 3 algorithm pages (#1139); the work was done under C4."
+   "status": "done",
+   "evidence": "AsyncTCPSocket, AsyncStunTCPSocket and TCP in the emulated network (#1040, issue #1034). Done under C4 (done 2026-11-02).",
+   "verification": "Page docs/algorithms/1-connectivity/1.9-tcp-sockets.md lists its headers (all present), the libwebrtc M157 counterpart and its suites; tools/gen_docs.py regenerates it unchanged; this PR corrects its cited PR from #1034 (the issue) to #1040. Local run on main dd070af5 (2026-11-03, macOS arm64, `native` preset): unit.AsyncTcpSocket, AsyncStunTcpSocket, EmulatedSockets and EmulatedTcp pass (31 cases); fuzz.tcp_framing replays its corpus. Parity 10.8: the framing classes are ports with libwebrtc's buffer sizes and framing; its rows are the time model, the emulated TCP (retransmission on lossy links, connect after a round trip, NAT model), ownership of accepted sockets, fake TLS (unused in a call) and factory defaults. The row 'TCPPort (ICE-TCP candidates): not ported' is a port class, not these sockets; it is assessed under F1.4. No req:F1.9 label exists and no open issue concerns it. Main CI 41758504387 on dd070af5 passed (host macos-15 ctest, sanitizers, wasm, ios, testbench, compare-webrtc, ci-ok).",
+   "verified": "pass",
+   "start": "",
+   "end": "2026-11-02",
+   "depends_on": [],
+   "cost": ""
   },
   {
    "id": "F1.10",
@@ -1258,8 +1312,14 @@
    "catalog": "1.10",
    "title": "SDP model and parse/write",
    "acceptance": "Documented in docs/algorithms/ (1.10) with its files, libwebrtc M157 counterpart and tests; its parity rows are same or ported; no open req:F1.10 item. Whether it behaves as libwebrtc is judged with C6 (milestone 3, #944).",
-   "status": "unassessed",
-   "evidence": "Added with the milestone 3 algorithm pages (#1139); the work was done under C6."
+   "status": "open",
+   "evidence": "Session description model and SdpSerialize/SdpDeserialize after api/webrtc_sdp, with the sdp_parser fuzz target (#1073, issue #1062), under C6 (done 2026-11-02). Open: a hostname (mDNS) candidate in an SDP is dropped, and ParseCandidateString fails it with kUnsupportedHostnameCandidate, where libwebrtc keeps it with the hostname as its address (parity 10.16, src/pc/webrtc_sdp.cc).",
+   "verification": "Page docs/algorithms/1-connectivity/1.10-sdp.md lists its headers (all present), the libwebrtc M157 counterpart and its suites; tools/gen_docs.py regenerates it unchanged. Local run on main dd070af5 (2026-11-03, macOS arm64, `native` preset): unit.PcWebRtcSdp, PcSessionDescription, PcJsepSessionDescription, PcMediaContentDescription, PcCandidateParse and PcSimulcastSdp pass (75 cases); fuzz.sdp_parser replays its corpus. Parity 10.16's rows on hostname candidates and a hostname in c= or raddr give the reason 'the host stack resolves mDNS (C11)'. C11 (done 2026-11-03) did not add it, and no Owner decision records it as a deviation; the gap is the one under F1.6. Missing: keep hostname candidates when parsing (with F1.6's resolution); or an Owner decision. The other rows (TLS candidate fingerprint checked, RID codec match for simulcast, int payload types, UMA, reference files ported from declarations) don't leave us behind in a call. The row 'Codec matching ...: left for C6 part 2' is out of date since #1084. No req:F1.10 label exists and no open issue concerns it. Main CI 41758504387 on dd070af5 passed (host macos-15 ctest, sanitizers, wasm, ios, testbench, compare-webrtc, ci-ok).",
+   "verified": "partial",
+   "start": "",
+   "end": "",
+   "depends_on": [],
+   "cost": ""
   },
   {
    "id": "F1.11",
@@ -1268,8 +1328,14 @@
    "catalog": "1.11",
    "title": "Offer/answer generation",
    "acceptance": "Documented in docs/algorithms/ (1.11) with its files, libwebrtc M157 counterpart and tests; its parity rows are same or ported; no open req:F1.11 item. Whether it behaves as libwebrtc is judged with C6 (milestone 3, #944).",
-   "status": "unassessed",
-   "evidence": "Added with the milestone 3 algorithm pages (#1139); the work was done under C6."
+   "status": "done",
+   "evidence": "MediaSessionDescriptionFactory, CodecVendor, the payload type suggester and TransportDescriptionFactory (#1084, issue #1063); a call with headless Chrome in both roles (#1093). Done under C6 (done 2026-11-02).",
+   "verification": "Page docs/algorithms/1-connectivity/1.11-offer-answer.md lists its headers (all present), the libwebrtc M157 counterpart and its suites; tools/gen_docs.py regenerates it unchanged. Local run on main dd070af5 (2026-11-03, macOS arm64, `native` preset): unit.PcMediaSession and PcTransportDescriptionFactory pass (65 cases); interop.Browser.chrome_offers and chrome_answers pass. Parity 10.18: offers and answers for C6's subset as pc/media_session.cc; its rows are the error type, the subset's codec list (Opus, H.264 CB with RTX), payload type and header extension pickers that give libwebrtc's values for these codecs (Chrome's offer ids reproduced), field trials at libwebrtc's defaults, and features outside C6's subset whose defaults are off in M157 (cryptex, SNAP) or that need codecs the library doesn't have. None leaves us behind within C6's subset. No req:F1.11 label exists and no open issue concerns it. Main CI 41758504387 on dd070af5 passed (host macos-15 ctest, sanitizers, wasm, ios, testbench, compare-webrtc, ci-ok).",
+   "verified": "pass",
+   "start": "",
+   "end": "2026-11-02",
+   "depends_on": [],
+   "cost": ""
   },
   {
    "id": "F1.12",
@@ -1278,8 +1344,14 @@
    "catalog": "1.12",
    "title": "The endpoint (PeerEndpoint)",
    "acceptance": "Documented in docs/algorithms/ (1.12) with its files, libwebrtc M157 counterpart and tests; its parity rows are same or ported; no open req:F1.12 item. Whether it behaves as libwebrtc is judged with C6 (milestone 3, #944).",
-   "status": "unassessed",
-   "evidence": "Added with the milestone 3 algorithm pages (#1139); the work was done under C6."
+   "status": "done",
+   "evidence": "JsepTransportController and PeerEndpoint: ICE, DTLS-SRTP and RTP set up from SDP, BUNDLE, trickle ICE (#1089, issue #1064); a call with headless Chrome (#1093); data channels on the endpoint (#1097, issue #1091). Done under C6 and C7 (done 2026-11-02).",
+   "verification": "Page docs/algorithms/1-connectivity/1.12-endpoint.md lists its headers (all present), the libwebrtc M157 counterpart and its suites; tools/gen_docs.py regenerates it unchanged. Local run on main dd070af5 (2026-11-03, macOS arm64, `native` preset): unit.PcJsepTransportController and PcPeerEndpoint pass (12 cases); interop.Browser.chrome_offers, chrome_answers, interop.WebApp.native and two_tabs pass. Parity 10.19 and 10.21: their rows are one thread, one rtp::Session per call, receive streams that need a=ssrc (Chrome signals them), rtcp-mux require (libwebrtc's default), SNAP and always-negotiate off (libwebrtc's defaults) and the app installing the STUN crypto. One row is a limit of C6's subset: one offer/answer per call, with no renegotiation, rollback or pranswer. C6's acceptance asks for an offer and an answer, and each mesh pair is one negotiation (C9). The Owner may prefer to track renegotiation as its own item. No req:F1.12 label exists and no open issue concerns it. Main CI 41758504387 on dd070af5 passed (host macos-15 ctest, sanitizers, wasm, ios, testbench, compare-webrtc, ci-ok).",
+   "verified": "pass",
+   "start": "",
+   "end": "2026-11-02",
+   "depends_on": [],
+   "cost": ""
   },
   {
    "id": "F2.1",
@@ -1288,8 +1360,14 @@
    "catalog": "2.1",
    "title": "TLS/DTLS interface and its BoringSSL and mbedTLS backends",
    "acceptance": "Documented in docs/algorithms/ (2.1) with its files, libwebrtc M157 counterpart and tests; its parity rows are same or ported; no open req:F2.1 item. Whether it behaves as libwebrtc is judged with C1 (milestone 3, #944).",
-   "status": "unassessed",
-   "evidence": "Added with the milestone 3 algorithm pages (#1139); the work was done under C1."
+   "status": "done",
+   "evidence": "BoringSSL backend: MessageDigest, HMAC, CryptoRandom (#992), SslIdentity/Certificate/Fingerprint (#993), DTLS transport (#994); Mbed TLS backend and the BoringSSL <-> mbedTLS cross test (#1016, issue #998). Done under C1 (done 2026-11-01).",
+   "verification": "Page docs/algorithms/2-security/2.1-tls-interface.md lists its headers (all present), the libwebrtc M157 counterpart and its suites; tools/gen_docs.py regenerates it unchanged. Local run on main dd070af5 (2026-11-03, macOS arm64, `native` preset): unit.TlsMessageDigest, TlsCryptoRandom, TlsSslIdentity, TlsSslFingerprint (each also as .mbedtls) and TlsCrossBackend pass (33 cases). Parity 10.2: the BoringSSL backend is the default, as libwebrtc. The rows are the Mbed TLS backend's differences (DTLS 1.2 only, AES-CM SRTP profiles, ECDHE suites, key export, certificate checking by fingerprint), which are what the Owner asked for on #944 (two TLS libraries; mbedTLS with DTLS 1.2). None leaves the default build behind libwebrtc. No req:F2.1 label exists and no open issue concerns it. Main CI 41758504387 on dd070af5 passed (host macos-15 ctest, sanitizers, wasm, ios, testbench, compare-webrtc, ci-ok).",
+   "verified": "pass",
+   "start": "",
+   "end": "2026-11-01",
+   "depends_on": [],
+   "cost": ""
   },
   {
    "id": "F2.2",
@@ -1298,8 +1376,14 @@
    "catalog": "2.2",
    "title": "DTLS transport",
    "acceptance": "Documented in docs/algorithms/ (2.2) with its files, libwebrtc M157 counterpart and tests; its parity rows are same or ported; no open req:F2.2 item. Whether it behaves as libwebrtc is judged with C1, C5 (milestone 3, #944).",
-   "status": "unassessed",
-   "evidence": "Added with the milestone 3 algorithm pages (#1139); the work was done under C1, C5."
+   "status": "done",
+   "evidence": "DTLS transport on BoringSSL (#994); DTLS over an ICE transport with the role from a=setup, the SDP fingerprint check and key export (#1018, issue #1006); the mbedTLS DTLS 1.2 backend (#1016). Done under C1 and C5 (done 2026-11-01 and 2026-11-02).",
+   "verification": "Page docs/algorithms/2-security/2.2-dtls-transport.md lists its headers (all present), the libwebrtc M157 counterpart and its suites; tools/gen_docs.py regenerates it unchanged. Local run on main dd070af5 (2026-11-03, macOS arm64, `native` preset): unit.TlsDtlsTransport (also .mbedtls), P2pDtlsRole, P2pDtlsTransport and DtlsUtils pass (39 cases); fuzz.dtls_record, dtls_record_mbedtls and dtls_transport replay their corpora. Parity 10.2 (the mbedTLS backend, the Owner's decision on #944) and 10.7 (the transports above it). The rows are library types and the time model, with no difference in a call on the default backend. No req:F2.2 label exists and no open issue concerns it. Main CI 41758504387 on dd070af5 passed (host macos-15 ctest, sanitizers, wasm, ios, testbench, compare-webrtc, ci-ok).",
+   "verified": "pass",
+   "start": "",
+   "end": "2026-11-02",
+   "depends_on": [],
+   "cost": ""
   },
   {
    "id": "F2.3",
@@ -1308,8 +1392,14 @@
    "catalog": "2.3",
    "title": "DTLS-SRTP key export",
    "acceptance": "Documented in docs/algorithms/ (2.3) with its files, libwebrtc M157 counterpart and tests; its parity rows are same or ported; no open req:F2.3 item. Whether it behaves as libwebrtc is judged with C5 (milestone 3, #944).",
-   "status": "unassessed",
-   "evidence": "Added with the milestone 3 algorithm pages (#1139); the work was done under C5."
+   "status": "done",
+   "evidence": "DTLS-SRTP key export split by DTLS role (#1011, #1018) and pc/dtls_srtp_transport (#1038, issue #1007). Done under C5 (done 2026-11-02).",
+   "verification": "Page docs/algorithms/2-security/2.3-dtls-srtp.md lists its headers (all present), the libwebrtc M157 counterpart and its suites; tools/gen_docs.py regenerates it unchanged. Local run on main dd070af5 (2026-11-03, macOS arm64, `native` preset): unit.PcDtlsSrtpTransport and TlsDtlsSrtp pass (18 cases: dtls_srtp_transport_unittest's cases with the real DTLS transport, a media path over a 10 ms link past a sequence-number wrap, and a DTLS restart that re-keys). Parity 10.7: its rows are buffers, the network route (the SRTP overhead update is behind a field trial that is off), ECN (libwebrtc sends RTCP as ECT(1) only after RTP arrives with ECT(1), which a sender marks only once RFC 8888 feedback is negotiated, off by default: call/rtp_transport_controller_send.cc), the receive-stream field trial (off), the ready-to-send re-entry in the time model, the error types and test data. None leaves us behind with libwebrtc's defaults. No req:F2.3 label exists and no open issue concerns it. Main CI 41758504387 on dd070af5 passed (host macos-15 ctest, sanitizers, wasm, ios, testbench, compare-webrtc, ci-ok).",
+   "verified": "pass",
+   "start": "",
+   "end": "2026-11-02",
+   "depends_on": [],
+   "cost": ""
   },
   {
    "id": "F2.4",
@@ -1318,8 +1408,14 @@
    "catalog": "2.4",
    "title": "SRTP and SRTCP (libsrtp)",
    "acceptance": "Documented in docs/algorithms/ (2.4) with its files, libwebrtc M157 counterpart and tests; its parity rows are same or ported; no open req:F2.4 item. Whether it behaves as libwebrtc is judged with C5 (milestone 3, #944).",
-   "status": "unassessed",
-   "evidence": "Added with the milestone 3 algorithm pages (#1139); the work was done under C5."
+   "status": "done",
+   "evidence": "SrtpSession on libsrtp 2.8.0 (#1011, issue #995), pc/srtp_transport and pc/rtp_transport (#1038, issue #1007). Done under C5 (done 2026-11-02).",
+   "verification": "Page docs/algorithms/2-security/2.4-srtp.md lists its headers (all present), the libwebrtc M157 counterpart and its suites; tools/gen_docs.py regenerates it unchanged. Local run on main dd070af5 (2026-11-03, macOS arm64, `native` preset): unit.TlsSrtpSession, PcSrtpTransport, PcRtpTransport and PcRtpUtils pass (40 cases: AES-CM-128-HMAC-SHA1-80 and AES-GCM, replay and wrong-tag drops, srtp_transport_unittest and rtp_transport_unittest's cases). Parity 10.7: the same rows as F2.3 (buffers, network route behind an off field trial, ECN unreachable without RFC 8888 feedback, the receive-stream field trial off, the time model). None leaves us behind with libwebrtc's defaults. No req:F2.4 label exists and no open issue concerns it. Main CI 41758504387 on dd070af5 passed (host macos-15 ctest, sanitizers, wasm, ios, testbench, compare-webrtc, ci-ok).",
+   "verified": "pass",
+   "start": "",
+   "end": "2026-11-02",
+   "depends_on": [],
+   "cost": ""
   },
   {
    "id": "F2.5",
@@ -1328,8 +1424,14 @@
    "catalog": "2.5",
    "title": "TLS client socket over TCP",
    "acceptance": "Documented in docs/algorithms/ (2.5) with its files, libwebrtc M157 counterpart and tests; its parity rows are same or ported; no open req:F2.5 item. Whether it behaves as libwebrtc is judged with C4 (milestone 3, #944).",
-   "status": "unassessed",
-   "evidence": "Added with the milestone 3 algorithm pages (#1139); the work was done under C4."
+   "status": "done",
+   "evidence": "TlsStream on both backends and TlsSslAdapter, libwebrtc's OpenSSLAdapter over a TCP packet socket (#1046, issue #1035). Done under C4 (done 2026-11-02).",
+   "verification": "Page docs/algorithms/2-security/2.5-tls-client-socket.md lists its headers (all present), the libwebrtc M157 counterpart and its suites; tools/gen_docs.py regenerates it unchanged. Local run on main dd070af5 (2026-11-03, macOS arm64, `native` preset): unit.TlsTlsStream (also .mbedtls) and P2pSslAdapter pass (40 cases); TURN over TLS (F1.8) and P2pIceCompareTls.TlsRelayMatchesLibwebrtc use it. Parity 10.13: OpenSSLAdapter's state machine, cipher list, verification and post-connection check; its rows are trusted roots (the caller's and the system store where libwebrtc has built-in roots; ssl_roots.h is not in reference/), the BIO replaced by the adapter feeding the engine, no session cache (SSLAdapter::Create, which TURN uses, has none in libwebrtc either), fake TLS and DTLS mode (unused in a call), hostnames carried for TLS only, the mbedTLS backend's suites (#944) and error reporting. None leaves us behind in a call. No req:F2.5 label exists and no open issue concerns it. Main CI 41758504387 on dd070af5 passed (host macos-15 ctest, sanitizers, wasm, ios, testbench, compare-webrtc, ci-ok).",
+   "verified": "pass",
+   "start": "",
+   "end": "2026-11-02",
+   "depends_on": [],
+   "cost": ""
   },
   {
    "id": "F9.6",
@@ -1338,8 +1440,14 @@
    "catalog": "9.6",
    "title": "dcSCTP packet layer",
    "acceptance": "Documented in docs/algorithms/ (9.6) with its files, libwebrtc M157 counterpart and tests; its parity rows are same or ported; no open req:F9.6 item. Whether it behaves as libwebrtc is judged with C7 (milestone 3, #944).",
-   "status": "unassessed",
-   "evidence": "Added with the milestone 3 algorithm pages (#1139); the work was done under C7."
+   "status": "done",
+   "evidence": "net/dcsctp/packet and common ported behind SM_WITH_DATACHANNEL, with the dcsctp_packet fuzz target (#1042, issue #1032). Done under C7 (done 2026-11-02).",
+   "verification": "Page docs/algorithms/9-data-channels/9.6-dcsctp-packet.md lists its headers (all present), the libwebrtc M157 counterpart and its suites; tools/gen_docs.py regenerates it unchanged. Local run on main dd070af5 (2026-11-03, macOS arm64, `native` preset): the 49 Dcsctp*Test suites of the packet layer pass (112 cases, every *_test.cc under packet/ and common/ with its vectors); fuzz.dcsctp_packet replays its corpus. Parity 10.11: ported as a unit; its rows are a table CRC-32C with the same output, rtc_compat.h shims, the library's SeqNumUnwrapper (sequence_numbers_test unchanged), gmock_lite for gtest, and a packet-layer fuzzer (the socket's came with 9.7). None leaves us behind. No req:F9.6 label exists and no open issue concerns it. Main CI 41758504387 on dd070af5 passed (host macos-15 ctest, sanitizers, wasm, ios, testbench, compare-webrtc, ci-ok).",
+   "verified": "pass",
+   "start": "",
+   "end": "2026-11-02",
+   "depends_on": [],
+   "cost": ""
   },
   {
    "id": "F9.7",
@@ -1348,8 +1456,14 @@
    "catalog": "9.7",
    "title": "dcSCTP socket",
    "acceptance": "Documented in docs/algorithms/ (9.7) with its files, libwebrtc M157 counterpart and tests; its parity rows are same or ported; no open req:F9.7 item. Whether it behaves as libwebrtc is judged with C7 (milestone 3, #944).",
-   "status": "unassessed",
-   "evidence": "Added with the milestone 3 algorithm pages (#1139); the work was done under C7."
+   "status": "done",
+   "evidence": "DcSctpSocket, the rx/tx queues and timers ported from net/dcsctp (#1067, issue #1060), with the dcsctp_socket fuzz target. Done under C7 (done 2026-11-02).",
+   "verification": "Page docs/algorithms/9-data-channels/9.7-dcsctp-socket.md lists its headers (all present), the libwebrtc M157 counterpart and its suites; tools/gen_docs.py regenerates it unchanged. Local run on main dd070af5 (2026-11-03, macOS arm64, `native` preset): the 22 socket, rx, tx and timer suites pass (402 cases, among them DcSctpSocketTest 59, DcSctpSocketParametrizedTest 38, RetransmissionQueueTest 37, StreamResetHandlerTest 26, ProcessTimeoutTest 6); fuzz.dcsctp_socket replays its corpus. Parity 10.15: DcSctpOptions unchanged; its rows are timeouts from Process(now) with the task-queue version's expiry rules, units, rtc_base/absl shims, the text pcap observer (a debug aid), dcsctp_socket_network_test (needs libwebrtc's network emulation), unused mocks and test seeds. None leaves us behind. No req:F9.7 label exists and no open issue concerns it. Main CI 41758504387 on dd070af5 passed (host macos-15 ctest, sanitizers, wasm, ios, testbench, compare-webrtc, ci-ok).",
+   "verified": "pass",
+   "start": "",
+   "end": "2026-11-02",
+   "depends_on": [],
+   "cost": ""
   },
   {
    "id": "F9.8",
@@ -1358,8 +1472,14 @@
    "catalog": "9.8",
    "title": "SCTP over DTLS",
    "acceptance": "Documented in docs/algorithms/ (9.8) with its files, libwebrtc M157 counterpart and tests; its parity rows are same or ported; no open req:F9.8 item. Whether it behaves as libwebrtc is judged with C7 (milestone 3, #944).",
-   "status": "unassessed",
-   "evidence": "Added with the milestone 3 algorithm pages (#1139); the work was done under C7."
+   "status": "done",
+   "evidence": "DcSctpTransport and SctpTransport over DTLS, after media/sctp/dcsctp_transport and pc/sctp_transport (#1082, issue #1069). Done under C7 (done 2026-11-02).",
+   "verification": "Page docs/algorithms/9-data-channels/9.8-sctp-over-dtls.md lists its headers (all present), the libwebrtc M157 counterpart and its suites; tools/gen_docs.py regenerates it unchanged. Local run on main dd070af5 (2026-11-03, macOS arm64, `native` preset): unit.SctpDcSctpTransport and SctpOverDtls pass (13 cases: association over ICE and DTLS, reliable under 10% loss, max retransmits 0 under 30% loss, max lifetime across an outage, stream reset, a full send buffer, SNAP with early packets, DTLS failure). Parity 10.17: CreateDcSctpOptions' settings, PPIDs and errors as libwebrtc; its rows are the time model, the random seed (only verification tags and initial TSNs differ), message interleaving off (libwebrtc's default), no pcap observer, library types, and interface and unit test files missing from reference/ (asked on #1069). None leaves us behind. No req:F9.8 label exists and no open issue concerns it. Main CI 41758504387 on dd070af5 passed (host macos-15 ctest, sanitizers, wasm, ios, testbench, compare-webrtc, ci-ok).",
+   "verified": "pass",
+   "start": "",
+   "end": "2026-11-02",
+   "depends_on": [],
+   "cost": ""
   },
   {
    "id": "F9.9",
@@ -1368,8 +1488,14 @@
    "catalog": "9.9",
    "title": "DCEP and the data channel API",
    "acceptance": "Documented in docs/algorithms/ (9.9) with its files, libwebrtc M157 counterpart and tests; its parity rows are same or ported; no open req:F9.9 item. Whether it behaves as libwebrtc is judged with C7 (milestone 3, #944).",
-   "status": "unassessed",
-   "evidence": "Added with the milestone 3 algorithm pages (#1139); the work was done under C7."
+   "status": "done",
+   "evidence": "DCEP, SctpDataChannel and DataChannelController with the per-connection switch (#1086, issue #1070); data channels on the endpoint and in the Chrome call (#1097, issue #1091). Done under C7 (done 2026-11-02).",
+   "verification": "Page docs/algorithms/9-data-channels/9.9-data-channel-api.md lists its headers (all present), the libwebrtc M157 counterpart and its suites; tools/gen_docs.py regenerates it unchanged. Local run on main dd070af5 (2026-11-03, macOS arm64, `native` preset): unit.PcSctpUtils, PcSctpDataChannel and PcDataChannels pass (23 cases); data channels in unit.PcPeerEndpoint, and a message each way with Chrome in interop.Browser.chrome_offers and chrome_answers, pass. Parity 10.20 and 10.21: DCEP byte for byte, stream ids by DTLS role, the reliability parameters and the closing procedure as libwebrtc; their rows are one thread and shared_ptr ownership, no PeerConnection observer, the runtime switch (C7's acceptance, on by default as libwebrtc), the deprecated `reliable` field, unit test files missing from reference/ (#1070) and always-negotiate/SNAP off (libwebrtc's defaults). None leaves us behind. No req:F9.9 label exists and no open issue concerns it. Main CI 41758504387 on dd070af5 passed (host macos-15 ctest, sanitizers, wasm, ios, testbench, compare-webrtc, ci-ok).",
+   "verified": "pass",
+   "start": "",
+   "end": "2026-11-02",
+   "depends_on": [],
+   "cost": ""
   },
   {
    "id": "F10.1",
@@ -1378,8 +1504,14 @@
    "catalog": "10.1",
    "title": "Build and runtime switches",
    "acceptance": "Documented in docs/algorithms/ (10.1) with its files, libwebrtc M157 counterpart and tests; its parity rows are same or ported; no open req:F10.1 item. Whether it behaves as libwebrtc is judged with C8 (milestone 3, #944).",
-   "status": "unassessed",
-   "evidence": "Added with the milestone 3 algorithm pages (#1139); the work was done under C8."
+   "status": "done",
+   "evidence": "SM_ENABLE_STATS, SM_ENABLE_METRICS, SM_ENABLE_EVENTS and SM_LOG_MIN_LEVEL with runtime switches (#1012, issue #988). Done under C8 (done 2026-11-02).",
+   "verification": "Page docs/algorithms/10-observability/10.1-switches.md lists its headers (all present), the libwebrtc M157 counterpart and its suites; tools/gen_docs.py regenerates it unchanged; this PR corrects its cited PR from #988 (the issue) to #1012. Local run on main dd070af5 (2026-11-03, macOS arm64, `native` preset): unit.Observability, Metrics, Histogram, EventLog and Logging pass (9 cases). libwebrtc M157 has no counterpart (RTC_LOG and RTC_HISTOGRAM are always compiled in), so no parity rows apply. The switches are C8's acceptance, and the default build keeps every output. The page links parity 10.1 for the WebRTC.Stun.Integrity.* histograms not kept. No req:F10.1 label exists and no open issue concerns it. Main CI 41758504387 on dd070af5 passed (host macos-15 ctest, sanitizers, wasm, ios, testbench, compare-webrtc, ci-ok).",
+   "verified": "pass",
+   "start": "",
+   "end": "2026-11-02",
+   "depends_on": [],
+   "cost": ""
   },
   {
    "id": "F10.2",
@@ -1388,8 +1520,14 @@
    "catalog": "10.2",
    "title": "ICE and DTLS connection stats",
    "acceptance": "Documented in docs/algorithms/ (10.2) with its files, libwebrtc M157 counterpart and tests; its parity rows are same or ported; no open req:F10.2 item. Whether it behaves as libwebrtc is judged with C8 (milestone 3, #944).",
-   "status": "unassessed",
-   "evidence": "Added with the milestone 3 algorithm pages (#1139); the work was done under C8."
+   "status": "done",
+   "evidence": "pc::GetConnectionStats: transport, candidate-pair, candidate and certificate stats named as M157's rtcstats_objects.h, behind SM_ENABLE_STATS (#1078, issue #1059). Done under C8 (done 2026-11-02).",
+   "verification": "Page docs/algorithms/10-observability/10.2-connection-stats.md lists its headers (all present), the libwebrtc M157 counterpart and its suites; tools/gen_docs.py regenerates it unchanged; this PR corrects its cited PRs from '#1059 and #1078' to #1078 (#1059 is the issue). Local run on main dd070af5 (2026-11-03, macOS arm64, `native` preset): unit.PcConnectionStats passes (3 cases) on the default (BoringSSL) build; its mbedTLS run was not repeated here and is not in CI. The page links parity 10.9, whose row 'Stats: candidate_stats_list not filled' means unpaired local candidates are not in the report; libwebrtc lists them (GetCandidateStatsFromReadyPorts). That is an observability difference outside C8's acceptance (candidate pairs, the selected path, RTT, bytes, ICE and DTLS state), and it doesn't change a call. No req:F10.2 label exists and no open issue concerns it. Main CI 41758504387 on dd070af5 passed (host macos-15 ctest, sanitizers, wasm, ios, testbench, compare-webrtc, ci-ok).",
+   "verified": "pass",
+   "start": "",
+   "end": "2026-11-02",
+   "depends_on": [],
+   "cost": ""
   },
   {
    "id": "F10.3",
@@ -1398,8 +1536,14 @@
    "catalog": "10.3",
    "title": "The observability-off check",
    "acceptance": "Documented in docs/algorithms/ (10.3) with its files, libwebrtc M157 counterpart and tests; its parity rows are same or ported; no open req:F10.3 item. Whether it behaves as libwebrtc is judged with C8 (milestone 3, #944).",
-   "status": "unassessed",
-   "evidence": "Added with the milestone 3 algorithm pages (#1139); the work was done under C8."
+   "status": "done",
+   "evidence": "tools/check_observability_off.py run on main by CI's test bench job (#1065). Done under C8 (done 2026-11-02).",
+   "verification": "Page docs/algorithms/10-observability/10.3-observability-off.md lists its headers (all present), the libwebrtc M157 counterpart and its suites; tools/gen_docs.py regenerates it unchanged. The step 'Observability off, results bit-identical' passed in the testbench job of main CI 41758504387 on dd070af5. It builds everything off and checks every scenario's media results are identical to the default build. It was not rerun locally. libwebrtc has no counterpart (ours), so no parity rows apply; the page links parity 10.1 only as the section 10 entry. No req:F10.3 label exists and no open issue concerns it. Main CI 41758504387 on dd070af5 passed (host macos-15 ctest, sanitizers, wasm, ios, testbench, compare-webrtc, ci-ok).",
+   "verified": "pass",
+   "start": "",
+   "end": "2026-11-02",
+   "depends_on": [],
+   "cost": ""
   },
   {
    "id": "F10.4",
@@ -1408,8 +1552,14 @@
    "catalog": "10.4",
    "title": "Fuzzing of the network parsers",
    "acceptance": "Documented in docs/algorithms/ (10.4) with its files, libwebrtc M157 counterpart and tests; its parity rows are same or ported; no open req:F10.4 item. Whether it behaves as libwebrtc is judged with C10 (milestone 3, #944).",
-   "status": "unassessed",
-   "evidence": "Added with the milestone 3 algorithm pages (#1139); the work was done under C10."
+   "status": "done",
+   "evidence": "libFuzzer targets with seed corpora: RTP, RTCP, transport feedback, H.264, packet buffer, RED, ULPFEC (#1013, issue #989), STUN (#1019, #1022), SCTP packet (#1042), TURN, TCP framing and DTLS records (#1068, issue #1058), SCTP socket (#1067), SDP (#1073). Done under C10 (done 2026-11-02).",
+   "verification": "Page docs/algorithms/10-observability/10.4-fuzzing.md lists its headers (all present), the libwebrtc M157 counterpart and its suites; tools/gen_docs.py regenerates it unchanged; this PR corrects its cited PRs (#989 and #1058 are issues; their PRs are #1013 and #1068). Local run on main dd070af5 (2026-11-03, macOS arm64, `native` preset): all 16 fuzz.* corpus replays pass (15 targets, dtls_record on both backends), each listed with its libwebrtc test/fuzzers counterpart in fuzz/README.md. libwebrtc's fuzzers are its counterpart; the libFuzzer build (SM_BUILD_FUZZERS=ON) is not built in CI, as accepted for C2 and C10. No parity rows apply. No req:F10.4 label exists and no open issue concerns it. Main CI 41758504387 on dd070af5 passed (host macos-15 ctest, sanitizers, wasm, ios, testbench, compare-webrtc, ci-ok).",
+   "verified": "pass",
+   "start": "",
+   "end": "2026-11-02",
+   "depends_on": [],
+   "cost": ""
   }
  ]
 }
