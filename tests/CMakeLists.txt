@@ -120,6 +120,10 @@ if(SM_WITH_TLS)
   # The TURN client against a real coturn over OS sockets (C4 part 5, #1037); skipped without `turnserver`.
   # Not on iOS: the test starts `turnserver` with system(), which the iOS SDK marks unavailable.
   if(NOT WIN32 AND NOT EMSCRIPTEN AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
+    # The apps' getaddrinfo resolver for remote mDNS candidates (#1152), on host-owned worker threads.
+    sm_add_test_exe(sm_unit_os_dns LABEL unit DEPS sm_os_sockets
+      SOURCES unit/net/os_dns_resolver_test.cc
+      SUITES OsDnsResolver)
     add_executable(sm_interop_coturn interop/coturn_test.cc)
     target_link_libraries(sm_interop_coturn PRIVATE sm_test_framework sm_os_sockets)
     sm_configure_target(sm_interop_coturn)

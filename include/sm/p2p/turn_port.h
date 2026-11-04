@@ -55,8 +55,8 @@
 // the release (libwebrtc sends it from the destructor too).
 //
 // Not here: DTLS to the server (no PROTO_DTLS in ProtocolType yet), DNS
-// resolution of the server's name (addresses carry no hostnames), the
-// TurnCustomizer, the TURN logging id is kept but no factory field sets it,
+// resolution of the server's name (the host gives the server's IP; its name,
+// for TLS, rides beside it), the TurnCustomizer, the TURN logging id is kept but no factory field sets it,
 // and the local network access permission (granted, as with no permission
 // factory). Port options apply to the socket once it exists, as in libwebrtc.
 // As libwebrtc's, the Create for a socket of its own passes no ICE

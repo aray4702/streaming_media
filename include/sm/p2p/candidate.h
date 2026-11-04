@@ -10,13 +10,15 @@
 // the process, of the type, the base IP, the protocols and the ICE
 // tie-breaker, so a hidden base address can't be recovered from it.
 //
+// A hostname (mDNS) address is kept as libwebrtc keeps it (#1152): the parser
+// sets it with SetIP (a name that is not an IP literal leaves the IP
+// unspecified), the candidate-attribute writes the name when there is no IP,
+// and ToSanitizedCopy hides an address behind its name.
+//
 // Differences from libwebrtc:
-// - No hostname addresses (the library's SocketAddress has none), so no mDNS
-//   names and no ToSanitizedCopy; the host stack signals candidates (C11).
 // - No DTLS fingerprint on the candidate and no network slice. The parser
 //   (ParseCandidateString, #1062) checks a TLS candidate's fingerprint
-//   extension as libwebrtc does but doesn't keep it, and fails a hostname
-//   address with kUnsupportedHostnameCandidate (the SDP parser drops those).
+//   extension as libwebrtc does but doesn't keep it.
 // - The foundation's HMAC-SHA256 and the random bytes for ids and the key
 //   come from the STUN crypto hooks (sm/p2p/stun.h, SetStunCrypto). Without
 //   them the foundation is a CRC-32 of the same input under a fixed key and
@@ -42,8 +44,6 @@ inline constexpr char TCPTYPE_ACTIVE_STR[] = "active";
 inline constexpr char TCPTYPE_PASSIVE_STR[] = "passive";
 inline constexpr char TCPTYPE_SIMOPEN_STR[] = "so";
 inline constexpr uint32_t kMaxTurnServers = 32;
-// ParseCandidateString's error for a candidate whose address is a hostname (an mDNS name): SocketAddress has none.
-inline constexpr char kUnsupportedHostnameCandidate[] = "Hostname candidates are not supported";
 
 class Candidate {
  public:
@@ -119,8 +119,13 @@ class Candidate {
 
   std::string ToString() const { return ToStringInternal(false); }
   std::string ToSensitiveString() const { return ToStringInternal(true); }
-  // RFC 5245 15.1 candidate-attribute ("candidate:..." without "a=").
+  // RFC 5245 15.1 candidate-attribute ("candidate:..." without "a="); the address's name when it has no IP.
   std::string ToCandidateAttribute(bool include_ufrag) const;
+  // A copy for the application or stats: with `use_hostname_address`, the address is replaced by its name (an IP
+  // name or none: "redacted-literal.invalid" / "redacted-ip.invalid") and keeps its port; with
+  // `filter_related_address`, the related address becomes the any address of the family; with `filter_ufrag`, no
+  // username.
+  Candidate ToSanitizedCopy(bool use_hostname_address, bool filter_related_address, bool filter_ufrag) const;
 
   // RFC 5245 4.1.2.1: (type_preference << 24) | (local_preference << 8) |
   // (256 - component), local_preference = (network_adapter_preference << 8 |

@@ -208,6 +208,7 @@ class AiCall {
     pc::PeerEndpointConfig c;
     c.allocator = allocator_.get();
     c.certificate_name = "sm-ai-server";
+    c.transport.async_dns_resolver_factory = &server_.resolver_;
     c.audio = true;
     c.video = false;
     c.enable_data_channels = false;
@@ -534,6 +535,7 @@ void AiServer::Finish(AiCall& call, Timestamp now) {
 
 void AiServer::Wait(Timestamp now, TimeDelta wait) {
   sockets_.Poll(now, std::clamp(wait, TimeDelta::Zero(), TimeDelta::Millis(5)));
+  resolver_.Poll(now);
 }
 
 void AiServer::Shutdown(Timestamp now) {

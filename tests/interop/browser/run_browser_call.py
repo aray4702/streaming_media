@@ -17,6 +17,16 @@ The driver:
 Usage:
   run_browser_call.py --self [--role=offer|answer]       harness self-test
   run_browser_call.py --peer=PATH [--role=offer|answer]  call our endpoint
+  run_browser_call.py --peer=PATH --mdns                 ... with Chrome's mDNS host candidates (#1152)
+
+With --mdns the page uses no getUserMedia (a canvas and an oscillator), so
+Chrome, without a media permission, signals its host candidates under mDNS
+(.local) names (WebRtcHideLocalIpsWithMdns is on: no --disable-features).
+The peer must resolve one (getaddrinfo, apps/net/os_dns_resolver.h) and
+select it as a host candidate, not reach Chrome only through a
+peer-reflexive candidate. Where this host can't resolve .local names (Linux
+without nss-mdns), or Chrome signaled IPs, the test is skipped with that
+reason (exit 77).
 
 `--role=offer` means Chrome offers. The peer is run as
 `PATH --role=<its role> --ip=<host address>`, where its role is the
@@ -199,11 +209,12 @@ class NativePeer:
             self.proc.kill()
 
 
-def chrome_command(chrome, profile, url):
+def chrome_command(chrome, profile, url, media=True):
+    # media=False (--mdns): no fake devices and no auto-granted media permission, which would expose the host IPs.
     cmd = [chrome, '--headless=new', '--user-data-dir=' + profile, '--no-first-run',
-           '--no-default-browser-check', '--disable-gpu', '--disable-extensions',
-           '--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream',
-           '--autoplay-policy=no-user-gesture-required', '--remote-debugging-port=0', url]
+           '--no-default-browser-check', '--disable-gpu', '--disable-extensions'] + \
+          (['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream'] if media else []) + \
+          ['--autoplay-policy=no-user-gesture-required', '--remote-debugging-port=0', url]
     if platform.system() == 'Linux' and hasattr(os, 'geteuid') and os.geteuid() == 0:
         cmd.insert(1, '--no-sandbox')
     return cmd
@@ -278,6 +289,8 @@ def main():
     ap.add_argument('--bwe-seconds', type=float, default=10.0, help='seconds of media for --bwe-kbps')
     ap.add_argument('--bwe-reference',
                     help='file for the Chrome <-> Chrome estimate: --self writes it, a --peer call reads it')
+    ap.add_argument('--mdns', action='store_true',
+                    help="no getUserMedia, so Chrome's host candidates are mDNS names the peer must resolve (#1152)")
     ap.add_argument('-v', '--verbose', action='store_true')
     args = ap.parse_args()
     if not args.self_test and not args.peer:
@@ -300,16 +313,18 @@ def main():
     if args.peer:
         peer_role = 'answer' if args.role == 'offer' else 'offer'
         peer = NativePeer([args.peer, '--role=' + peer_role, '--ip=' + host_address()] +
-                          (['--no-data-channel'] if args.no_data_channel else []), relay, args.verbose)
+                          (['--no-data-channel'] if args.no_data_channel else []) +
+                          (['--mdns'] if args.mdns else []), relay, args.verbose)
 
     page_timeout_ms = int((args.timeout - 10) * 1000)
     url = 'http://127.0.0.1:%d/page.html?role=%s&timeout_ms=%d%s' % (
         port, args.role, page_timeout_ms, ('&self=1' if args.self_test else '') + ('&dc=0' if args.no_data_channel else '') +
+        ('&mdns=1' if args.mdns else '') +
         ('&bwe_kbps=%d&bwe_ms=%d' % (args.bwe_kbps, args.bwe_seconds * 1000) if args.bwe_kbps else ''))
     profile = tempfile.mkdtemp(prefix='sm-chrome-')
     print('chrome: %s' % chrome)
     print('page:   %s' % url)
-    proc = subprocess.Popen(chrome_command(chrome, profile, url), stdout=subprocess.DEVNULL,
+    proc = subprocess.Popen(chrome_command(chrome, profile, url, media=not args.mdns), stdout=subprocess.DEVNULL,
                             stderr=subprocess.PIPE if not args.verbose else None)
     page = None
     try:
@@ -362,6 +377,18 @@ def main():
             if native.get('stats'):
                 print('peer stats:    %s' % json.dumps(native['stats'], sort_keys=True))
             ok = ok and bool(native.get('ok'))
+    if args.mdns and native is not None:
+        state = native.get('mdns')
+        print('mdns: %s, selected remote candidate: %s' % (state, native.get('selectedRemote')))
+        if page:
+            print('chrome host candidates: %s' % page.get('localHostCandidates'))
+        if state == 'unresolvable':
+            print("SKIPPED: Chrome's .local host candidates did not resolve on this host (getaddrinfo over mDNS: "
+                  'macOS mDNSResponder, or nss-mdns on Linux)')
+            return SKIP
+        if state == 'not-obfuscated':
+            print('SKIPPED: Chrome signaled its host IPs, not mDNS names (WebRtcHideLocalIpsWithMdns off here)')
+            return SKIP
     print('PASS' if ok else 'FAIL')
     return 0 if ok else 1
 

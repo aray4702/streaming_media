@@ -7,15 +7,15 @@ One document per algorithm: problem, the issue it solves, design, implementation
 | # | Algorithm | Unit | E2E | Benchmarks | macOS arm64 (native) | WebAssembly (Node) | ASan+UBSan (Debug) | -fno-exceptions -fno-rtti |
 |---|---|---|---|---|---|---|---|---|
 | 1.1 | [STUN messages](1-connectivity/1.1-stun.md) | 84 | 0 | 2 | not recorded | not recorded | not recorded | not recorded |
-| 1.2 | [Ports and candidates](1-connectivity/1.2-ports-candidates.md) | 53 | 0 | 0 | not recorded | not recorded | not recorded | not recorded |
+| 1.2 | [Ports and candidates](1-connectivity/1.2-ports-candidates.md) | 54 | 0 | 0 | not recorded | not recorded | not recorded | not recorded |
 | 1.3 | [Connections: candidate-pair checks](1-connectivity/1.3-connections.md) | 34 | 0 | 0 | not recorded | not recorded | not recorded | not recorded |
 | 1.4 | [Port allocation](1-connectivity/1.4-port-allocation.md) | 64 | 0 | 0 | not recorded | not recorded | not recorded | not recorded |
 | 1.5 | [The ICE controller](1-connectivity/1.5-ice-controller.md) | 27 | 0 | 0 | not recorded | not recorded | not recorded | not recorded |
-| 1.6 | [The ICE agent (P2PTransportChannel)](1-connectivity/1.6-ice-agent.md) | 85 | 0 | 0 | not recorded | not recorded | not recorded | not recorded |
+| 1.6 | [The ICE agent (P2PTransportChannel)](1-connectivity/1.6-ice-agent.md) | 102 | 0 | 0 | not recorded | not recorded | not recorded | not recorded |
 | 1.7 | [ICE-lite for the AI server](1-connectivity/1.7-ice-lite.md) | 4 | 0 | 0 | not recorded | not recorded | not recorded | not recorded |
-| 1.8 | [TURN client (UDP, TCP, TLS)](1-connectivity/1.8-turn-client.md) | 56 | 0 | 0 | not recorded | not recorded | not recorded | not recorded |
+| 1.8 | [TURN client (UDP, TCP, TLS)](1-connectivity/1.8-turn-client.md) | 57 | 0 | 0 | not recorded | not recorded | not recorded | not recorded |
 | 1.9 | [TCP packet sockets](1-connectivity/1.9-tcp-sockets.md) | 31 | 0 | 0 | not recorded | not recorded | not recorded | not recorded |
-| 1.10 | [SDP model and parse/write](1-connectivity/1.10-sdp.md) | 75 | 0 | 0 | not recorded | not recorded | not recorded | not recorded |
+| 1.10 | [SDP model and parse/write](1-connectivity/1.10-sdp.md) | 80 | 0 | 0 | not recorded | not recorded | not recorded | not recorded |
 | 1.11 | [Offer/answer generation](1-connectivity/1.11-offer-answer.md) | 65 | 0 | 0 | not recorded | not recorded | not recorded | not recorded |
 | 1.12 | [The endpoint (PeerEndpoint)](1-connectivity/1.12-endpoint.md) | 13 | 0 | 0 | not recorded | not recorded | not recorded | not recorded |
 

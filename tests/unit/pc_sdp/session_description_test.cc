@@ -1,7 +1,6 @@
 // The session description model and JSEP objects (#1062, C6 part 1): libwebrtc M157's
 // pc/session_description_unittest.cc and pc/jsep_session_description_unittest.cc (compare/webrtc/reference/pc/),
-// every case, on sm_test.h. AddHostnameCandidate and SerializeDeserializeWithHostnameCandidate are left out:
-// sm::p2p::SocketAddress has no hostname (see sm/pc/webrtc_sdp.h).
+// every case, on sm_test.h (AddHostnameCandidate and SerializeDeserializeWithHostnameCandidate since #1152).
 #include <memory>
 #include <string>
 #include <vector>
@@ -332,6 +331,60 @@ SM_TEST(PcJsepSessionDescription, SerializeDeserializeWithCandidates) {
   auto parsed_jsep_desc = f.DeSerialize(sdp_with_candidate);
   SM_ASSERT_TRUE(parsed_jsep_desc != nullptr);
   SM_EXPECT_EQ(sdp_with_candidate, f.Serialize(parsed_jsep_desc.get()));
+}
+
+// AddHostnameCandidate: a hostname (mDNS) candidate as the default destination gives the dummy address 0.0.0.0:9.
+SM_TEST(PcJsepSessionDescription, AddHostnameCandidate) {
+  JsepFixture f;
+  Candidate c;
+  c.set_component(p2p::ICE_CANDIDATE_COMPONENT_RTP);
+  c.set_protocol(p2p::UDP_PROTOCOL_NAME);
+  c.set_address(SocketAddress("example.local", 1234));
+  c.set_type(IceCandidateType::kHost);
+  const size_t audio_index = 0;
+  IceCandidate hostname_candidate("audio", audio_index, c);
+  SM_EXPECT_TRUE(f.jsep_desc_->AddCandidate(&hostname_candidate));
+  SM_ASSERT_TRUE(f.jsep_desc_->description() != nullptr);
+  SM_ASSERT_EQ(2u, f.jsep_desc_->description()->contents().size());
+  const auto& content = f.jsep_desc_->description()->contents()[audio_index];
+  SM_EXPECT_EQ(std::string("0.0.0.0:9"), content.media_description()->connection_address().ToString());
+  // The candidate keeps its name.
+  SM_EXPECT_EQ(std::string("example.local:1234"), f.jsep_desc_->candidates(0)->at(0)->candidate().address().ToString());
+}
+
+// SerializeDeserializeWithHostnameCandidate: the hostname candidate survives the round trip, and the c= line is the
+// dummy address 0.0.0.0:9.
+SM_TEST(PcJsepSessionDescription, SerializeDeserializeWithHostnameCandidate) {
+  JsepFixture f;
+  Candidate c;
+  c.set_component(p2p::ICE_CANDIDATE_COMPONENT_RTP);
+  c.set_protocol(p2p::UDP_PROTOCOL_NAME);
+  c.set_address(SocketAddress("example.local", 1234));
+  c.set_type(IceCandidateType::kHost);
+  const size_t audio_index = 0;
+  const size_t video_index = 1;
+  IceCandidate hostname_candidate_audio("audio", audio_index, c);
+  IceCandidate hostname_candidate_video("video", video_index, c);
+  SM_EXPECT_TRUE(f.jsep_desc_->AddCandidate(&hostname_candidate_audio));
+  SM_EXPECT_TRUE(f.jsep_desc_->AddCandidate(&hostname_candidate_video));
+  const std::string sdp = f.Serialize(f.jsep_desc_.get());
+  auto parsed_jsep_desc = f.DeSerialize(sdp);
+  SM_ASSERT_TRUE(parsed_jsep_desc != nullptr);
+  SM_EXPECT_EQ(2u, parsed_jsep_desc->number_of_mediasections());
+  SM_ASSERT_TRUE(parsed_jsep_desc->description() != nullptr);
+  SM_ASSERT_EQ(2u, parsed_jsep_desc->description()->contents().size());
+  const auto& audio_content = parsed_jsep_desc->description()->contents()[audio_index];
+  const auto& video_content = parsed_jsep_desc->description()->contents()[video_index];
+  SM_EXPECT_EQ(std::string("0.0.0.0:9"), audio_content.media_description()->connection_address().ToString());
+  SM_EXPECT_EQ(std::string("0.0.0.0:9"), video_content.media_description()->connection_address().ToString());
+  // Beyond libwebrtc's case: both candidates are back with their name and no IP.
+  for (size_t m = 0; m < 2; ++m) {
+    SM_ASSERT_EQ(1u, parsed_jsep_desc->candidates(m)->count());
+    const SocketAddress& a = parsed_jsep_desc->candidates(m)->at(0)->candidate().address();
+    SM_EXPECT_TRUE(a.IsUnresolvedIP());
+    SM_EXPECT_EQ(std::string("example.local:1234"), a.ToString());
+  }
+  SM_EXPECT_EQ(sdp, f.Serialize(parsed_jsep_desc.get()));
 }
 
 // The connection address in the c= line, from a set of candidates.

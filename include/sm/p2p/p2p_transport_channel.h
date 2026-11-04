@@ -33,8 +33,16 @@
 // the time of the last call that had one (a connection's signal: the later of that and its last receive), so the
 // owner calls Process(now) before handing the sockets their packets at `now`, as the test bench's loops do.
 //
-// Not here (see docs/design/libwebrtc-parity.md 10.9): hostname (mDNS) candidates and their DNS resolution (the
-// library's addresses carry no hostname, as 10.3), the local network access permission (always granted), the STUN
+// - A remote hostname (mDNS `.local`) candidate is resolved, as ResolveHostnameCandidate / OnCandidateResolved do
+//   (#1152): unless the candidate filter shares neither host nor reflexive candidates (relay-only or none), the
+//   channel asks the AsyncDnsResolverFactoryInterface of its Options (sm/p2p/async_dns_resolver.h) and adds the
+//   candidate with its resolved address (IPv6 first, then IPv4; the name is kept) when the resolver calls back, or
+//   drops it when resolution fails or finds no address. Without a factory the candidate is dropped. A resolved mDNS
+//   candidate shows only its name in stats and in GetSelectedCandidatePair (SanitizeRemoteCandidate), and a TURN
+//   port does not pair with it (TurnPort::CreateConnection).
+//
+// Not here (see docs/design/libwebrtc-parity.md 10.9): obfuscating the local host candidates with mDNS names (no
+// mDNS responder: the host stack's), the local network access permission (always granted), the STUN
 // dictionary (GOOG-DELTA; no library API writes it), the DTLS-in-STUN piggyback (off by default in M157), the RTC
 // event log, the field trial strings (WebRTC-IceFieldTrials and the others are at their defaults; a caller may pass
 // IceFieldTrials), socket options from field trials (WebRTC-DscpFieldTrial, -SetSocketReceiveBuffer,
@@ -53,6 +61,7 @@
 
 #include "sm/core/units.h"
 #include "sm/p2p/active_ice_controller_interface.h"
+#include "sm/p2p/async_dns_resolver.h"
 #include "sm/p2p/candidate.h"
 #include "sm/p2p/connection.h"
 #include "sm/p2p/ice_agent_interface.h"
@@ -89,6 +98,17 @@ class P2PTransportChannel : public IceTransportInternal, public IceAgentInterfac
     IceControllerFactoryInterface* ice_controller_factory = nullptr;
     ActiveIceControllerFactoryInterface* active_ice_controller_factory = nullptr;
     IceFieldTrials field_trials;
+    // IceTransportInit::async_dns_resolver_factory: resolves remote hostname candidates; not owned, must outlive the
+    // channel. Null: they are dropped.
+    AsyncDnsResolverFactoryInterface* async_dns_resolver_factory = nullptr;
+  };
+
+  // Remote hostname candidates (#1152), for tests and logs (libwebrtc logs these).
+  struct HostnameCandidateStats {
+    int resolving = 0;   // started, waiting for the resolver
+    int resolved = 0;    // added with a resolved address
+    int failed = 0;      // the resolver failed, or found no IPv6 or IPv4 address
+    int dropped = 0;     // not resolved: no resolver factory, or the candidate filter shares no host or srflx
   };
 
   // `allocator` must outlive the channel. `now` starts the channel's clock.
@@ -166,6 +186,7 @@ class P2PTransportChannel : public IceTransportInternal, public IceAgentInterfac
     return remote_ice_parameters_.empty() ? nullptr : &remote_ice_parameters_.back();
   }
   const IceFieldTrials& ice_field_trials() const { return ice_field_trials_; }
+  const HostnameCandidateStats& hostname_candidate_stats() const { return hostname_stats_; }
   std::string ToString() const;
 
  private:
@@ -223,6 +244,9 @@ class P2PTransportChannel : public IceTransportInternal, public IceAgentInterfac
   Connection* FromIceController(const Connection* conn) const;
   TimeDelta ComputeEstimatedDisconnectedTime(Timestamp now, const Connection* old_connection) const;
   void FinishAddingRemoteCandidate(Timestamp now, const Candidate& new_remote_candidate);
+  void ResolveHostnameCandidate(const Candidate& candidate);
+  void OnCandidateResolved(Timestamp now, AsyncDnsResolverInterface* resolver);
+  void AddRemoteCandidateWithResult(Timestamp now, Candidate candidate, const AsyncDnsResolverResult& result);
   // The time of a signal that carries none (see the file comment).
   Timestamp EventTime(const Connection* connection);
 
@@ -266,6 +290,13 @@ class P2PTransportChannel : public IceTransportInternal, public IceAgentInterfac
   // The time of the last call that carried one (see the file comment).
   Timestamp now_;
   std::unique_ptr<ActiveIceControllerInterface> ice_controller_;
+  AsyncDnsResolverFactoryInterface* const async_dns_resolver_factory_;
+  struct CandidateAndResolver {
+    Candidate candidate;
+    std::unique_ptr<AsyncDnsResolverInterface> resolver;
+  };
+  std::vector<CandidateAndResolver> resolvers_;
+  HostnameCandidateStats hostname_stats_;
 };
 
 }  // namespace sm::p2p

@@ -51,6 +51,7 @@
 #include <string>
 #include <vector>
 
+#include "os_dns_resolver.h"
 #include "os_sockets.h"
 #include "sm/core/units.h"
 #include "sm/p2p/port_allocator.h"
@@ -199,6 +200,8 @@ class CallClient {
   CallClientConfig config_;
   std::function<void(const std::string&)> send_signal_;
   interop::OsSocketServer sockets_;
+  // Resolves the remote mDNS (.local) candidates a browser signals (#1152); outlives the endpoint.
+  interop::OsDnsResolverFactory resolver_;
   std::unique_ptr<p2p::StaticNetworkManager> network_;
   std::unique_ptr<p2p::BasicPortAllocator> allocator_;
   p2p::ServerAddresses stun_;

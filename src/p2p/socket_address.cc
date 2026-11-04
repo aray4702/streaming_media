@@ -315,15 +315,28 @@ std::optional<SocketAddress> SocketAddress::FromString(std::string_view s) {
   return SocketAddress(*ip, static_cast<uint16_t>(p));
 }
 
-std::string SocketAddress::ToString() const {
-  const std::string host = ip_.family() == IpFamily::kV6 ? "[" + ip_.ToString() + "]" : ip_.ToString();
-  return host + ":" + std::to_string(port_);
+void SocketAddress::SetIP(std::string_view hostname) {
+  hostname_ = std::string(hostname);
+  const std::optional<IpAddress> ip = IpAddress::FromString(hostname);
+  literal_ = ip.has_value();
+  ip_ = ip ? *ip : IpAddress();
 }
 
+std::string SocketAddress::HostAsURIString() const {
+  // If the hostname was a literal IP string, it may need to have square brackets added (for ToString()).
+  if (!literal_ && !hostname_.empty()) return hostname_;
+  return ip_.family() == IpFamily::kV6 ? "[" + ip_.ToString() + "]" : ip_.ToString();
+}
+
+std::string SocketAddress::HostAsSensitiveURIString() const {
+  if (!literal_ && !hostname_.empty()) return hostname_;
+  return ip_.family() == IpFamily::kV6 ? "[" + ip_.ToSensitiveString() + "]" : ip_.ToSensitiveString();
+}
+
+std::string SocketAddress::ToString() const { return HostAsURIString() + ":" + std::to_string(port_); }
+
 std::string SocketAddress::ToSensitiveString() const {
-  const std::string host =
-      ip_.family() == IpFamily::kV6 ? "[" + ip_.ToSensitiveString() + "]" : ip_.ToSensitiveString();
-  return host + ":" + std::to_string(port_);
+  return HostAsSensitiveURIString() + ":" + std::to_string(port_);
 }
 
 }  // namespace sm::p2p

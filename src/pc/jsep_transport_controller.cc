@@ -421,8 +421,11 @@ std::optional<p2p::SslRole> JsepTransportController::GetDtlsRole(std::string_vie
 // MaybeCreateJsepTransport, CreateDtlsTransport and CreateRtpTransport (the DTLS-SRTP one, with rtcp-mux).
 void JsepTransportController::MaybeCreateJsepTransport(const ContentInfo& content, Timestamp now) {
   if (GetJsepTransportByName(content.mid())) return;
+  // CreateIceTransport: IceTransportInit with the config's resolver factory (#1152).
+  p2p::P2PTransportChannel::Options options;
+  options.async_dns_resolver_factory = config_.async_dns_resolver_factory;
   auto ice = std::make_unique<p2p::P2PTransportChannel>(now, content.mid(), p2p::ICE_CANDIDATE_COMPONENT_RTP,
-                                                        allocator_);
+                                                        allocator_, options);
   if (config_.ice_config) ice->SetIceConfig(*config_.ice_config);
   ice->SetIceRole(ice_role_);
   const std::string name = content.mid();

@@ -628,7 +628,7 @@ error's `number()` (401 gives 1, a x00 code 0 and no candidate error). Differenc
 |---|---|---|---|
 | Time | Network thread, posted tasks, `delete this` on timeout | `now` passed in, `Process(now)` at `NextProcessTime()`; a dead port sets `dead()` and signals, the owner deletes it | The library's time model (#996, #997) |
 | Connections | `Connection`, `CreateConnection`, `GetConnection`, `DestroyConnection` | Ported (10.4) | #1000 |
-| Hostnames | STUN servers by name (DNS resolver), mDNS host candidates, `ToSanitizedCopy` | IP addresses only; no mDNS | The library's addresses carry no hostname; name resolution is the host stack's (C11, C12) |
+| Hostnames | STUN servers by name (DNS resolver), mDNS host candidates, `ToSanitizedCopy` | `SocketAddress` keeps a hostname as libwebrtc's does (`SetIP` with a name, `SetResolvedIP`, `IsUnresolvedIP`, the name in `ToString` and in comparisons of addresses without a usable IP), and `ToSanitizedCopy` is ported (#1152). Remote mDNS host candidates are kept and resolved (10.9, 10.16). STUN and TURN servers are given by IP | The library starts no lookup of its own: remote candidates resolve through the resolver the host passes (10.9); a server's name is resolved by the host before it configures the allocator |
 | Local network access permission | Chromium's factory; none means granted | Always granted | No permission factory in the library |
 | Candidate SDP parsing, fingerprint, network slice | `ParseCandidateString`, the TLS `fingerprint` extension, `NetworkSlice` | Not ported (writing the attribute is) | SDP stays with the host stack; TLS candidates are C4; slices are behind `WebRTC-UnifiedCommunications`, off by default |
 | Field trials | `WebRTC-IncreaseIceCandidatePriorityHostSrflx`, `-UseDifferentiatedCellularCosts`, `-AddNetworkCostToVpn` | The first is `Port::Parameters::increase_host_srflx_priority` (off); the others at their default (off) | Defaults as libwebrtc |
@@ -688,7 +688,7 @@ Differences:
 | Time | Network thread, posted and delayed tasks, `SafeTask` | The session queues what libwebrtc posts and runs it, and its ports, in `Process(now)` at `NextProcessTime()`; it owns its ports and deletes a destroyed one at the end of that call | The library's time model, as 10.3 |
 | TCP ports | `TCPPort` in the last phase, passive with `allow_tcp_listen` (on by default) | Same: `TCPPort` (10.22, #1151) | Ported |
 | TURN ports | `TurnPortFactory` by default | `TurnPortFactory` by default too (10.7, #1031), or the `RelayPortFactoryInterface` the caller gives. DTLS TURN servers are not added as STUN servers (no `PROTO_DTLS`) | C4 |
-| mDNS, local network access, VPN list, `TurnCustomizer` | mDNS obfuscation when the network manager has a responder; permission factory; `set_vpn_list` | None (`MdnsObfuscationEnabled` false, as with no responder; access granted) | Host-stack features (C11, C12) |
+| mDNS, local network access, VPN list, `TurnCustomizer` | mDNS obfuscation when the network manager has a responder; permission factory; `set_vpn_list` | None (`MdnsObfuscationEnabled` false, as with no responder; access granted). The remote side's mDNS candidates are resolved (10.9, #1152) | Host-stack features (C11, C12): hiding our own host IPs needs an mDNS responder, which a native app has no use for (a browser's page does) |
 | Field trials | `WebRTC-UseTurnServerAsStunServer`, `WebRTC-IPv6Default` | At their defaults (enabled); the second is `PeerConnectionAllocatorConfig::ipv6_default` | Defaults as libwebrtc |
 | PeerConnection's allocator settings | `PeerConnection::InitializePortAllocator_n` (`pc/peer_connection.cc`) | `ConfigureAsPeerConnection` (`port_allocator.h`) with `RTCConfiguration`'s defaults: shared socket, IPv6 and IPv6 on Wi-Fi, step delay 50 ms, `CF_ALL`, 5 IPv6 networks, `SetConfiguration` last | Same; the session layer (#1002 onwards) calls it |
 | `FakeNetworkManager` | `rtc_base/fake_network.h` (tests) | `StaticNetworkManager`, the emulated network's: the same /24 and /64 prefixes, `test<N>` names and first-update rule, with the networks-changed signal in the call (the session queues its handler) | No network thread |
@@ -789,9 +789,17 @@ the connection rules (one per remote address per port, a newer generation replac
 NOMINATION with renomination on both sides), the controlled side switching on nomination and on data, the state rules
 (`ComputeState`, `ComputeIceTransportState`), destroying every connection when all have timed out, stopping (or with
 continual gathering clearing) the sessions on a strongly connected pair, the regathering timer, `SendPacket`'s
-ENOTCONN/EINVAL rules, and the prflx sanitizing of the selected pair and the stats. The two-endpoint cases of
-`p2p_transport_channel_unittest.cc` without TURN, TCP, mDNS or field trials are in
-`tests/unit/p2p/p2p_transport_channel_test.cc`, over the emulated network's NATs (#985) with a STUN server. The
+ENOTCONN/EINVAL rules, the prflx and mDNS sanitizing of the selected pair and the stats, and remote hostname (mDNS)
+candidates resolved as `ResolveHostnameCandidate`, `OnCandidateResolved` and `AddRemoteCandidateWithResult` do
+(#1152: not for a relay-only or empty candidate filter, IPv6 before IPv4, dropped on an error, with no address or
+without a resolver factory; the name kept on the resolved address). The two-endpoint cases of
+`p2p_transport_channel_unittest.cc` without TURN, TCP or field trials are in
+`tests/unit/p2p/p2p_transport_channel_test.cc`, over the emulated network's NATs (#985) with a STUN server, with
+the mDNS cases (`HostnameCandidateIsResolved`, `CanConnectWithHostCandidateWithMdnsName`, the two prflx merges, the
+sanitized selected pair and stats, `RemoteMdnsCandidatesSanitizedInStats`) on `FakeAsyncDnsResolverFactory` in
+place of `ResolverFactoryFixture`, the gathering side's mDNS names given at signaling in place of
+`FakeMdnsResponder`; `NoPairOfLocalRelayCandidateWithRemoteMdnsCandidate` is a `TurnPort` case
+(`tests/unit/p2p/turn_port_test.cc`). The
 single-channel `P2PTransportChannelPingTest` cases (triggered checks, ping intervals, peer-reflexive pairs and
 resurrection, the controlled side's selection by priority, data and nomination, the estimated disconnected time,
 pruning, `GetState`, the ICE role on pruned and older ports, the port's destruction once pruned, and the
@@ -811,7 +819,7 @@ Differences:
 | Item | libwebrtc M157 | This library | Why |
 |---|---|---|---|
 | Time | Network thread, `Environment` clock, `RepeatingTaskHandle` for regathering | `now` on the calls that read the clock; `Process(now)` at `NextProcessTime()` runs the allocator sessions (their ports and connections), the controller's tasks and the regathering timer. Calls without `now` (`SetRemoteIceParameters`, `SetIceConfig`, socket and connection signals) use the time of the last call that had one (a connection's signal: the later of that and its last receive), so the owner calls `Process(now)` before the sockets deliver at `now` | The library's time model, as 10.3 |
-| Hostname candidates | Resolved with the `AsyncDnsResolverFactory` (or dropped without one; not for relay-only policies) | Not ported | The library's addresses carry no hostname (10.3); mDNS is the host stack's (C11) |
+| Hostname candidates | Resolved with the `AsyncDnsResolverFactory` (or dropped without one; not for relay-only policies); `PeerConnection` always gives one (`BasicAsyncDnsResolverFactory`, `getaddrinfo` off the network thread) | Ported (#1152): resolved through `Options::async_dns_resolver_factory` (`sm/p2p/async_dns_resolver.h`, libwebrtc's `api/async_dns_resolver.h`), same rules. The resolver's callback carries `now` and runs from the owner's loop. The host passes the resolver (`JsepTransportController::Config`): the apps and the browser interop peer use `OsDnsResolverFactory` (`apps/net/os_dns_resolver.h`, `getaddrinfo` on worker threads the host owns; `.local` over mDNSResponder on macOS and iOS, nss-mdns on Linux), tests `FakeAsyncDnsResolverFactory`. Without one a hostname candidate is dropped, as libwebrtc's channel does without a factory. The log lines are counters (`hostname_candidate_stats`) | The library's time model: it starts no thread and reads no clock, so it has no default resolver of its own |
 | Local network access | `LocalNetworkAccessPermissionFactory` queries | Always granted | As libwebrtc with no factory (10.3) |
 | STUN dictionary | `StunDictionaryView`/`Writer`, GOOG-DELTA on pings (`enable_goog_delta` on) | Not ported: pings carry no GOOG-DELTA, a received one is not applied | No library API writes the dictionary, so the writer never has a delta to send |
 | DTLS-in-STUN | Piggyback callbacks | Not ported | Off by default in M157 (`dtls_handshake_in_stun`), as 10.4 |
@@ -850,7 +858,7 @@ release and graceful release, closing, the forged unauthenticated success) and a
 | Time | Network thread; `PostTask` for the port error, refresh error, allocate mismatch, alternate server and close; `PostDelayedTask` for an entry's delete | The port queues them and runs them in `Process(now)` at `NextProcessTime()`; it keeps the latest `now`, which its destructor uses to send the release | The library's time model, as 10.3 |
 | TCP, TLS and DTLS to the server | `CreateClientTcpSocket`, `OnSocketConnect`, `PROTO_DTLS` | TCP and TLS as libwebrtc (10.14); no `PROTO_DTLS` | 10.14 (#1036) |
 | DNS | `ResolveTurnAddress` for a server given by name | None: the library's addresses are IP literals; the URL host is the IP | As 10.3 |
-| `TurnCustomizer`, local network access, mDNS candidates, ECN, `CopyPortInformationToPacketInfo`, `turn_overhead_bytes` | Present | None (no customizer; access granted; addresses carry no hostnames; no ECN or packet info in `PacketOptions`) | Host-stack features (C11, C12) and the library's socket types |
+| `TurnCustomizer`, local network access, mDNS candidates, ECN, `CopyPortInformationToPacketInfo`, `turn_overhead_bytes` | Present | No customizer; access granted; no ECN or packet info in `PacketOptions`. mDNS: as libwebrtc, no pair with a remote mDNS candidate (`CreateConnection`, #1152) | Host-stack features (C11, C12) and the library's socket types |
 | REST credentials | Beyond a username and password pair | A helper builds them (10.14) | 10.14 (#1036) |
 | `TurnServer` | `TaskQueueBase` timers, TCP listeners, `StunMessageObserver` | Timers in `Process(now)`, an observer callback, TCP and TLS listeners since 10.14; external socket factory not owned | Test server on the emulated network |
 
@@ -933,7 +941,7 @@ in the emulated network). Differences:
 | Session cache | `OpenSSLAdapterFactory` / `OpenSSLSessionCache` | Not ported; `IsResumedSession` is false | `SSLAdapter::Create`, which the TURN client's sockets use, runs without one too |
 | Fake TLS | `AsyncSSLSocket` for `OPT_TLS_FAKE` | `CreateClientTcpSocket` returns nullptr | Nothing in a call uses the dummy handshake |
 | DTLS mode | `SSLAdapter::Create(socket, dtls = true)` for `CreateClientUdpSocket` with `OPT_DTLS` | Not ported | No `PROTO_DTLS` TURN servers (10.5); DTLS-SRTP is `DtlsTransport` |
-| Hostname on addresses | `SocketAddress::hostname()`, also in comparisons for an unresolved address | `SocketAddress::hostname()` / `SetHostname`; comparisons use the IP and port only | The library resolves nothing (10.3); the name is carried for TLS |
+| Hostname on addresses | `SocketAddress::hostname()`, also in comparisons for an unresolved address | The same since #1152 (10.3); `SetHostname` (the library's) sets the server's name beside its IP | The host resolves the server's name; the name is carried for TLS |
 | Mbed TLS backend | (BoringSSL only) | Its ECDHE suites of the list and its TLS 1.3 suites (no static RSA), no OCSP or SCT request, no extension permutation; the host name from its CN/SAN mismatch flag after the handshake | What Mbed TLS 3.6 has (as 10.2) |
 | Logging, `SSLInfoCallback` | `RTC_LOG` | `TlsStream::error()` names the step that failed | No logging in the library |
 
@@ -1023,15 +1031,16 @@ a Chrome-style offer and answer are read and written back byte for byte); `SdpDe
 libwebrtc does, keeps and ignores the same lines, fills in the same defaults (static audio payload types, VP9
 profile-id, H.264 packetization-mode, AV1 and H.265 defaults, a=ptime/maxptime on every codec, rtcp-fb wildcards,
 CCFB when every codec has it) and reports the same `SdpParseError` line and text. Tests: `tests/unit/pc_sdp/`
-(every case of `pc/session_description_unittest.cc` and `jsep_session_description_unittest.cc` but the two hostname
-ones, and the cases of `api/webrtc_sdp_unittest.cc` for this subset with its SDP strings); fuzz target `sdp_parser`
+(every case of `pc/session_description_unittest.cc` and `jsep_session_description_unittest.cc`, the two hostname
+ones since #1152, and the cases of `api/webrtc_sdp_unittest.cc` for this subset with its SDP strings, with
+`SerializeHostnameCandidate` and `ParseConnectionDataWithHostnameConnectionAddress`); fuzz target `sdp_parser`
 after `test/fuzzers/sdp_parser_fuzzer.cc`, with a write/parse/write stability check. Differences:
 
 | Item | libwebrtc M157 | This library | Why |
 |---|---|---|---|
-| Hostname (mDNS) candidates | Kept, with the hostname as the address | Dropped when parsing an SDP; `ParseCandidateString` fails with `kUnsupportedHostnameCandidate` | `p2p::SocketAddress` has no hostname (10.3); the host stack resolves mDNS (C11) |
+| Hostname (mDNS) candidates | Kept, with the hostname as the address | The same (#1152): kept by the parser and written back with the name; a hostname default destination gives the dummy `0.0.0.0` port 9 | Same |
 | A candidate's TLS `fingerprint` extension | Parsed into `Candidate::fingerprint()` | Checked as libwebrtc checks it (a TLS candidate without one fails), not kept | `p2p::Candidate` has no fingerprint (10.3) |
-| A `c=` line or `raddr` with a hostname | Kept as a hostname | The address is left unspecified | As above |
+| A `c=` line or `raddr` with a hostname | Kept as a hostname | The same (#1152) | Same |
 | RID codec match when writing `a=rid` | `IsSameRtpCodecIgnoringLevel` | Name, clock rate, channels and fmtp with the SDP defaults filled in and the level parameters left out | `codec_comparators` comes with offer/answer generation (C6 part 2) |
 | Payload type | `PayloadType` class | `int` (-1 = not set) | No `api/payload_type.h` in the library |
 | UMA histogram `WebRTC.PeerConnection.SdpBandwidth`, logging of ignored lines | Recorded | None | No histograms in the library |

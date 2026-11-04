@@ -158,14 +158,7 @@ Candidate PortAllocator::SanitizeCandidate(const Candidate& c) const {
   const bool filter_related_address = (c.is_stun() && filter_stun_related_address) ||
                                       (c.is_relay() && filter_turn_related_address) ||
                                       (c.is_prflx() && filter_prflx_related_address);
-  // Candidate::ToSanitizedCopy(false, filter_related_address, false).
-  Candidate copy(c);
-  if (filter_related_address) {
-    // EmptySocketAddressWithFamily.
-    const IpFamily family = copy.address().family();
-    copy.set_related_address(family == IpFamily::kUnspec ? SocketAddress() : SocketAddress(GetAnyIp(family), 0));
-  }
-  return copy;
+  return c.ToSanitizedCopy(/*use_hostname_address=*/false, filter_related_address, /*filter_ufrag=*/false);
 }
 
 void ConfigureAsPeerConnection(Timestamp now, PortAllocator* allocator, const ServerAddresses& stun_servers,
