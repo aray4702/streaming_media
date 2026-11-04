@@ -43,13 +43,22 @@ zero is libwebrtc's behaviour) and `uncongested_max_boost` (1.25):
 - On such a path the pacer drains its queue within 150 ms instead of 2 s, at no more than 1.25 x the
   pacing rate (event `pacer/fast_drain`, counter `fast_drains`). Video no longer waits seconds, and A/V
   sync (unchanged, as libwebrtc) no longer holds audio back.
+- Recovery after a feedback outage (Owner's option C on PR #1143): when feedback returns after a gap of
+  1 s or more while the drain is active, GoogCC's target jumps back to its stale estimate (1.43 Mbps on
+  the 1 Mbps link of `issue_536_reverse_outage_45s`, as in libwebrtc). In libwebrtc the pacer then holds
+  ~2.2 s of video, so the queue the jump builds on the link only replaces delay that was already there;
+  with an empty pacer it showed as a 200-390 ms freeze and an 80 ms audio gap (6 cells behind libwebrtc).
+  `SendSideController::EncoderTarget` now restarts the encoder (not GoogCC) from the target it had at the
+  last feedback before the gap and grows it 8%/s (AimdRateControl's largest increase) until it meets
+  GoogCC's target, which ends it at once when GoogCC's target is lower (event `send_side/recovery_ramp`,
+  counter `recovery_ramps`). The ramp applies only while the uncongested drain is on.
 
 ## Regression tests
 
 | Test | Fails before the fix | Passes after |
 |---|---|---|
 | `testbench/scenarios/issue_795_loss20_mouth_to_ear.scn` | m2e p95 985.3, video e2e 2521, pacer 2356 (expect < 400 / 1000 / 500) | 303, 596, 230 |
-| `testbench/scenarios/issue_795_reverse_outage_mouth_to_ear.scn` | m2e p95 2049, video e2e 2288 (expect < 400 / 1000) | 293, 445 |
+| `testbench/scenarios/issue_795_reverse_outage_mouth_to_ear.scn` | m2e p95 2049, video e2e 2288 (expect < 400 / 1000; no freeze, longest interruption < 50) | 290, 428, 0 freezes, 20 ms |
 | `tests/unit/cc/pacing_controller_test.cc` `PacingController.UncongestedPathDrainsWithinTheShortLimit` | no such option | passes |
 
 ## Results
@@ -63,11 +72,13 @@ Seeds 1-10, main -> this fix (libwebrtc M157 mean from #792):
 | loss20 | video.delay_pacer_p95_ms | mean 1315 | mean 171 | 1529 |
 | loss20 | sync.av_offset_p95_ms | mean 1031 | mean 355 | 1173 |
 | loss20 | video.freeze_count / total_ms | 25.8 / 7653 | 23.9 / 7174 | 27.4 / 8103 |
-| reverse outage | audio.mouth_to_ear_p95_ms | 2041-2105 (mean 2070) | 293 354 296 367 296 312 331 325 358 298 (mean 323) | 2070 |
-| reverse outage | video.e2e_delay_p95_ms | mean 2307 | mean 348 | 2307 |
-| reverse outage | sync.av_offset_p95_ms | mean 1593 | mean 148 | ~1590 |
-| reverse outage | video.longest_freeze_ms | mean 98 | mean 248 | 98 |
-| reverse outage | audio.concealed_pct | mean 0.06 | mean 0.15 | 0.06 |
+| reverse outage | audio.mouth_to_ear_p95_ms | 2041-2105 (mean 2070) | 290 341 299 335 304 290 331 292 353 287 (mean 312) | 2070 |
+| reverse outage | video.e2e_delay_p95_ms | mean 2307 | mean 324 | 2307 |
+| reverse outage | sync.av_offset_p95_ms | mean 1593 | mean 147 | 1595 |
+| reverse outage | video.freeze_total_ms | | 0 on every seed | 89 |
+| reverse outage | video.longest_freeze_ms | mean 98 | mean 21 | 103 |
+| reverse outage | audio.longest_interruption_ms | | mean 23.5 | 22 |
+| reverse outage | audio.concealed_pct | mean 0.06 | mean 0.06 | 0.06 |
 | policer (issue_12) | audio.mouth_to_ear_p95_ms | mean 1005 | mean 343 | |
 | policer (issue_12) | video.freeze_count / total_ms | 5.6 / 9344 | 7.4 / 6587 | |
 
@@ -94,12 +105,17 @@ Suite against the baseline (seed 1): 92 improved, 17 regressed:
 | issue_737_outage_15s_100ms | video.e2e_delay_p50_ms | 151.5 | 176 | REGRESSED |
 
 Why the regressions are accepted (for the Owner and the window to judge):
-- `issue_536_reverse_outage_45s`: when feedback returns at 65 s, GoogCC's target jumps to the delay-based
-  estimate (1.46 Mbps on a 1 Mbps link, as on main and in libwebrtc) and the link queue spikes to ~270 ms.
-  Before, the 2 s of audio and video buffering hid it; now it shows as one ~250 ms freeze and 0.1% more
-  concealment. Two expect lines move (`needs-human`). `send_over_target` is the drain itself.
+- `issue_536_reverse_outage_45s`: the freeze and concealment this table showed at first (when feedback
+  returned at 65 s) are gone with the encoder ramp (see Fix); both expect lines are back at their main
+  values. With the ramp, against the drain-only version: freeze 250 -> 0 ms, queue max 296 -> 130 ms,
+  late discards 69 -> 39. `send_over_target` is the drain itself.
+- `issue_85_video_pause` (two-way 10 s outage): the ramp runs after the outage; audio late discards 35 -> 37,
+  m2e p95 214 -> 220 ms on seed 1, no cell behind libwebrtc on 10 seeds.
 - `issue_12_lossbwe_policer` seed 1: one trajectory. On 10 seeds m2e falls from 1005 to 343 ms and the freeze
   total from 9344 to 6587 ms; the freeze count rises from 5.6 to 7.4.
 - `issue_536_loss20_av_sync` seed 1 freeze total: on 10 seeds it falls (7653 -> 7174 ms).
 - `issue_21/154_shallow_drop_repair` encoder target average is higher, not a user-facing loss.
   `issue_737_outage_15s_100ms` e2e p50 151 -> 176 ms on seed 1; its 10-seed p95 is unchanged (553 -> 546).
+
+Comparison with libwebrtc (10 seeds, local means substituted into the PR's compare-webrtc.json of run
+41729259339, `tools/parity_report.py`): 0 cells behind, the same 28 cells ahead as the drain alone.

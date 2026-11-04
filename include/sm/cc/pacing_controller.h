@@ -190,6 +190,10 @@ class PacingController : public MetricsSource {
   // Issue #795: whether the path shows no queueing (see uncongested_queue_time_limit).
   void SetPathUncongested(bool uncongested) { path_uncongested_ = uncongested; }
   bool path_uncongested() const { return path_uncongested_; }
+  // Whether the uncongested drain is switched on and the path is marked uncongested.
+  bool uncongested_drain_active() const {
+    return path_uncongested_ && cfg_.drain_large_queues && cfg_.uncongested_queue_time_limit > TimeDelta::Zero();
+  }
 
   // The queued packets' wire sizes.
   DataSize QueueSize() const { return queue_.SizeInBytes(); }

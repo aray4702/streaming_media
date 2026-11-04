@@ -3,7 +3,10 @@ describe forward link healthy, feedback path down for 45 s: audio reaches the li
 # #795 (Owner 2026-11-03: beyond libwebrtc M157, which is ~2.1 s late here too). Same link as
 # issue_536_reverse_outage_45s. Before the fix (main), seeds 1-10: m2e p95 2041-2105 (mean 2070), video e2e p95
 # mean 2307, pacer p95 mean 2245; libwebrtc M157 m2e mean 2070 (#792).
-# After: m2e 293 354 296 367 296 312 331 325 358 298 (mean 323), video e2e mean 348, pacer mean 215.
+# After: m2e 290 341 299 335 304 290 331 292 353 287 (mean 312), video e2e mean 324, pacer mean 214.
+# When feedback returns, the encoder ramps up from its pre-outage target instead of jumping to GoogCC's
+# stale 1.43 Mbps estimate, which with an empty pacer froze video 200-390 ms (libwebrtc mean 98 ms):
+# now no freeze on any seed, longest interruption mean 23.5 ms (libwebrtc 22).
 seed 1
 duration 120s
 at 0s capacity=1000kbps delay=40ms queue=300ms
@@ -13,3 +16,5 @@ reverse at 65s up
 # The Tester's targets (#536): m2e < 400, video e2e < 1000.
 expect audio.mouth_to_ear_p95_ms < 400
 expect video.e2e_delay_p95_ms < 1000
+expect video.freeze_count == 0
+expect audio.longest_interruption_ms < 50

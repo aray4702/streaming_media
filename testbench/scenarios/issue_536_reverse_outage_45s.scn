@@ -15,12 +15,9 @@ reverse at 65s up
 # libwebrtc seeds 1-10 (#792): 2039 2044 2087 2043 2085 2063 2095 2077 2105 2063 (worst 2105). Ours seed 1: 2044.
 expect audio.mouth_to_ear_p95_ms < 2106
 # libwebrtc: 0.04 0.05 0.06 0.05 0.02 0.08 0.08 0.09 0.09 0 (worst 0.09); no interruptions. Ours seed 1: 0.04, 0.
-# needs-human (#795, Owner's decision of 2026-11-03 to go beyond libwebrtc here): was < 0.1. With video no longer
-# 2 s deep in the pacer, A/V sync no longer holds audio 2 s back, so the queue spike when feedback returns (GoogCC's
-# target jumps to the delay-based estimate, 1.46 Mbps on this 1 Mbps link, as libwebrtc) is no longer hidden by
-# that buffer. Ours seeds 1-10: 0.144 0.145 0.155 0.174 0.111 0.157 0.195 0.209 0.106 0.093 (mean 0.149; parity
-# floor 0.5). m2e p95 2049 -> 293 ms on seed 1.
-expect audio.concealed_pct < 0.25
+# #795: with the uncongested pacer drain and its encoder ramp after the outage, ours seeds 1-10: 0.043 0.059 0.060
+# 0.054 0.044 0.076 0.075 0.107 0.085 0 (mean 0.060); longest interruption mean 23.5 ms (libwebrtc 22).
+expect audio.concealed_pct < 0.1
 expect audio.interruptions == 0
 # libwebrtc: 2288 2306 2330 2293 2281 2304 2359 2326 2300 2281 (worst 2359). Ours seed 1: 2288.
 expect video.e2e_delay_p95_ms < 2359
@@ -28,9 +25,8 @@ expect video.e2e_delay_p95_ms < 2359
 expect sync.av_offset_p95_ms < 1721
 # libwebrtc: freezes 0 0 1 0 0 1 1 0 1 0 (worst 1); longest 29 27 226 3 34 223 206 31 234 13 (worst 234). Ours seed 1: 0, 26.
 expect video.freeze_count <= 1
-# needs-human (#795, as above): was <= 234. The same spike gives one 200-390 ms freeze at 65-66 s. Ours seeds 1-10:
-# 250 258 27 259 208 278 274 278 263 385 (mean 248; libwebrtc mean 98, freezes on 4 of 10 seeds).
-expect video.longest_freeze_ms <= 390
+# #795: ours seeds 1-10: freezes 0 on every seed; longest 20 23 28 18 19 29 1 22 21 23 (mean 21).
+expect video.longest_freeze_ms <= 234
 # libwebrtc: 27.49-27.62 (worst 27.49). Ours seed 1: 27.56.
 expect video.render_fps > 27.4
 # libwebrtc: 0 on every seed. Ours seed 1: 0.

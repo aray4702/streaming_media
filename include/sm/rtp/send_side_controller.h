@@ -358,6 +358,13 @@ class SendSideController : public MetricsSource {
   TimeDelta last_feedback_rtt_ = TimeDelta::PlusInfinity();
   TimeDelta min_feedback_rtt_ = TimeDelta::PlusInfinity();
   Timestamp uncongested_since_ = Timestamp::PlusInfinity();
+  // Issue #795: the encoder's ramp after a feedback gap while the pacer drains quickly (EncoderTarget).
+  Timestamp last_feedback_at_ = Timestamp::MinusInfinity();
+  DataRate pre_gap_target_ = DataRate::Zero();
+  Timestamp ramp_start_ = Timestamp::PlusInfinity();
+  DataRate ramp_base_ = DataRate::Zero();
+  uint64_t recovery_ramps_ = 0;
+  DataRate EncoderTarget(DataRate target, Timestamp now);
   uint64_t cwnd_frame_counter_ = 0;
   uint64_t cwnd_frames_dropped_ = 0;
   std::vector<SenderPacket> GeneratePadding(size_t target_bytes, Timestamp now);
