@@ -6,53 +6,7 @@ A gap is a metric whose means differ by more than the band, in either direction:
 
 ### Against `main`
 
-28 gaps on `main`, 69 here: **0 closed, 41 opened**, 0 changed direction.
-
-Opened:
-
-| scenario | metric | ours | libwebrtc | band | vs libwebrtc | seeds | owner |
-|---|---|---|---|---|---|---|---|
-| capacity_drop | `video.avg_kbps` | 1331 | 850 | ±66.5 | ahead | 10/10 | **none** (closed, no note: #37, #61) |
-| capacity_drop | `cc.utilization_pct` | 82.8 | 54.4 | ±4.1 | ahead | 10/10 | **none** (closed, no note: #19, #15, #48, #12, #61) |
-| capacity_drop | `cc.max_settle_ms` | 1310 | 14870 | ±744 | ahead | 10/10 | **none** (closed, no note: #15, #48, #61, #20) |
-| issue_14_capacity_recovery | `video.avg_kbps` | 1331 | 850 | ±66.5 | ahead | 10/10 | **none** (closed, no note: #37, #61) |
-| issue_14_capacity_recovery | `cc.utilization_pct` | 82.8 | 54.4 | ±4.1 | ahead | 10/10 | **none** (closed, no note: #19, #15, #48, #12, #61) |
-| issue_14_capacity_recovery | `cc.max_settle_ms` | 1310 | 14870 | ±744 | ahead | 10/10 | **none** (closed, no note: #15, #48, #61, #20) |
-| issue_204_cross_traffic_join | `video.avg_kbps` | 1674 | 1376 | ±83.7 | ahead | 10/10 | **none** (closed, no note: #37, #61) |
-| issue_204_cross_traffic_join | `cc.utilization_pct` | 69.9 | 58.0 | ±3.5 | ahead | 10/10 | **none** (closed, no note: #19, #15, #48, #12, #61) |
-| issue_204_cross_traffic_join | `cc.max_settle_ms` | 4640 | 8090 | ±1541 | ahead | 10/10 | **none** (closed, no note: #15, #48, #61, #20) |
-| issue_23_capacity_drop | `video.avg_kbps` | 1331 | 850 | ±66.5 | ahead | 10/10 | **none** (closed, no note: #37, #61) |
-| issue_23_capacity_drop | `cc.utilization_pct` | 82.8 | 54.4 | ±4.1 | ahead | 10/10 | **none** (closed, no note: #19, #15, #48, #12, #61) |
-| issue_23_capacity_drop | `cc.max_settle_ms` | 1310 | 14870 | ±744 | ahead | 10/10 | **none** (closed, no note: #15, #48, #61, #20) |
-| issue_346_reconfigure_capacity_drop | `video.avg_kbps` | 1331 | 850 | ±66.5 | ahead | 10/10 | **none** (closed, no note: #37, #61) |
-| issue_346_reconfigure_capacity_drop | `cc.utilization_pct` | 82.8 | 54.4 | ±4.1 | ahead | 10/10 | **none** (closed, no note: #19, #15, #48, #12, #61) |
-| issue_346_reconfigure_capacity_drop | `cc.max_settle_ms` | 1310 | 14870 | ±744 | ahead | 10/10 | **none** (closed, no note: #15, #48, #61, #20) |
-| issue_346_reconfigure_cross_join | `video.avg_kbps` | 1674 | 1376 | ±83.7 | ahead | 10/10 | **none** (closed, no note: #37, #61) |
-| issue_346_reconfigure_cross_join | `cc.utilization_pct` | 69.9 | 58.0 | ±3.5 | ahead | 10/10 | **none** (closed, no note: #19, #15, #48, #12, #61) |
-| issue_346_reconfigure_cross_join | `cc.max_settle_ms` | 4640 | 8090 | ±1541 | ahead | 10/10 | **none** (closed, no note: #15, #48, #61, #20) |
-| issue_356_capacity_drop_xr_rtt | `video.avg_kbps` | 1331 | 850 | ±66.5 | ahead | 10/10 | **none** (closed, no note: #37, #61) |
-| issue_356_capacity_drop_xr_rtt | `cc.utilization_pct` | 82.8 | 54.4 | ±4.1 | ahead | 10/10 | **none** (closed, no note: #19, #15, #48, #12, #61) |
-| issue_356_capacity_drop_xr_rtt | `cc.max_settle_ms` | 1310 | 14870 | ±744 | ahead | 10/10 | **none** (closed, no note: #15, #48, #61, #20) |
-| issue_390_cross_join_seed15 | `video.avg_kbps` | 1670 | 1383 | ±83.5 | ahead | 9/10 | **none** (closed, no note: #37, #61) |
-| issue_390_cross_join_seed15 | `cc.utilization_pct` | 69.7 | 58.2 | ±3.5 | ahead | 9/10 | **none** (closed, no note: #19, #15, #48, #12, #61) |
-| issue_5_keyframe_flush | `video.avg_kbps` | 1330 | 845 | ±66.5 | ahead | 10/10 | **none** (closed, no note: #37, #61) |
-| issue_5_keyframe_flush | `cc.utilization_pct` | 82.8 | 54.1 | ±4.1 | ahead | 10/10 | **none** (closed, no note: #19, #15, #48, #12, #61) |
-| issue_5_keyframe_flush | `cc.max_settle_ms` | 1300 | 14990 | ±750 | ahead | 10/10 | **none** (closed, no note: #15, #48, #61, #20) |
-| issue_76_rtx_v2_keyframe_flush | `video.avg_kbps` | 932 | 796 | ±46.6 | ahead | 8/10 | **none** (closed, no note: #37, #61) |
-| issue_76_rtx_v2_keyframe_flush | `cc.utilization_pct` | 59.1 | 51.2 | ±3.0 | ahead | 8/10 | **none** (closed, no note: #19, #15, #48, #12, #61) |
-| issue_76_rtx_v2_keyframe_flush | `cc.max_settle_ms` | 9370 | 14720 | ±736 | ahead | 9/10 | #875 (closed, no note: #15, #48, #61, #20) |
-| issue_911_host_rtt_10s | `video.avg_kbps` | 1510 | 1216 | ±75.5 | ahead | 10/10 | **none** (closed, no note: #37, #61, #911) |
-| issue_911_host_rtt_10s | `cc.utilization_pct` | 74.2 | 60.5 | ±3.7 | ahead | 10/10 | **none** (closed, no note: #19, #15, #48, #12, #61, #911) |
-| issue_911_host_rtt_10s | `cc.max_settle_ms` | 4830 | 12000 | ±600 | ahead | 10/10 | **none** (closed, no note: #15, #48, #61, #20, #911) |
-| issue_921_host_rtt_under_limit | `video.avg_kbps` | 1510 | 1216 | ±75.5 | ahead | 10/10 | **none** (closed, no note: #37, #61, #921) |
-| issue_921_host_rtt_under_limit | `cc.utilization_pct` | 74.2 | 60.5 | ±3.7 | ahead | 10/10 | **none** (closed, no note: #19, #15, #48, #12, #61, #921) |
-| issue_921_host_rtt_under_limit | `cc.max_settle_ms` | 4830 | 12000 | ±600 | ahead | 10/10 | **none** (closed, no note: #15, #48, #61, #20, #921) |
-| pacer_v2_capacity_drop | `video.avg_kbps` | 1331 | 850 | ±66.5 | ahead | 10/10 | **none** (closed, no note: #37, #61) |
-| pacer_v2_capacity_drop | `cc.utilization_pct` | 82.8 | 54.4 | ±4.1 | ahead | 10/10 | **none** (closed, no note: #19, #15, #48, #12, #61) |
-| pacer_v2_capacity_drop | `cc.max_settle_ms` | 1310 | 14870 | ±744 | ahead | 10/10 | **none** (closed, no note: #15, #48, #61, #20) |
-| probe_v2_capacity_drop | `video.avg_kbps` | 1331 | 850 | ±66.5 | ahead | 10/10 | **none** (closed, no note: #37, #61) |
-| probe_v2_capacity_drop | `cc.utilization_pct` | 82.8 | 54.4 | ±4.1 | ahead | 10/10 | **none** (closed, no note: #19, #15, #48, #12, #61) |
-| probe_v2_capacity_drop | `cc.max_settle_ms` | 1310 | 14870 | ±744 | ahead | 10/10 | **none** (closed, no note: #15, #48, #61, #20) |
+69 gaps on `main`, 69 here: **0 closed, 0 opened**, 0 changed direction.
 
 ### Gaps
 
