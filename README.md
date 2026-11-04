@@ -164,6 +164,16 @@ The library:
 | 10. Observability | build and runtime switches (`SM_ENABLE_STATS`, `SM_ENABLE_METRICS`, `SM_ENABLE_EVENTS`, `SM_LOG_MIN_LEVEL`); ICE and DTLS connection stats (#1059) |
 | Apple devices | Audio Units I/O and AVFoundation camera capture (`sm::device`, #1115), VideoToolbox H.264 (#1112); the library and its unit tests run on the iOS simulator in CI (#1107, #1108) |
 
+**Apps** (on the library, deployed with the signaling service, the AI server
+and coturn on Amazon Lightsail):
+
+| App | What it is |
+|---|---|
+| iOS app (SmCall, `apps/ios`) | SwiftUI calling app: calls the AI server or a web user by room code; GPU video at the received frame rate; iOS voice processing, as libwebrtc's iOS client |
+| Web app (`apps/web`) | One page on the browser's WebRTC (Chrome), plus the signaling service (`apps/signaling`) |
+| AI server (`apps/ai_server`) | Answers `ai-` rooms with the library, a turn detector and a reply source; caller-side results in [real-network calls](docs/results/real-network-calls.md) |
+
+
 The native build passes 590 of 590 ctest tests on macOS arm64 (main 8677716f
 plus #1112, 2026-11-02; `interop.Coturn` skips without a local coturn), and
 the iOS simulator build passes its 238 unit tests (Xcode 27.2, the CI job's
@@ -414,43 +424,47 @@ docs/                                                    research, design, algor
 
 ## Next steps and open questions
 
-**Done: the iOS app, the web app and calls on real networks** ([#1076](https://github.com/aray4702/streaming_media/issues/1076), 2026-11-03):
+**Where it stands (2026-11-03):**
+- **Library:** it covers sections 1-10. Against libwebrtc M157 it is 0
+  behind and 28 ahead ([Benchmarks](#benchmarks)).
+- **Apps:** the iOS app, the web app and the AI server run on real
+  networks through the Lightsail host ([Status](#status)).
+- **Requirements:** 71 of 97 are done (`tools/requirements.json`); 25 are
+  not assessed yet, and C13 is open.
 
-| Requirement | What landed |
-|---|---|
-| C11 iOS library | VideoToolbox H.264, Audio Units and camera capture, and the library's unit tests on the iOS simulator in CI |
-| C12 calls on real networks | Web ↔ AI server, iOS ↔ AI server and web ↔ iOS, through the self-hosted signaling service, AI server and coturn on Amazon Lightsail, direct and relay-only, with caller-side metrics ([results](docs/results/real-network-calls.md)) |
-| C14 iOS app | SmCall (SwiftUI), run by the Owner on a real iPhone. Since then: GPU video at the received frame rate, and iOS voice processing as libwebrtc's iOS client, checked in the simulator; the Owner's on-device check of both is the last open point |
-| C15 web app + signaling | One page on the browser's WebRTC, plus the signaling service |
+**Next steps, in the order the Owner chooses:**
 
-The real calls also found and fixed three gaps:
-
-- [#1125](https://github.com/aray4702/streaming_media/issues/1125): Chrome ignored our congestion feedback, which held its video to about 84 kbps.
-- [#1126](https://github.com/aray4702/streaming_media/issues/1126): the AI server's audio clock slipped while it generated a reply.
-- [#1133](https://github.com/aray4702/streaming_media/issues/1133): the iOS app showed at most 10 fps.
-
-**Next, for the Owner to choose:**
-
+- **Check the latest iOS app on a real iPhone.** In a call from Chrome, the
+  video should be smooth (GPU rendering,
+  [#1133](https://github.com/aray4702/streaming_media/issues/1133)). With
+  iOS voice processing, a barge-in over the speaker should stop the AI
+  ([#1124](https://github.com/aray4702/streaming_media/issues/1124)). Both
+  are checked in the simulator only.
 - **A real AI model.** The AI server answers with scripted speech-like
   audio behind `AiReplySource`; a model (speech in, speech out) plugs in
-  there.
+  there. Its generation time adds directly to the response delay.
+- **Protecting the Lightsail server.** Its `/turn` endpoint hands short-lived
+  TURN credentials to anyone who asks. The options are:
+  - a shared app key;
+  - credentials only inside a joined call, with a short lifetime and a rate
+    limit;
+  - user sign-in.
+- **Assessing the 25 new requirements.** F1.1–F1.12, F2.1–F2.5, F9.6–F9.9
+  and F10.1–F10.4 cover the components documented in
+  [Algorithms](docs/algorithms/README.md).
 - **Android (C13).** Unplanned: the Owner moved it to the backlog so the
   iOS and web apps came first.
-- **Protecting the Lightsail server.** Its `/turn` endpoint hands short-lived
-  TURN credentials to anyone who asks. The options are a shared app key,
-  credentials only inside a joined call with a short lifetime and a rate
-  limit, or user sign-in.
-- **Assessing the new requirements.** F1.1–F1.12, F2.1–F2.5, F9.6–F9.9 and
-  F10.1–F10.4 cover the connectivity, security, data channel and
-  observability components documented in [Algorithms](docs/algorithms/README.md),
-  and are not assessed yet.
-- **Known items:** the open issues labelled `stage:later` are left for a
-  later stage, for example bitrate recovery after the link improves
-  ([#14](https://github.com/aray4702/streaming_media/issues/14)). Fixed since:
-  - late audio at 20% loss and during a feedback outage, now ahead of
-    libwebrtc ([#795](https://github.com/aray4702/streaming_media/issues/795));
-  - negotiated header-extension IDs on the wire in test bench ICE calls
-    ([#1095](https://github.com/aray4702/streaming_media/issues/1095)).
+
+**Known open issues:**
+
+- [#14](https://github.com/aray4702/streaming_media/issues/14) (`stage:later`):
+  bitrate takes 15+ s to recover after the link improves.
+- [#148](https://github.com/aray4702/streaming_media/issues/148) (`stage:later`):
+  upscaling 360p to 720p takes 20 ms a frame.
+- [#633](https://github.com/aray4702/streaming_media/issues/633): the test
+  bench uses about 15 MB per simulated minute.
+- [#969](https://github.com/aray4702/streaming_media/issues/969): the
+  response-delay metric with the AI source counts the source's first chunk.
 
 **Open questions:**
 
