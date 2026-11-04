@@ -68,7 +68,7 @@ The library:
 
 | Section | Algorithms |
 |---|---|
-| 1. Connectivity | STUN, ICE agent with controller and ICE-lite, TURN over UDP, TCP and TLS, ICE-TCP host candidates (#1155), remote mDNS (`.local`) candidates resolved as libwebrtc does (#1156), SDP offer/answer and an endpoint that sets up ICE, DTLS-SRTP and RTP from SDP (#1062-#1064); small-group mesh of 3-4 (#1072) |
+| 1. Connectivity | STUN, ICE agent with controller and ICE-lite, TURN over UDP, TCP and TLS, ICE-TCP host candidates (#1155), remote mDNS (`.local`) candidates resolved as libwebrtc does (#1156), SDP offer/answer and an endpoint that sets up ICE, DTLS-SRTP and RTP from SDP (#1062-#1064) (the mesh of 3-4 from #1072 is dropped for an SFU, #1160) |
 | 2. Security | TLS and DTLS 1.2/1.3 on both backends (BoringSSL, mbedTLS), DTLS-SRTP, SRTP (libsrtp) |
 | 3. Packet loss | NACK/RTX, XOR FEC, RED, PLC, keyframe requests (PLI/FIR/LNTF), NACK/FEC protection selection |
 | 4. Jitter and timing | packet buffer, RTCP stats/RTT, delay manager, WSOLA time stretching, NetEq-lite audio jitter buffer, video jitter + render timing |
@@ -241,23 +241,29 @@ docs/                                                    research, design, algor
 - **RTP/RTCP in the library:** the library provides the RTP/RTCP session layer (sender, receiver, the codecs' standard RTP payload formats, RTCP scheduling and feedback dispatch), so an app passes encoded frames and packet bytes instead of wiring the building blocks together. Done: the test bench runs every call through it ([#31](https://github.com/aray4702/streaming_media/issues/31) design, [#32](https://github.com/aray4702/streaming_media/issues/32) implementation).
 - **Codecs:** the library contains no audio or video encoder or decoder. The app passes encoded Opus frames and H.264 access units in, and decodes audio through an `AudioDecoder` it supplies. The test bench uses a synthetic encoder: correctly framed H.264 that hits its target size, with no real picture or sound behind it.
 - **Send-side adaptation in the library:** frame dropping, quality scaling and rate allocation are part of the library too, so the app only runs its encoder and decoder. Done so far ([#37](https://github.com/aray4702/streaming_media/issues/37)): `rtp::VideoSendController` runs the frame dropper, keyframe policy and pause per captured frame (the encoder loop is in [architecture.md](docs/design/architecture.md)); the quality scaler and resolution adaptation exist as building blocks but aren't wired in yet.
-- **Call topology:** one-to-one calls, plus small-group mesh (C9). No SFU: the SFU and multiparty pieces (layer selection, active speaker detection, the audio mixer) have been removed ([#27](https://github.com/aray4702/streaming_media/issues/27)). BUNDLE demultiplexing stays, because WebRTC calls bundle.
+- **Call topology:** one-to-one calls are peer-to-peer. Group calls of up to 6 go through an SFU, LiveKit (the Owner's decision on [#1160](https://github.com/aray4702/streaming_media/issues/1160), 2026-11-04), with simulcast send and multi-stream receive in the library (C16-C21). The mesh of 3-4 (C9) is dropped. The SFU and multiparty pieces removed earlier ([#27](https://github.com/aray4702/streaming_media/issues/27)) stay out of the library: the SFU does layer selection and forwarding. BUNDLE demultiplexing stays, because WebRTC calls bundle.
 
 ## Next steps and open questions
 
 **Where it stands (2026-11-04):**
 - **Library:** it covers sections 1-10. Against libwebrtc M157 it is 0 behind and 69 ahead ([Benchmarks](#benchmarks)).
 - **Apps:** the iOS app, the web app and the AI server run on real networks through the Lightsail host ([Status](#status)).
-- **Requirements:** 96 of 97 are done (`tools/requirements.json`); C13 (Android) is open.
+- **Requirements:** 96 of 103 are done (`tools/requirements.json`); open are C13 (Android) and C16-C21 (group calls).
 
-**Next steps, in the order the Owner chooses:**
+**Next: group video calls of up to 6** ([#1160](https://github.com/aray4702/streaming_media/issues/1160), C16-C21), through a LiveKit SFU:
 
-- **A real AI model.** The AI server answers with scripted speech-like audio behind `AiReplySource`; a model (speech in, speech out) plugs in there. Its generation time adds directly to the response delay.
-- **Protecting the Lightsail server.** Its `/turn` endpoint hands short-lived TURN credentials to anyone who asks. The options are:
-  - a shared app key;
-  - credentials only inside a joined call, with a short lifetime and a rate limit;
-  - user sign-in.
-- **Android (C13).** Unplanned: the Owner moved it to the backlog so the iOS and web apps came first.
+- **C16:** record the topology (SFU; the mesh of 3-4 dropped).
+- **C17:** simulcast send, as libwebrtc.
+- **C18:** multi-stream receive.
+- **C19:** LiveKit deployed next to coturn, with a signaling client for the native apps.
+- **C20:** a grid of up to 6 in the web and iOS apps.
+- **C21:** group-call test bench scenarios and a real 6-way call.
+
+**Later, for the Owner to choose:**
+
+- **A real AI model** behind `AiReplySource` (speech in, speech out); its generation time adds directly to the response delay.
+- **Protecting the Lightsail server's `/turn` endpoint:** a shared app key, credentials only inside a joined call, or user sign-in.
+- **Android (C13)**, unplanned.
 
 **Known open issues:** none. Recently fixed: ICE-TCP host candidates ([#1151](https://github.com/aray4702/streaming_media/issues/1151)), remote mDNS candidates ([#1152](https://github.com/aray4702/streaming_media/issues/1152)), bitrate recovery after the link improves ([#14](https://github.com/aray4702/streaming_media/issues/14)), test bench memory on long calls ([#633](https://github.com/aray4702/streaming_media/issues/633)).
 
