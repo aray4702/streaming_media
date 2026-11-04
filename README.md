@@ -49,10 +49,11 @@ The library grows in two stages, both measured on the same test bench
 ([program.md section 0.1](agents/program.md#01-scope-and-stages)):
 
 1. **Baseline: what WebRTC handles** (current stage). These are the
-   problems in sections 3-8 of
-   [Problems WebRTC solves](docs/02-webrtc-problems-solved.md): packet
-   loss, jitter and timing, congestion control, audio, video and
-   synchronization. The bar is parity with libwebrtc's current
+   problems in sections 1-10 of
+   [Problems WebRTC solves](docs/02-webrtc-problems-solved.md):
+   connectivity, security, packet loss, jitter and timing, congestion
+   control, audio, video, synchronization, data channels and
+   observability. The bar is parity with libwebrtc's current
    mechanisms, not older or simpler variants. Parity is measured by
    running every test bench scenario through both libraries over the
    same emulated links ([comparison](docs/results/compare-webrtc.md)).
@@ -64,20 +65,20 @@ The library grows in two stages, both measured on the same test bench
    user's speech reaches the AI, and AI media sent in faster-than-real-time
    bursts and cancelled on barge-in. These issues are labelled `stage:ai`.
 
-Baseline work comes before AI work. **Milestone 3
-([#944](https://github.com/aray4702/streaming_media/issues/944)) ports sections 1, 2, 9 and 10** (connectivity,
-security, data channels and observability) from libwebrtc too, so the
-library no longer leaves them to a host stack. The Owner chose standard
+Baseline work comes before AI work. **Sections 1, 2, 9 and 10**
+(connectivity, security, data channels and observability) are ported from
+libwebrtc too ([#944](https://github.com/aray4702/streaming_media/issues/944)), so the
+library doesn't leave them to a host stack. The Owner chose standard
 WebRTC on the wire for both topologies: the AI server (client-server) and
 P2P calls on web, Android and iOS, with 1:1 calls and small-group mesh, no
 SFU. What is ported and how it differs:
-[libwebrtc parity, section 10](docs/design/libwebrtc-parity.md#10-connectivity-milestone-3-944).
+[libwebrtc parity, section 10](docs/design/libwebrtc-parity.md).
 
 ## The library
 
-The library implements, in portable C++20, the resilience algorithms from
-sections 3-8 of [Problems WebRTC solves](docs/02-webrtc-problems-solved.md)
-and the connection around them. `docs/algorithms/` has 72 algorithm
+The library implements, in portable C++20, sections 1-10 of
+[Problems WebRTC solves](docs/02-webrtc-problems-solved.md): the resilience
+algorithms and the connection around them. `docs/algorithms/` has 72 algorithm
 documents in sections 1-10: connectivity (STUN, ICE, TURN, SDP, the
 endpoint), security (TLS/DTLS, SRTP), packet loss, jitter and timing,
 congestion control, audio processing, video adaptation, synchronization,
@@ -87,7 +88,7 @@ speed and quality benchmarks where they exist, metrics and structured
 events, and a design and results document.
 
 Sections 3-8 have no dependencies. Connectivity (section 1) and security
-(section 2), the milestone 3 ports, need two libraries, both fetched by
+(section 2) need two libraries, both fetched by
 CMake at configure time (see `cmake/`): a TLS library behind one interface,
 BoringSSL (default) or mbedTLS 3.6, chosen with `SM_TLS_BACKEND`, and
 libsrtp 2.8.0. Build with `-DSM_WITH_TLS=OFF` to leave both out. Data
@@ -104,7 +105,7 @@ Background research:
    recommended starting point.
 2. [Problems WebRTC solves](docs/02-webrtc-problems-solved.md): every problem
    area mapped to the mechanism that handles it, plus what WebRTC leaves to
-   the application. Sections 3-8, and since milestone 3 sections 1, 2, 9 and 10, are implemented here.
+   the application. All ten sections are implemented here.
 3. [WebRTC footprint](docs/03-webrtc-footprint.md): binary and RAM size of
    libwebrtc and lighter alternatives.
 4. [Call data flow](docs/04-webrtc-call-data-flow.md): how media moves through
@@ -141,7 +142,7 @@ The library:
   the same links ([how](compare/README.md)).
 - [libwebrtc parity](docs/design/libwebrtc-parity.md): what is ported from
   libwebrtc M157 and how it differs, area by area; section 10 covers the
-  connectivity ports of milestone 3.
+  connectivity, security and data channel ports.
 - [Self-hosted TURN server](docs/deploy/turn-server.md): coturn on Amazon
   Lightsail, for tests on real networks and production.
 - [Fuzz targets](fuzz/README.md): libFuzzer targets for the parsers that
@@ -151,17 +152,17 @@ The library:
 
 | Section | Algorithms |
 |---|---|
+| 1. Connectivity | STUN, ICE agent with controller and ICE-lite, TURN over UDP, TCP and TLS, SDP offer/answer and an endpoint that sets up ICE, DTLS-SRTP and RTP from SDP (#1062-#1064); small-group mesh of 3-4 (#1072) |
+| 2. Security | TLS and DTLS 1.2/1.3 on both backends (BoringSSL, mbedTLS), DTLS-SRTP, SRTP (libsrtp) |
 | 3. Packet loss | NACK/RTX, XOR FEC, RED, PLC, keyframe requests (PLI/FIR/LNTF), NACK/FEC protection selection |
 | 4. Jitter and timing | packet buffer, RTCP stats/RTT, delay manager, WSOLA time stretching, NetEq-lite audio jitter buffer, video jitter + render timing |
 | 5. Congestion | transport-cc + REMB, GCC delay- and loss-based estimation, GCC controller, pacer, probing, bitrate allocator, frame dropper, resolution/CPU adaptation, outage handling |
 | 6. Audio (APM) | echo canceller, echo delay estimation, noise suppression, AGC + limiter, high-pass filter, transient suppression, VAD, audio level (RFC 6464), resampler |
 | 7. Video | freeze detection, HW->SW codec fallback, orientation (CVO), content hints + screen VFR, render scheduling, quality scaler |
 | 8. Synchronization | RTP->NTP mapping, A/V lip sync with CNAME groups, absolute capture time / latency, header extensions + BUNDLE demux |
-| 1. Connectivity (milestone 3) | STUN, ICE agent with controller and ICE-lite, TURN over UDP, TCP and TLS, SDP offer/answer and an endpoint that sets up ICE, DTLS-SRTP and RTP from SDP (#1062-#1064); small-group mesh of 3-4 (#1072) |
-| 2. Security (milestone 3) | TLS and DTLS 1.2/1.3 on both backends (BoringSSL, mbedTLS), DTLS-SRTP, SRTP (libsrtp) |
-| 9. Data channels (milestone 3) | dcSCTP over DTLS, DCEP and the data channel API, behind `SM_WITH_DATACHANNEL` (#1069, #1070) |
-| 10. Observability (milestone 3) | build and runtime switches (`SM_ENABLE_STATS`, `SM_ENABLE_METRICS`, `SM_ENABLE_EVENTS`, `SM_LOG_MIN_LEVEL`); ICE and DTLS connection stats (#1059) |
-| Apple devices (milestone 4) | Audio Units I/O and AVFoundation camera capture (`sm::device`, #1115), VideoToolbox H.264 (#1112); the library and its unit tests run on the iOS simulator in CI (#1107, #1108) |
+| 9. RTP session and data channels | RTCP engine (SR/RR, SDES, BYE, XR), RTP sender and receiver, the session facade, H.264 packetization (RFC 6184); data channels: dcSCTP over DTLS, DCEP and the data channel API, behind `SM_WITH_DATACHANNEL` (#1069, #1070) |
+| 10. Observability | build and runtime switches (`SM_ENABLE_STATS`, `SM_ENABLE_METRICS`, `SM_ENABLE_EVENTS`, `SM_LOG_MIN_LEVEL`); ICE and DTLS connection stats (#1059) |
+| Apple devices | Audio Units I/O and AVFoundation camera capture (`sm::device`, #1115), VideoToolbox H.264 (#1112); the library and its unit tests run on the iOS simulator in CI (#1107, #1108) |
 
 The native build passes 590 of 590 ctest tests on macOS arm64 (main 8677716f
 plus #1112, 2026-11-02; `interop.Coturn` skips without a local coturn), and
@@ -231,7 +232,7 @@ A sample of the table (mean of 10 seeds, this library / libwebrtc):
 
 ### Human-AI conversation features
 
-libwebrtc has no counterpart for these (stage 2, milestone 2: #2, #3, #4),
+libwebrtc has no counterpart for these (stage 2: #2, #3, #4),
 so they are measured against the targets in
 [program.md section 6.3](agents/program.md) instead. The values are the
 test bench baseline on main (Linux x86_64, the CI `testbench` job). Each
@@ -285,66 +286,17 @@ random loss), and their numbers are expected:
   severity-1 target applies: the AI still hears the user and answers
   every turn.
 
-### On real networks (milestone 4)
+### On real networks
 
 - The library's TURN client against the self-hosted coturn on Amazon
   Lightsail (Oregon), from a home network: allocations, permissions,
   channel binds and relayed data both ways pass over UDP, TCP and TLS
   (`interop.Coturn`, #1054).
-- The AI server (`apps/ai_server`, #1103) and the calling app's controller
-  (`apps/call`, #1117) are tested end to end over local sockets; calls over
-  the Lightsail relay, with these metrics measured at the caller, are C12.
-
-## Next steps and open questions
-
-**Milestone 4 is done** ([#1076](https://github.com/aray4702/streaming_media/issues/1076), closed 2026-11-03):
-
-| Requirement | What landed |
-|---|---|
-| C11 iOS library | VideoToolbox H.264, Audio Units and camera capture, and the library's unit tests on the iOS simulator in CI |
-| C12 calls on real networks | Web ↔ AI server, iOS ↔ AI server and web ↔ iOS, through the self-hosted signaling service, AI server and coturn on Amazon Lightsail, direct and relay-only, with caller-side metrics ([results](docs/results/real-network-calls.md)) |
-| C14 iOS app | SmCall (SwiftUI), run by the Owner on a real iPhone. Since then: GPU video at the received frame rate, and iOS voice processing as libwebrtc's iOS client, checked in the simulator; the Owner's on-device check of both is the last open point |
-| C15 web app + signaling | One page on the browser's WebRTC, plus the signaling service |
-
-The real calls also found and fixed three gaps:
-
-- [#1125](https://github.com/aray4702/streaming_media/issues/1125): Chrome ignored our congestion feedback, which held its video to about 84 kbps.
-- [#1126](https://github.com/aray4702/streaming_media/issues/1126): the AI server's audio clock slipped while it generated a reply.
-- [#1133](https://github.com/aray4702/streaming_media/issues/1133): the iOS app showed at most 10 fps.
-
-**Next, for the Owner to choose:**
-
-- **A real AI model.** The AI server answers with scripted speech-like
-  audio behind `AiReplySource`; a model (speech in, speech out) plugs in
-  there.
-- **Android (C13).** Unplanned: the Owner moved it to the backlog so the
-  iOS and web apps came first.
-- **Protecting the Lightsail server.** Its `/turn` endpoint hands short-lived
-  TURN credentials to anyone who asks. The options are a shared app key,
-  credentials only inside a joined call with a short lifetime and a rate
-  limit, or user sign-in.
-- **Assessing the new requirements.** F1.1–F1.12, F2.1–F2.5, F9.6–F9.9 and
-  F10.1–F10.4 cover the connectivity, security, data channel and
-  observability components documented in [Algorithms](docs/algorithms/README.md),
-  and are not assessed yet.
-- **Known items:** the open issues labelled `stage:later` are left for a
-  later stage, for example bitrate recovery after the link improves
-  ([#14](https://github.com/aray4702/streaming_media/issues/14)). Fixed since
-  milestone 4 closed:
-  - late audio at 20% loss and during a feedback outage, now ahead of
-    libwebrtc ([#795](https://github.com/aray4702/streaming_media/issues/795));
-  - negotiated header-extension IDs on the wire in test bench ICE calls
-    ([#1095](https://github.com/aray4702/streaming_media/issues/1095)).
-
-**Open questions:**
-
-- **Target hardware:** MCU or embedded Linux, and how much RAM and CPU? The
-  algorithms need an FPU; the packet-level sections could also run on
-  Cortex-M4F/M7-class MCUs.
-- **Which AI model and where it runs:** on the Lightsail host, on a GPU
-  server, or as a hosted API. This decides the AI server's deployment and
-  its share of the response delay.
-- **Safari and Firefox** for the web app: when, and in which milestone.
+- Calls between the web app, the iOS app's controller and the AI server
+  through the Lightsail signaling service and TURN relay, direct and
+  relay-only, with the conversation metrics measured at the caller:
+  [real-network calls](docs/results/real-network-calls.md) (#1121, #1124,
+  #1126).
 
 ## Building
 
@@ -407,7 +359,7 @@ complete sender/receiver over an emulated unstable link.
 include/sm/{core,loss,timing,cc,audio,video,sync,sim}/   public headers
 include/sm/{rtp,p2p,tls,pc,dcsctp}/                      session and connectivity headers
 src/{core,loss,timing,cc,audio,video,sync,rtp}/          implementation
-src/{p2p,tls,pc,dcsctp}/                                 connectivity (milestone 3)
+src/{p2p,tls,pc,dcsctp}/                                 connectivity, security, data channels
 tests/{framework,unit,e2e}/                              tests and e2e simulations
 tests/interop/                                           tests against real sockets and coturn
 fuzz/                                                    libFuzzer targets for network parsers
@@ -432,8 +384,8 @@ docs/                                                    research, design, algor
   simple format ([#29](https://github.com/aray4702/streaming_media/issues/29)). H.264 is the only video format so far, and
   loss notification stays off for it, as in libwebrtc ([#47](https://github.com/aray4702/streaming_media/issues/47)).
   Connecting to a browser (ICE, DTLS-SRTP, SDP) is part of the library
-  now (milestone 3, [#944](https://github.com/aray4702/streaming_media/issues/944)), also standard WebRTC on the wire;
-  SDP offer/answer is in progress (#1063, #1064).
+  now ([#944](https://github.com/aray4702/streaming_media/issues/944)), also standard WebRTC on the wire,
+  including SDP offer/answer (#1063, #1064).
 - **Build and runtime switches:** `SM_WITH_TLS` and `SM_TLS_BACKEND`
   (`boringssl` or `mbedtls`) select the TLS library, `SM_WITH_DATACHANNEL`
   adds data channels, `SM_ENABLE_STATS`, `SM_ENABLE_METRICS` and
@@ -456,10 +408,59 @@ docs/                                                    research, design, algor
   pause per captured frame (the encoder loop is in
   [architecture.md](docs/design/architecture.md)); the quality scaler and
   resolution adaptation exist as building blocks but aren't wired in yet.
-- **Call topology:** one-to-one calls, plus small-group mesh (milestone 3,
-  C9). No SFU: the SFU and multiparty pieces (layer selection, active
+- **Call topology:** one-to-one calls, plus small-group mesh (C9). No SFU: the SFU and multiparty pieces (layer selection, active
   speaker detection, the audio mixer) have been removed ([#27](https://github.com/aray4702/streaming_media/issues/27)).
   BUNDLE demultiplexing stays, because WebRTC calls bundle.
+
+## Next steps and open questions
+
+**Done: the iOS app, the web app and calls on real networks** ([#1076](https://github.com/aray4702/streaming_media/issues/1076), 2026-11-03):
+
+| Requirement | What landed |
+|---|---|
+| C11 iOS library | VideoToolbox H.264, Audio Units and camera capture, and the library's unit tests on the iOS simulator in CI |
+| C12 calls on real networks | Web ↔ AI server, iOS ↔ AI server and web ↔ iOS, through the self-hosted signaling service, AI server and coturn on Amazon Lightsail, direct and relay-only, with caller-side metrics ([results](docs/results/real-network-calls.md)) |
+| C14 iOS app | SmCall (SwiftUI), run by the Owner on a real iPhone. Since then: GPU video at the received frame rate, and iOS voice processing as libwebrtc's iOS client, checked in the simulator; the Owner's on-device check of both is the last open point |
+| C15 web app + signaling | One page on the browser's WebRTC, plus the signaling service |
+
+The real calls also found and fixed three gaps:
+
+- [#1125](https://github.com/aray4702/streaming_media/issues/1125): Chrome ignored our congestion feedback, which held its video to about 84 kbps.
+- [#1126](https://github.com/aray4702/streaming_media/issues/1126): the AI server's audio clock slipped while it generated a reply.
+- [#1133](https://github.com/aray4702/streaming_media/issues/1133): the iOS app showed at most 10 fps.
+
+**Next, for the Owner to choose:**
+
+- **A real AI model.** The AI server answers with scripted speech-like
+  audio behind `AiReplySource`; a model (speech in, speech out) plugs in
+  there.
+- **Android (C13).** Unplanned: the Owner moved it to the backlog so the
+  iOS and web apps came first.
+- **Protecting the Lightsail server.** Its `/turn` endpoint hands short-lived
+  TURN credentials to anyone who asks. The options are a shared app key,
+  credentials only inside a joined call with a short lifetime and a rate
+  limit, or user sign-in.
+- **Assessing the new requirements.** F1.1–F1.12, F2.1–F2.5, F9.6–F9.9 and
+  F10.1–F10.4 cover the connectivity, security, data channel and
+  observability components documented in [Algorithms](docs/algorithms/README.md),
+  and are not assessed yet.
+- **Known items:** the open issues labelled `stage:later` are left for a
+  later stage, for example bitrate recovery after the link improves
+  ([#14](https://github.com/aray4702/streaming_media/issues/14)). Fixed since:
+  - late audio at 20% loss and during a feedback outage, now ahead of
+    libwebrtc ([#795](https://github.com/aray4702/streaming_media/issues/795));
+  - negotiated header-extension IDs on the wire in test bench ICE calls
+    ([#1095](https://github.com/aray4702/streaming_media/issues/1095)).
+
+**Open questions:**
+
+- **Target hardware:** MCU or embedded Linux, and how much RAM and CPU? The
+  algorithms need an FPU; the packet-level sections could also run on
+  Cortex-M4F/M7-class MCUs.
+- **Which AI model and where it runs:** on the Lightsail host, on a GPU
+  server, or as a hosted API. This decides the AI server's deployment and
+  its share of the response delay.
+- **Safari and Firefox** for the web app: when.
 
 # License
 Apache
