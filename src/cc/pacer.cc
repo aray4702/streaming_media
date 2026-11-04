@@ -26,6 +26,9 @@ void Pacer::PostMaybeProcessPackets() {
   if (pc_->QueuePackets() > 0) kick_ = true;
 }
 
+void Pacer::SetPathUncongested(bool uncongested) { pc_->SetPathUncongested(uncongested); }
+bool Pacer::uncongested_drain_active() const { return pc_->uncongested_drain_active(); }
+
 void Pacer::SetPacingRates(DataRate pacing, DataRate padding) {
   pc_->SetPacingRates(pacing, padding);
   PostMaybeProcessPackets();

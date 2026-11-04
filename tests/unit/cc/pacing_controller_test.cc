@@ -184,6 +184,28 @@ SM_TEST(PacingController, IdleTimeIsNotBudget) {
   SM_EXPECT_EQ(p.QueuePackets(), 1u);
 }
 
+// Issue #795 (beyond libwebrtc): on a path that shows no queueing, a queue drains within
+// uncongested_queue_time_limit, at most uncongested_max_boost times the pacing rate; otherwise,
+// and with the limit at zero, only libwebrtc's 2 s limit applies.
+SM_TEST(PacingController, UncongestedPathDrainsWithinTheShortLimit) {
+  for (int mode = 0; mode < 3; ++mode) {  // 0: congested path, 1: uncongested, 2: uncongested but switched off.
+    PacingControllerConfig cfg;
+    if (mode == 2) cfg.uncongested_queue_time_limit = TimeDelta::Zero();
+    PacingController p(cfg);
+    p.SetPacingRates(DataRate::KilobitsPerSec(200), DataRate::Zero());
+    p.SetPathUncongested(mode != 0);
+    Timestamp now = Timestamp::Millis(1000);
+    // 25 kB: 1 s at 200 kbps, inside the 2 s limit.
+    for (int i = 0; i < 250; ++i) p.Enqueue(Pkt(i, PacketPriority::kVideo, 100, now));
+    SM_EXPECT_EQ(p.pacing_rate().bps(), mode == 1 ? 250000 : 200000);
+    SM_EXPECT_EQ(p.stats().fast_drains, mode == 1 ? 1u : 0u);
+    const Timestamp start = now;
+    Run(p, now, start + TimeDelta::Seconds(10));
+    SM_EXPECT_NEAR((now - start).ms_f(), mode == 1 ? 800.0 : 1000.0, 50.0);
+    SM_EXPECT_EQ(p.pacing_rate().bps(), 200000);
+  }
+}
+
 // RespectsQueueTimeLimit: the average queue time decides the rate boost.
 SM_TEST(PacingController, QueueTimeLimitRaisesTheRate) {
   PacingControllerConfig cfg;

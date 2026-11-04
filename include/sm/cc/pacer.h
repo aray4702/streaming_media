@@ -72,6 +72,10 @@ class Pacer : public MetricsSource {
   bool paused() const;
   // PacingController::SetCongested.
   void SetCongested(bool congested);
+  // PacingController::SetPathUncongested (issue #795).
+  void SetPathUncongested(bool uncongested);
+  // PacingController::uncongested_drain_active (issue #795).
+  bool uncongested_drain_active() const;
 
   DataSize QueueSize() const;
   // PacingController::QueueSizeData: the queue without its RTP headers.

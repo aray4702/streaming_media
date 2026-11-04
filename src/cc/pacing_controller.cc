@@ -280,12 +280,30 @@ void PacingController::MaybeUpdateMediaRateDueToLongQueue(Timestamp now) {
     // avg_time_left to get the queue out if the limit is to be met.
     queue_.UpdateAverageQueueTime(now);
     const TimeDelta avg_time_left = std::max(TimeDelta::Millis(1), queue_time_limit_ - queue_.AverageQueueTime());
-    const DataRate min_rate_needed = Div(queue_size_data, avg_time_left);
+    DataRate min_rate_needed = Div(queue_size_data, avg_time_left);
+    // Issue #795 (beyond libwebrtc): on a path that shows no queueing, drain within the
+    // short limit, bounded by uncongested_max_boost times the pacing rate.
+    bool fast = false;
+    if (path_uncongested_ && cfg_.uncongested_queue_time_limit > TimeDelta::Zero()) {
+      const TimeDelta short_left =
+          std::max(TimeDelta::Millis(1), cfg_.uncongested_queue_time_limit - queue_.AverageQueueTime());
+      const DataRate fast_rate = std::min(Div(queue_size_data, short_left), pacing_rate_ * cfg_.uncongested_max_boost);
+      if (fast_rate > min_rate_needed) {
+        min_rate_needed = fast_rate;
+        fast = fast_rate > pacing_rate_;
+      }
+    }
+    if (fast && !fast_drain_) {
+      ++stats_.fast_drains;
+      SM_EVENT(cfg_.events, now, "pacer", "fast_drain", min_rate_needed.bps(), pacing_rate_.bps());
+    }
+    fast_drain_ = fast;
     if (min_rate_needed > pacing_rate_) {
       adjusted_media_rate_ = min_rate_needed;
       boost = true;
     }
   }
+  if (queue_size_data <= DataSize::Zero() || !cfg_.drain_large_queues) fast_drain_ = false;
   if (boost && !boosted_) {
     ++stats_.drain_boosts;
     SM_EVENT(cfg_.events, now, "pacer", "drain_boost", adjusted_media_rate_.bps(), pacing_rate_.bps());
@@ -544,6 +562,7 @@ void PacingController::ExportMetrics(MetricsWriter& w) const {
   }
   w.Counter("probe_packets", stats_.probe_packets);
   w.Counter("drain_boosts", stats_.drain_boosts);
+  w.Counter("fast_drains", stats_.fast_drains);
   w.Counter("keepalives", stats_.keepalives);
   w.Counter("circuit_breaks", stats_.circuit_breaks);
   w.Counter("keyframe_flushes", stats_.keyframe_flushes);

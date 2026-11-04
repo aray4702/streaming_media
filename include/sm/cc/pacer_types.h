@@ -47,6 +47,7 @@ struct PacerStats {
   std::array<int64_t, 5> sent_bytes{};
   uint64_t probe_packets = 0;
   uint64_t drain_boosts = 0;  // Times the queue raised the rate above the pacing rate.
+  uint64_t fast_drains = 0;   // Times an uncongested path drained a queue within the short limit (#795).
   uint64_t keepalives = 0;
   uint64_t circuit_breaks = 0;
   uint64_t keyframe_flushes = 0;  // Keyframes that flushed the video queue.

@@ -1,12 +1,23 @@
 #include "sm/rtp/send_side_controller.h"
 
 #include <algorithm>
+#include <cmath>
 
 namespace sm::rtp {
 
 namespace {
 // video_send_stream_impl.cc:84: the encoder activity check interval.
 constexpr TimeDelta kEncoderTimeOut = TimeDelta::Seconds(2);
+// Issue #795: the delay-based limit must be this far above the target for the path to count as uncongested.
+constexpr double kUncongestedDelayLimitRatio = 1.5;
+// Issue #795: how far above the smallest feedback RTT the last one may be for the path to count as uncongested.
+constexpr TimeDelta kUncongestedRttMargin = TimeDelta::Millis(100);
+// Issue #795: how long the path must look uncongested before the pacer drains quickly.
+constexpr TimeDelta kUncongestedHold = TimeDelta::Seconds(5);
+// Issue #795: a feedback gap at least this long, while the pacer drains quickly, starts the encoder's ramp.
+constexpr TimeDelta kRecoveryGap = TimeDelta::Seconds(1);
+// Issue #795: the ramp's growth per second (AimdRateControl's largest multiplicative increase, 8%/s).
+constexpr double kRecoveryRampPerSecond = 1.08;
 
 cc::GccConfig WithEvents(cc::GccConfig c, EventSink* e) {
   if (!c.events) c.events = e;
@@ -53,7 +64,7 @@ void SendSideController::Apply(const cc::NetworkControlUpdate& u, Timestamp now)
 void SendSideController::ApplyTarget(const cc::NetworkControlUpdate& u, Timestamp now) {
   target_ = u.target_rate;
   rates_time_ = now;
-  if (allocation_configured_ && !cfg_.control_handler) allocator_.OnTargetChanged(target_, now);
+  if (allocation_configured_ && !cfg_.control_handler) allocator_.OnTargetChanged(EncoderTarget(target_, now), now);
   if (allocation_configured_) gcc_.SetPacingLimits(allocator_.limits().min_allocatable, allocator_.limits().max_padding);
   outage_.SetCurrentRate(target_);
 }
@@ -62,6 +73,23 @@ void SendSideController::ApplyTarget(const cc::NetworkControlUpdate& u, Timestam
 // end of MaybeTriggerOnNetworkChanged, after the pushback target of the same update, and the padding rate never
 // exceeds that pushback target (goog_cc_network_control.cc:596-650, 675-679; issue #813).
 void SendSideController::ApplyPacer(const cc::NetworkControlUpdate& u, Timestamp now) {
+  // Issue #795 (beyond libwebrtc): the path shows no queueing when the delay detector
+  // isn't overusing and the delay-based limit sits well above the target (the target was
+  // cut by the loss-based estimate or the RTT backoff of a feedback outage). The pacer
+  // then drains its queue quickly instead of holding video for up to 2 s.
+  // The last feedback's RTT must also be near the smallest one seen (no standing queue).
+  if (const auto rtt = gcc_.last_feedback_max_rtt()) {
+    last_feedback_rtt_ = *rtt;
+    min_feedback_rtt_ = std::min(min_feedback_rtt_, *rtt);
+  }
+  const DataRate delay_limit = gcc_.send_side_bwe().delay_based_limit();
+  const bool uncongested = gcc_.delay_bwe().usage() != cc::BandwidthUsage::kOverusing && delay_limit.IsFinite() &&
+                           delay_limit >= gcc_.target() * kUncongestedDelayLimitRatio &&
+                           last_feedback_rtt_.IsFinite() && last_feedback_rtt_ <= min_feedback_rtt_ + kUncongestedRttMargin;
+  // It must hold for a while: right after a capacity drop the delay-based limit is stale.
+  if (!uncongested) uncongested_since_ = Timestamp::PlusInfinity();
+  else if (uncongested_since_.IsPlusInfinity()) uncongested_since_ = now;
+  pacer_.SetPathUncongested(uncongested && now - uncongested_since_ >= kUncongestedHold);
   pacer_.SetPacingRates(gcc_.PacingRate(), std::min(gcc_.PaddingRate(), pushback_target_), now);
   for (const auto& c : u.probes) pacer_.AddProbeCluster(c);
 }
@@ -93,7 +121,7 @@ void SendSideController::UpdatePushback(Timestamp now, bool window) {
 void SendSideController::PostTargetRate(Timestamp now) {
   if (!cfg_.control_handler) return;
   cc::TargetTransferRate msg;
-  msg.target_rate = target_;
+  msg.target_rate = EncoderTarget(target_, now);
   msg.cwnd_reduce_ratio = pushback_reduce_ratio_;
   msg.fraction_loss = gcc_.send_side_bwe().fraction_loss();
   msg.round_trip_time = gcc_.send_side_bwe().round_trip_time();
@@ -524,7 +552,29 @@ Timestamp SendSideController::NextProcessTime(Timestamp now) const {
   return std::max(next, now);
 }
 
+// Issue #795 (beyond libwebrtc): when feedback returns after a gap, GoogCC's target jumps back to its stale
+// estimate (1.43 Mbps on a 1 Mbps link in issue_536_reverse_outage_45s, as in libwebrtc). libwebrtc's pacer
+// then holds up to 2 s of video, so the queue the jump builds on the link only replaces that delay. With the
+// uncongested drain the pacer is empty, and the jump would reach the listener as a 250 ms freeze. So the
+// encoder (not GoogCC) restarts from the target it had before the gap and grows 8% a second until it meets
+// GoogCC's target; a drop of GoogCC's target below the ramp ends it at once.
+DataRate SendSideController::EncoderTarget(DataRate target, Timestamp now) {
+  if (ramp_start_.IsPlusInfinity()) return target;
+  const DataRate cap = ramp_base_ * std::pow(kRecoveryRampPerSecond, (now - ramp_start_).ms_f() / 1000.0);
+  if (cap < target) return cap;
+  ramp_start_ = Timestamp::PlusInfinity();
+  return target;
+}
+
 void SendSideController::OnTransportFeedback(const cc::TransportFeedback& fb, Timestamp now) {
+  if (last_feedback_at_.IsFinite() && now - last_feedback_at_ >= kRecoveryGap && pacer_.uncongested_drain_active() &&
+      pre_gap_target_ > DataRate::Zero()) {
+    ramp_start_ = now;
+    ramp_base_ = pre_gap_target_;
+    ++recovery_ramps_;
+    SM_EVENT(cfg_.events, now, "send_side", "recovery_ramp", ramp_base_.kbps(), (now - last_feedback_at_).ms());
+  }
+  last_feedback_at_ = now;
   if (!sent_media_.empty()) {
     // RtpVideoSender::OnPacketFeedbackVector (call/rtp_video_sender.cc:1001-1047). The feedback
     // demuxer hands each stream the packets of its media SSRC only (not RTX or padding), in
@@ -581,6 +631,7 @@ void SendSideController::OnTransportFeedback(const cc::TransportFeedback& fb, Ti
     cwnd_.UpdateWindow(window_target_);
   }
   if (u.triggered) PostTargetRate(now);
+  pre_gap_target_ = EncoderTarget(target_, now);
   outage_.OnFeedback(now);
 }
 
@@ -736,6 +787,7 @@ SendRates SendSideController::ComputeMeasuredRates(DataRate audio_wire_rate) con
 
 void SendSideController::ExportMetrics(MetricsWriter& w) const {
   w.Counter("released", stats_.released);
+  w.Counter("recovery_ramps", recovery_ramps_);
   w.Counter("padding", stats_.padding);
   w.Counter("padding_dropped", stats_.padding_dropped);
   w.Counter("unknown_ids", stats_.unknown_ids);
