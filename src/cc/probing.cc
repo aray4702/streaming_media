@@ -81,6 +81,10 @@ std::optional<DataRate> ProbeBitrateEstimator::OnPacketResult(const PacketResult
     ++invalid_;
     return std::nullopt;
   }
+  if (cfg.recovery && receive_rate < Scale(send_rate, kMinRatioForUnsaturatedLink)) {
+    ++recovery_saturated_;  // Issue #14: no room found; the estimate stays.
+    return std::nullopt;
+  }
   DataRate res = std::min(send_rate, receive_rate);
   // Receiving at a significantly lower rate than we sent at suggests the true
   // link capacity was found: set the target slightly lower to not overuse at once.
@@ -178,7 +182,10 @@ std::vector<ProbeCluster> ProbeControllerV2::OnNetworkAvailability(bool availabl
 
 void ProbeControllerV2::UpdateState(State s) {
   state_ = s;
-  if (s == State::kProbingComplete) min_bitrate_to_probe_further_ = DataRate::PlusInfinity();
+  if (s == State::kProbingComplete) {
+    min_bitrate_to_probe_further_ = DataRate::PlusInfinity();
+    recovery_chain_ = false;
+  }
 }
 
 std::vector<ProbeCluster> ProbeControllerV2::InitiateExponentialProbing(Timestamp at_time) {
@@ -198,6 +205,7 @@ std::vector<ProbeCluster> ProbeControllerV2::SetEstimatedBitrate(DataRate bitrat
     bitrate_before_last_large_drop_ = estimated_bitrate_;
   }
   estimated_bitrate_ = bitrate;
+  UpdateRecoveryHold(at_time);
 
   if (state_ == State::kWaitingForProbingResult) {
     // Continue probing if probing results indicate the channel has greater
@@ -207,7 +215,7 @@ std::vector<ProbeCluster> ProbeControllerV2::SetEstimatedBitrate(DataRate bitrat
       min_bitrate_to_probe_further_ = DataRate::PlusInfinity();
     }
     if (bitrate > min_bitrate_to_probe_further_) {
-      return InitiateProbing(at_time, {Scale(bitrate, cfg_.further_exponential_probe_scale)}, true);
+      return InitiateProbing(at_time, {Scale(bitrate, cfg_.further_exponential_probe_scale)}, true, recovery_chain_);
     }
   }
   return {};
@@ -248,6 +256,10 @@ void ProbeControllerV2::Reset(Timestamp at_time) {
   alr_end_time_.reset();
   time_of_last_large_drop_ = at_time;
   bitrate_before_last_large_drop_ = DataRate::Zero();
+  recovery_level_ = DataRate::Zero();
+  recovery_level_time_ = Timestamp::MinusInfinity();
+  recovery_low_since_.reset();
+  recovery_chain_ = false;
 }
 
 bool ProbeControllerV2::TimeForAlrProbe(Timestamp at_time) const {
@@ -277,7 +289,43 @@ std::vector<ProbeCluster> ProbeControllerV2::Process(Timestamp at_time) {
   if (TimeForAlrProbe(at_time)) {
     return InitiateProbing(at_time, {Scale(estimated_bitrate_, cfg_.alr_probe_scale)}, true);
   }
+  if (cfg_.recovery_probing) return MaybeRecoveryProbe(at_time);
   return {};
+}
+
+// Issue #14 (beyond libwebrtc; see ProbeControllerV2Config::recovery_probing). The level is
+// the acknowledged rate, what the link delivered, not the estimate: a start rate or a
+// probe result the link never carried is no level to go back to.
+void ProbeControllerV2::OnAcknowledgedRate(DataRate acked, Timestamp at_time) {
+  if (acked >= recovery_level_ || at_time - recovery_level_time_ > cfg_.recovery_window) {
+    recovery_level_ = acked;
+    recovery_level_time_ = at_time;
+  }
+  UpdateRecoveryHold(at_time);
+}
+
+void ProbeControllerV2::UpdateRecoveryHold(Timestamp at_time) {
+  if (estimated_bitrate_ >= Scale(recovery_level_, cfg_.recovery_probe_fraction)) {
+    recovery_low_since_.reset();
+  } else if (!recovery_low_since_) {
+    recovery_low_since_ = at_time;
+  }
+}
+
+std::vector<ProbeCluster> ProbeControllerV2::MaybeRecoveryProbe(Timestamp at_time) {
+  if (bandwidth_limited_cause_ != BandwidthLimitedCause::kDelayBasedLimited) return {};
+  if (!recovery_path_clear_) return {};
+  // An application-limited sender (ALR) would not use a higher estimate.
+  if (alr_start_time_) return {};
+  if (at_time - recovery_level_time_ > cfg_.recovery_window) return {};
+  // Low for a whole interval first, so the queue the drop built has drained.
+  if (!recovery_low_since_ || at_time - *recovery_low_since_ < cfg_.recovery_probe_interval) return {};
+  if (at_time - last_recovery_probe_ < cfg_.recovery_probe_interval) return {};
+  const DataRate rate = std::min(Scale(estimated_bitrate_, cfg_.recovery_probe_scale), recovery_level_);
+  last_recovery_probe_ = at_time;
+  ++recovery_probes_;
+  SM_EVENT(cfg_.events, at_time, "probe", "recovery", rate.bps(), recovery_level_.bps());
+  return InitiateProbing(at_time, {rate}, rate < recovery_level_, /*recovery=*/true);
 }
 
 ProbeCluster ProbeControllerV2::CreateProbeCluster(Timestamp at_time, DataRate bitrate) {
@@ -300,7 +348,8 @@ ProbeCluster ProbeControllerV2::CreateProbeCluster(Timestamp at_time, DataRate b
   return c;
 }
 
-std::vector<ProbeCluster> ProbeControllerV2::InitiateProbing(Timestamp now, const std::vector<DataRate>& bitrates_to_probe, bool probe_further) {
+std::vector<ProbeCluster> ProbeControllerV2::InitiateProbing(Timestamp now, const std::vector<DataRate>& bitrates_to_probe, bool probe_further,
+                                                             bool recovery) {
   DataRate max_probe_bitrate = max_bitrate_;
   if (max_total_allocated_bitrate_ > DataRate::Zero()) {
     // If a max allocated bitrate has been configured, allow probing up to 2x that
@@ -327,8 +376,10 @@ std::vector<ProbeCluster> ProbeControllerV2::InitiateProbing(Timestamp now, cons
       probe_further = false;
     }
     pending.push_back(CreateProbeCluster(now, bitrate));
+    pending.back().recovery = recovery;
   }
   time_last_probing_initiated_ = now;
+  recovery_chain_ = recovery && probe_further;
   if (probe_further) {
     UpdateState(State::kWaitingForProbingResult);
     // Don't expect probe results to be larger than a fraction of the actual probe rate.
@@ -341,12 +392,14 @@ std::vector<ProbeCluster> ProbeControllerV2::InitiateProbing(Timestamp now, cons
 
 void ProbeControllerV2::ExportMetrics(MetricsWriter& w) const {
   w.Counter("clusters", clusters_);
+  w.Counter("recovery_probes", recovery_probes_);
   w.Gauge("state", static_cast<double>(state_));
 }
 
 void ProbeBitrateEstimator::ExportMetrics(MetricsWriter& w) const {
   w.Counter("estimates", estimates_);
   w.Counter("invalid", invalid_);
+  w.Counter("recovery_saturated", recovery_saturated_);
 }
 
 }  // namespace sm::cc
