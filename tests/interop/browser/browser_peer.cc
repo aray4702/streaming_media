@@ -437,7 +437,8 @@ int main(int argc, char** argv) {
     }
   }
 
-  StdinLines input;
+  // Never destroyed: its reader thread is detached and may wake on stdin's EOF after main returns.
+  StdinLines& input = *new StdinLines;
   const Timestamp start = now;
   bool bye = false, eof = false;
   bool connected = false;
@@ -565,6 +566,13 @@ int main(int argc, char** argv) {
     now = Now();
     resolver.Poll(now);
   }
+  // --mdns: a lookup still running when the call ended gets a few more seconds (an unanswered .local name fails
+  // after about 5 s), so the verdict says whether this host resolves the names.
+  for (const Timestamp until = now + TimeDelta::Seconds(6); expect_mdns && resolver.pending() > 0 && now < until;) {
+    sockets.Poll(now, TimeDelta::Millis(20));
+    now = Now();
+    resolver.Poll(now);
+  }
 
   const rtp::SessionStats* st = ep.session() ? &ep.session()->stats() : nullptr;
   const bool ok_connected = connected;
@@ -592,17 +600,21 @@ int main(int argc, char** argv) {
       selected_remote = std::string(r.type_name()) + (p2p::IsMdnsHostname(r.address().hostname()) ? "-mdns" : "");
     }
   }
-  std::fprintf(stderr, "remote host candidates: %d mDNS, %d IP; resolved %d, failed %d, dropped %d; selected remote %s\n",
-               mdns_candidates, ip_host_candidates, hs.resolved, hs.failed, hs.dropped, selected_remote.c_str());
+  std::fprintf(stderr,
+               "remote host candidates: %d mDNS, %d IP; resolved %d, failed %d, still resolving %d, dropped %d; "
+               "selected remote %s\n",
+               mdns_candidates, ip_host_candidates, hs.resolved, hs.failed, hs.resolving, hs.dropped,
+               selected_remote.c_str());
   std::string mdns_check = "}";
   bool ok_mdns = true;
   if (expect_mdns) {
-    // "unresolvable": the resolver tried and this host could not resolve the names (a skip); "dropped": they were
-    // never resolved (a failure: what the endpoint did before #1152).
-    const char* state = mdns_candidates == 0             ? "not-obfuscated"
-                        : hs.resolved > 0                ? "resolved"
-                        : hs.failed > 0 && !hs.dropped   ? "unresolvable"
-                                                         : "dropped";
+    // "unresolvable": the resolver was asked and this host did not resolve the names (it failed, or was still
+    // looking): a skip. "dropped": they were never resolved (a failure: what the endpoint did before #1152).
+    const bool asked = hs.failed + hs.resolving > 0 && hs.dropped == 0;
+    const char* state = mdns_candidates == 0 ? "not-obfuscated"
+                        : hs.resolved > 0    ? "resolved"
+                        : asked              ? "unresolvable"
+                                             : "dropped";
     ok_mdns = mdns_candidates > 0 && hs.resolved > 0 && selected_remote == "host-mdns";
     mdns_check = std::string(",\"mdnsResolved\":") + (ok_mdns ? "true" : "false") + "},\"mdns\":\"" + state +
                  "\",\"selectedRemote\":\"" + selected_remote + "\"";

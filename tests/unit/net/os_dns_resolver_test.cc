@@ -85,7 +85,7 @@ SM_TEST(OsDnsResolver, DestroyedResolverIsNotCalled) {
   SM_EXPECT_EQ(calls2, 1);
 }
 
-// The factory can go with lookups still running (its destructor joins the workers).
+// The factory can go with lookups still running: it returns at once, and the workers exit when getaddrinfo does.
 SM_TEST(OsDnsResolver, FactoryDestroyedWithLookupsInFlight) {
   auto factory = std::make_unique<interop::OsDnsResolverFactory>();
   std::vector<std::unique_ptr<p2p::AsyncDnsResolverInterface>> resolvers;
