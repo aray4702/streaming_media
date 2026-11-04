@@ -1,12 +1,12 @@
 ## Parity with libwebrtc M157.8103@{#0}
 
-165 scenarios, mean of 10 seeds. **34 gaps**: 6 behind libwebrtc, 28 ahead of it; 17 without an owner.
+165 scenarios, mean of 10 seeds. **28 gaps**: 0 behind libwebrtc, 28 ahead of it; 14 without an owner.
 
 A gap is a metric whose means differ by more than the band, in either direction: the larger of the `sm_compare` tie floor, 5% of the larger mean, and one standard deviation of libwebrtc's per-seed values. `seeds` is on how many seeds the single-seed difference is also outside the floor and 5%, in the gap's direction. An owner is an open issue, or a closed one whose rule carries a note (an explained difference); closed issues without a note are listed but own nothing.
 
 ### Against `main`
 
-0 gaps on `main`, 34 here: **0 closed, 34 opened**, 0 changed direction.
+0 gaps on `main`, 28 here: **0 closed, 28 opened**, 0 changed direction.
 
 Opened:
 
@@ -28,24 +28,18 @@ Opened:
 | issue_536_loss20_av_sync | `audio.jb_delay_p95_ms` | 176 | 665 | ±449 | ahead | 9/10 | #536, #729 (closed, no note: #63, #476) |
 | issue_536_loss20_av_sync | `video.e2e_delay_p95_ms` | 512 | 1776 | ±1002 | ahead | 10/10 | #536, #729 (closed, no note: #24, #37) |
 | issue_536_loss20_av_sync | `sync.av_offset_p95_ms` | 355 | 1173 | ±652 | ahead | 10/10 | #536, #729 |
-| issue_536_reverse_outage_45s | `audio.longest_interruption_ms` | 82.1 | 22 | ±20 | behind | 7/10 | #536, #729 (closed, no note: #63, #476) |
-| issue_536_reverse_outage_45s | `audio.mouth_to_ear_p95_ms` | 323 | 2070 | ±104 | ahead | 10/10 | #536, #729 (closed, no note: #63, #476) |
-| issue_536_reverse_outage_45s | `audio.jb_delay_p95_ms` | 230 | 1978 | ±98.9 | ahead | 10/10 | #536, #729 (closed, no note: #63, #476) |
-| issue_536_reverse_outage_45s | `video.freeze_total_ms` | 245 | 88.9 | ±115 | behind | 6/10 | #536, #729 (closed, no note: #5, #37, #24) |
-| issue_536_reverse_outage_45s | `video.longest_freeze_ms` | 248 | 103 | ±104 | behind | 6/10 | #536, #729 (closed, no note: #5, #37, #24) |
-| issue_536_reverse_outage_45s | `video.e2e_delay_p95_ms` | 348 | 2307 | ±115 | ahead | 10/10 | #536, #729 (closed, no note: #24, #37) |
-| issue_536_reverse_outage_45s | `sync.av_offset_p95_ms` | 148 | 1595 | ±81.9 | ahead | 10/10 | #536, #729 |
+| issue_536_reverse_outage_45s | `audio.mouth_to_ear_p95_ms` | 312 | 2070 | ±104 | ahead | 10/10 | #536, #729 (closed, no note: #63, #476) |
+| issue_536_reverse_outage_45s | `audio.jb_delay_p95_ms` | 221 | 1978 | ±98.9 | ahead | 10/10 | #536, #729 (closed, no note: #63, #476) |
+| issue_536_reverse_outage_45s | `video.e2e_delay_p95_ms` | 324 | 2307 | ±115 | ahead | 10/10 | #536, #729 (closed, no note: #24, #37) |
+| issue_536_reverse_outage_45s | `sync.av_offset_p95_ms` | 147 | 1595 | ±81.9 | ahead | 10/10 | #536, #729 |
 | issue_795_loss20_mouth_to_ear | `audio.mouth_to_ear_p95_ms` | 240 | 728 | ±447 | ahead | 9/10 | **none** (closed, no note: #63, #476) |
 | issue_795_loss20_mouth_to_ear | `audio.jb_delay_p95_ms` | 176 | 665 | ±449 | ahead | 9/10 | **none** (closed, no note: #63, #476) |
 | issue_795_loss20_mouth_to_ear | `video.e2e_delay_p95_ms` | 512 | 1776 | ±1002 | ahead | 10/10 | **none** (closed, no note: #24, #37) |
 | issue_795_loss20_mouth_to_ear | `sync.av_offset_p95_ms` | 355 | 1173 | ±652 | ahead | 10/10 | **none** |
-| issue_795_reverse_outage_mouth_to_ear | `audio.longest_interruption_ms` | 82.1 | 22 | ±20 | behind | 7/10 | **none** (closed, no note: #63, #476) |
-| issue_795_reverse_outage_mouth_to_ear | `audio.mouth_to_ear_p95_ms` | 323 | 2070 | ±104 | ahead | 10/10 | **none** (closed, no note: #63, #476) |
-| issue_795_reverse_outage_mouth_to_ear | `audio.jb_delay_p95_ms` | 230 | 1978 | ±98.9 | ahead | 10/10 | **none** (closed, no note: #63, #476) |
-| issue_795_reverse_outage_mouth_to_ear | `video.freeze_total_ms` | 245 | 88.9 | ±115 | behind | 6/10 | **none** (closed, no note: #5, #37, #24) |
-| issue_795_reverse_outage_mouth_to_ear | `video.longest_freeze_ms` | 248 | 103 | ±104 | behind | 6/10 | **none** (closed, no note: #5, #37, #24) |
-| issue_795_reverse_outage_mouth_to_ear | `video.e2e_delay_p95_ms` | 348 | 2307 | ±115 | ahead | 10/10 | **none** (closed, no note: #24, #37) |
-| issue_795_reverse_outage_mouth_to_ear | `sync.av_offset_p95_ms` | 148 | 1595 | ±81.9 | ahead | 10/10 | **none** |
+| issue_795_reverse_outage_mouth_to_ear | `audio.mouth_to_ear_p95_ms` | 312 | 2070 | ±104 | ahead | 10/10 | **none** (closed, no note: #63, #476) |
+| issue_795_reverse_outage_mouth_to_ear | `audio.jb_delay_p95_ms` | 221 | 1978 | ±98.9 | ahead | 10/10 | **none** (closed, no note: #63, #476) |
+| issue_795_reverse_outage_mouth_to_ear | `video.e2e_delay_p95_ms` | 324 | 2307 | ±115 | ahead | 10/10 | **none** (closed, no note: #24, #37) |
+| issue_795_reverse_outage_mouth_to_ear | `sync.av_offset_p95_ms` | 147 | 1595 | ±81.9 | ahead | 10/10 | **none** |
 
 ### Gaps
 
@@ -67,24 +61,18 @@ Opened:
 | issue_536_loss20_av_sync | `audio.mouth_to_ear_p95_ms` | 240 | 728 | ±447 | ahead | 9/10 | #536, #729 (closed, no note: #63, #476) |
 | issue_536_loss20_av_sync | `sync.av_offset_p95_ms` | 355 | 1173 | ±652 | ahead | 10/10 | #536, #729 |
 | issue_536_loss20_av_sync | `video.e2e_delay_p95_ms` | 512 | 1776 | ±1002 | ahead | 10/10 | #536, #729 (closed, no note: #24, #37) |
-| issue_536_reverse_outage_45s | `audio.jb_delay_p95_ms` | 230 | 1978 | ±98.9 | ahead | 10/10 | #536, #729 (closed, no note: #63, #476) |
-| issue_536_reverse_outage_45s | `audio.longest_interruption_ms` | 82.1 | 22 | ±20 | behind | 7/10 | #536, #729 (closed, no note: #63, #476) |
-| issue_536_reverse_outage_45s | `audio.mouth_to_ear_p95_ms` | 323 | 2070 | ±104 | ahead | 10/10 | #536, #729 (closed, no note: #63, #476) |
-| issue_536_reverse_outage_45s | `sync.av_offset_p95_ms` | 148 | 1595 | ±81.9 | ahead | 10/10 | #536, #729 |
-| issue_536_reverse_outage_45s | `video.e2e_delay_p95_ms` | 348 | 2307 | ±115 | ahead | 10/10 | #536, #729 (closed, no note: #24, #37) |
-| issue_536_reverse_outage_45s | `video.freeze_total_ms` | 245 | 88.9 | ±115 | behind | 6/10 | #536, #729 (closed, no note: #5, #37, #24) |
-| issue_536_reverse_outage_45s | `video.longest_freeze_ms` | 248 | 103 | ±104 | behind | 6/10 | #536, #729 (closed, no note: #5, #37, #24) |
+| issue_536_reverse_outage_45s | `audio.jb_delay_p95_ms` | 221 | 1978 | ±98.9 | ahead | 10/10 | #536, #729 (closed, no note: #63, #476) |
+| issue_536_reverse_outage_45s | `audio.mouth_to_ear_p95_ms` | 312 | 2070 | ±104 | ahead | 10/10 | #536, #729 (closed, no note: #63, #476) |
+| issue_536_reverse_outage_45s | `sync.av_offset_p95_ms` | 147 | 1595 | ±81.9 | ahead | 10/10 | #536, #729 |
+| issue_536_reverse_outage_45s | `video.e2e_delay_p95_ms` | 324 | 2307 | ±115 | ahead | 10/10 | #536, #729 (closed, no note: #24, #37) |
 | issue_795_loss20_mouth_to_ear | `audio.jb_delay_p95_ms` | 176 | 665 | ±449 | ahead | 9/10 | **none** (closed, no note: #63, #476) |
 | issue_795_loss20_mouth_to_ear | `audio.mouth_to_ear_p95_ms` | 240 | 728 | ±447 | ahead | 9/10 | **none** (closed, no note: #63, #476) |
 | issue_795_loss20_mouth_to_ear | `sync.av_offset_p95_ms` | 355 | 1173 | ±652 | ahead | 10/10 | **none** |
 | issue_795_loss20_mouth_to_ear | `video.e2e_delay_p95_ms` | 512 | 1776 | ±1002 | ahead | 10/10 | **none** (closed, no note: #24, #37) |
-| issue_795_reverse_outage_mouth_to_ear | `audio.jb_delay_p95_ms` | 230 | 1978 | ±98.9 | ahead | 10/10 | **none** (closed, no note: #63, #476) |
-| issue_795_reverse_outage_mouth_to_ear | `audio.longest_interruption_ms` | 82.1 | 22 | ±20 | behind | 7/10 | **none** (closed, no note: #63, #476) |
-| issue_795_reverse_outage_mouth_to_ear | `audio.mouth_to_ear_p95_ms` | 323 | 2070 | ±104 | ahead | 10/10 | **none** (closed, no note: #63, #476) |
-| issue_795_reverse_outage_mouth_to_ear | `sync.av_offset_p95_ms` | 148 | 1595 | ±81.9 | ahead | 10/10 | **none** |
-| issue_795_reverse_outage_mouth_to_ear | `video.e2e_delay_p95_ms` | 348 | 2307 | ±115 | ahead | 10/10 | **none** (closed, no note: #24, #37) |
-| issue_795_reverse_outage_mouth_to_ear | `video.freeze_total_ms` | 245 | 88.9 | ±115 | behind | 6/10 | **none** (closed, no note: #5, #37, #24) |
-| issue_795_reverse_outage_mouth_to_ear | `video.longest_freeze_ms` | 248 | 103 | ±104 | behind | 6/10 | **none** (closed, no note: #5, #37, #24) |
+| issue_795_reverse_outage_mouth_to_ear | `audio.jb_delay_p95_ms` | 221 | 1978 | ±98.9 | ahead | 10/10 | **none** (closed, no note: #63, #476) |
+| issue_795_reverse_outage_mouth_to_ear | `audio.mouth_to_ear_p95_ms` | 312 | 2070 | ±104 | ahead | 10/10 | **none** (closed, no note: #63, #476) |
+| issue_795_reverse_outage_mouth_to_ear | `sync.av_offset_p95_ms` | 147 | 1595 | ±81.9 | ahead | 10/10 | **none** |
+| issue_795_reverse_outage_mouth_to_ear | `video.e2e_delay_p95_ms` | 324 | 2307 | ±115 | ahead | 10/10 | **none** (closed, no note: #24, #37) |
 
 ### Gaps without an owner
 
@@ -100,11 +88,8 @@ Opened:
 | issue_795_loss20_mouth_to_ear | `audio.jb_delay_p95_ms` | 176 | 665 | ±449 | ahead | 9/10 | **none** (closed, no note: #63, #476) |
 | issue_795_loss20_mouth_to_ear | `video.e2e_delay_p95_ms` | 512 | 1776 | ±1002 | ahead | 10/10 | **none** (closed, no note: #24, #37) |
 | issue_795_loss20_mouth_to_ear | `sync.av_offset_p95_ms` | 355 | 1173 | ±652 | ahead | 10/10 | **none** |
-| issue_795_reverse_outage_mouth_to_ear | `audio.longest_interruption_ms` | 82.1 | 22 | ±20 | behind | 7/10 | **none** (closed, no note: #63, #476) |
-| issue_795_reverse_outage_mouth_to_ear | `audio.mouth_to_ear_p95_ms` | 323 | 2070 | ±104 | ahead | 10/10 | **none** (closed, no note: #63, #476) |
-| issue_795_reverse_outage_mouth_to_ear | `audio.jb_delay_p95_ms` | 230 | 1978 | ±98.9 | ahead | 10/10 | **none** (closed, no note: #63, #476) |
-| issue_795_reverse_outage_mouth_to_ear | `video.freeze_total_ms` | 245 | 88.9 | ±115 | behind | 6/10 | **none** (closed, no note: #5, #37, #24) |
-| issue_795_reverse_outage_mouth_to_ear | `video.longest_freeze_ms` | 248 | 103 | ±104 | behind | 6/10 | **none** (closed, no note: #5, #37, #24) |
-| issue_795_reverse_outage_mouth_to_ear | `video.e2e_delay_p95_ms` | 348 | 2307 | ±115 | ahead | 10/10 | **none** (closed, no note: #24, #37) |
-| issue_795_reverse_outage_mouth_to_ear | `sync.av_offset_p95_ms` | 148 | 1595 | ±81.9 | ahead | 10/10 | **none** |
+| issue_795_reverse_outage_mouth_to_ear | `audio.mouth_to_ear_p95_ms` | 312 | 2070 | ±104 | ahead | 10/10 | **none** (closed, no note: #63, #476) |
+| issue_795_reverse_outage_mouth_to_ear | `audio.jb_delay_p95_ms` | 221 | 1978 | ±98.9 | ahead | 10/10 | **none** (closed, no note: #63, #476) |
+| issue_795_reverse_outage_mouth_to_ear | `video.e2e_delay_p95_ms` | 324 | 2307 | ±115 | ahead | 10/10 | **none** (closed, no note: #24, #37) |
+| issue_795_reverse_outage_mouth_to_ear | `sync.av_offset_p95_ms` | 147 | 1595 | ±81.9 | ahead | 10/10 | **none** |
 

@@ -336,7 +336,7 @@
   {
    "scenario": "issue_536_loss20_av_sync",
    "metric": "sync.av_offset_p95_ms",
-   "sm": 354.763,
+   "sm": 354.767,
    "webrtc": 1172.84,
    "band": 652.427009233847,
    "direction": "ahead",
@@ -350,26 +350,8 @@
   },
   {
    "scenario": "issue_536_reverse_outage_45s",
-   "metric": "audio.longest_interruption_ms",
-   "sm": 82.1,
-   "webrtc": 22,
-   "band": 20,
-   "direction": "behind",
-   "seeds_agree": 7,
-   "seeds": 10,
-   "owners": [
-    536,
-    729
-   ],
-   "stale_owners": [
-    63,
-    476
-   ]
-  },
-  {
-   "scenario": "issue_536_reverse_outage_45s",
    "metric": "audio.mouth_to_ear_p95_ms",
-   "sm": 323.162,
+   "sm": 312.252,
    "webrtc": 2070.09,
    "band": 103.50450000000001,
    "direction": "ahead",
@@ -387,7 +369,7 @@
   {
    "scenario": "issue_536_reverse_outage_45s",
    "metric": "audio.jb_delay_p95_ms",
-   "sm": 230,
+   "sm": 221,
    "webrtc": 1977.7,
    "band": 98.885,
    "direction": "ahead",
@@ -404,46 +386,8 @@
   },
   {
    "scenario": "issue_536_reverse_outage_45s",
-   "metric": "video.freeze_total_ms",
-   "sm": 245.3,
-   "webrtc": 88.9,
-   "band": 114.97096251759494,
-   "direction": "behind",
-   "seeds_agree": 6,
-   "seeds": 10,
-   "owners": [
-    536,
-    729
-   ],
-   "stale_owners": [
-    5,
-    37,
-    24
-   ]
-  },
-  {
-   "scenario": "issue_536_reverse_outage_45s",
-   "metric": "video.longest_freeze_ms",
-   "sm": 248.031,
-   "webrtc": 102.543,
-   "band": 103.65516192693927,
-   "direction": "behind",
-   "seeds_agree": 6,
-   "seeds": 10,
-   "owners": [
-    536,
-    729
-   ],
-   "stale_owners": [
-    5,
-    37,
-    24
-   ]
-  },
-  {
-   "scenario": "issue_536_reverse_outage_45s",
    "metric": "video.e2e_delay_p95_ms",
-   "sm": 347.766,
+   "sm": 323.52,
    "webrtc": 2306.76,
    "band": 115.33800000000002,
    "direction": "ahead",
@@ -461,7 +405,7 @@
   {
    "scenario": "issue_536_reverse_outage_45s",
    "metric": "sync.av_offset_p95_ms",
-   "sm": 147.768,
+   "sm": 147.445,
    "webrtc": 1595.04,
    "band": 81.90846653429666,
    "direction": "ahead",
@@ -521,7 +465,7 @@
   {
    "scenario": "issue_795_loss20_mouth_to_ear",
    "metric": "sync.av_offset_p95_ms",
-   "sm": 354.763,
+   "sm": 354.767,
    "webrtc": 1172.84,
    "band": 652.427009233847,
    "direction": "ahead",
@@ -532,23 +476,8 @@
   },
   {
    "scenario": "issue_795_reverse_outage_mouth_to_ear",
-   "metric": "audio.longest_interruption_ms",
-   "sm": 82.1,
-   "webrtc": 22,
-   "band": 20,
-   "direction": "behind",
-   "seeds_agree": 7,
-   "seeds": 10,
-   "owners": [],
-   "stale_owners": [
-    63,
-    476
-   ]
-  },
-  {
-   "scenario": "issue_795_reverse_outage_mouth_to_ear",
    "metric": "audio.mouth_to_ear_p95_ms",
-   "sm": 323.162,
+   "sm": 312.252,
    "webrtc": 2070.09,
    "band": 103.50450000000001,
    "direction": "ahead",
@@ -563,7 +492,7 @@
   {
    "scenario": "issue_795_reverse_outage_mouth_to_ear",
    "metric": "audio.jb_delay_p95_ms",
-   "sm": 230,
+   "sm": 221,
    "webrtc": 1977.7,
    "band": 98.885,
    "direction": "ahead",
@@ -577,40 +506,8 @@
   },
   {
    "scenario": "issue_795_reverse_outage_mouth_to_ear",
-   "metric": "video.freeze_total_ms",
-   "sm": 245.3,
-   "webrtc": 88.9,
-   "band": 114.97096251759494,
-   "direction": "behind",
-   "seeds_agree": 6,
-   "seeds": 10,
-   "owners": [],
-   "stale_owners": [
-    5,
-    37,
-    24
-   ]
-  },
-  {
-   "scenario": "issue_795_reverse_outage_mouth_to_ear",
-   "metric": "video.longest_freeze_ms",
-   "sm": 248.031,
-   "webrtc": 102.543,
-   "band": 103.65516192693927,
-   "direction": "behind",
-   "seeds_agree": 6,
-   "seeds": 10,
-   "owners": [],
-   "stale_owners": [
-    5,
-    37,
-    24
-   ]
-  },
-  {
-   "scenario": "issue_795_reverse_outage_mouth_to_ear",
    "metric": "video.e2e_delay_p95_ms",
-   "sm": 347.766,
+   "sm": 323.52,
    "webrtc": 2306.76,
    "band": 115.33800000000002,
    "direction": "ahead",
@@ -625,7 +522,7 @@
   {
    "scenario": "issue_795_reverse_outage_mouth_to_ear",
    "metric": "sync.av_offset_p95_ms",
-   "sm": 147.768,
+   "sm": 147.445,
    "webrtc": 1595.04,
    "band": 81.90846653429666,
    "direction": "ahead",
