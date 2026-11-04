@@ -320,6 +320,7 @@ Link keys (any subset; unset keys keep their previous value):
   padding; issue #119, information only): `net.<kind>_size_p50_b`,
   `_size_p90_b`, `_size_max_b` (wire size of the packets offered to the
   link, nearest rank) and `net.<kind>_queue_drops`.
+- **The bench itself** (`bench.*`, `Report::bench`): the bench's own resource use, not the call's, so it is not in the JSON metrics, the baseline or the comparison with libwebrtc; `expect` lines can check it. `bench.speech_pcm_peak_kb` is the most scripted speech PCM the send sides held at once. The speech is made 1 s at a time as the call reads it (`testbench/speech_pcm.h`, sample for sample the whole signal), so it stays at 375 KB per send side whatever the call's length; built whole, it took about 15 MB per simulated minute (#633).
 
 ## The AI side's turn detector
 
