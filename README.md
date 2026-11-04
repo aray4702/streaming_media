@@ -2,18 +2,13 @@
 
 # streaming_media
 
-Human interacts with AI using streaming audio and video. This project will develop and maintain an audio/video streaming library that
-targets human-AI experience on various platforms, devices and links.
+Human interacts with AI using streaming audio and video. This project will develop and maintain an audio/video streaming library that targets human-AI experience on various platforms, devices and links.
 
-streaming_media is a real-time audio/video streaming library, from servers
-and browsers to phones and embedded devices, designed to keep calls working
-over unstable links. It is developed by a program in which agents improve
-it continuously.
+streaming_media is a real-time audio/video streaming library, from servers and browsers to phones and embedded devices, designed to keep calls working over unstable links. It is developed by a program in which agents improve it continuously.
 
 ## The program
 
-The library evolves through a loop that [program.md](agents/program.md) defines,
-run by three AI agents with GitHub as the shared record:
+The library evolves through a loop that [program.md](agents/program.md) defines, run by three AI agents with GitHub as the shared record:
 
 ```
  Tester ──files issues──> Fixer ──opens PRs──> CI + Reviewer ──approve──> main
@@ -21,132 +16,53 @@ run by three AI agents with GitHub as the shared record:
    └──────────────── next run tests the improved main ─────────────────────┘
 ```
 
-- **Tester** runs scripted calls in the [test bench](testbench/README.md)
-  over emulated bad links (loss, jitter, outages, bandwidth drops, queues,
-  cross traffic) and measures what users would notice: audio gaps, video
-  freezes, delay and recovery time. It also runs the same scenarios
-  through libwebrtc to find where this library falls short of it. Each
-  problem it finds is filed as an issue that reproduces it in one command.
-- **Fixer** turns each issue into a failing test, fixes the root cause and
-  opens a PR. It also builds the `roadmap` features the Owner files.
-- **Reviewer**, a separate GitHub App identity, checks every PR for
-  correctness, tests, regressions against the
-  [baseline](testbench/baseline/) and "gaming" (loosened thresholds).
-  A PR merges automatically once it has the Reviewer's approval and every
-  platform in CI is green.
-- **Owner** (a person) sets direction through `agents/program.md` and `roadmap`
-  issues, and decides anything an agent labels `needs-human`.
+- **Tester** runs scripted calls in the [test bench](testbench/README.md) over emulated bad links (loss, jitter, outages, bandwidth drops, queues, cross traffic) and measures what users would notice: audio gaps, video freezes, delay and recovery time. It also runs the same scenarios through libwebrtc to find where this library falls short of it. Each problem it finds is filed as an issue that reproduces it in one command.
+- **Fixer** turns each issue into a failing test, fixes the root cause and opens a PR. It also builds the `roadmap` features the Owner files.
+- **Reviewer**, a separate GitHub App identity, checks every PR for correctness, tests, regressions against the [baseline](testbench/baseline/) and "gaming" (loosened thresholds). A PR merges automatically once it has the Reviewer's approval and every platform in CI is green.
+- **Owner** (a person) sets direction through `agents/program.md` and `roadmap` issues, and decides anything an agent labels `needs-human`.
 
-Progress is measured, not asserted: a change has to improve the
-user-experience metrics or leave them unchanged, and every problem found
-becomes a scenario that keeps it fixed. The goals, labels, quality gates
-and guardrails are in [program.md](agents/program.md), and the agents'
-instructions are in [agents/](agents/).
+Progress is measured, not asserted: a change has to improve the user-experience metrics or leave them unchanged, and every problem found becomes a scenario that keeps it fixed. The goals, labels, quality gates and guardrails are in [program.md](agents/program.md), and the agents' instructions are in [agents/](agents/).
 
 ## Scope
 
-The library grows in two stages, both measured on the same test bench
-([program.md section 0.1](agents/program.md#01-scope-and-stages)):
+The library grows in two stages, both measured on the same test bench ([program.md section 0.1](agents/program.md#01-scope-and-stages)):
 
-1. **Baseline: what WebRTC handles** (current stage). These are the
-   problems in sections 1-10 of
-   [Problems WebRTC solves](docs/02-webrtc-problems-solved.md):
-   connectivity, security, packet loss, jitter and timing, congestion
-   control, audio, video, synchronization, data channels and
-   observability. The bar is parity with libwebrtc's current
-   mechanisms, not older or simpler variants. Parity is measured by
-   running every test bench scenario through both libraries over the
-   same emulated links ([comparison](docs/results/compare-webrtc.md)).
-   Each gap is an issue labelled `stage:baseline`.
-2. **Human-AI streaming.** Features for problems that arise because the
-   other side of the call is an AI, added one at a time on top of the
-   baseline without regressing it. Examples are a two-way conversation
-   test bench, metrics for response delay, barge-in and how cleanly the
-   user's speech reaches the AI, and AI media sent in faster-than-real-time
-   bursts and cancelled on barge-in. These issues are labelled `stage:ai`.
+1. **Baseline: what WebRTC handles** (current stage). These are the problems in sections 1-10 of [Problems WebRTC solves](docs/02-webrtc-problems-solved.md): connectivity, security, packet loss, jitter and timing, congestion control, audio, video, synchronization, data channels and observability. The bar is parity with libwebrtc's current mechanisms, not older or simpler variants. Parity is measured by running every test bench scenario through both libraries over the same emulated links ([comparison](docs/results/compare-webrtc.md)). Each gap is an issue labelled `stage:baseline`.
+2. **Human-AI streaming.** Features for problems that arise because the other side of the call is an AI, added one at a time on top of the baseline without regressing it. Examples are a two-way conversation test bench, metrics for response delay, barge-in and how cleanly the user's speech reaches the AI, and AI media sent in faster-than-real-time bursts and cancelled on barge-in. These issues are labelled `stage:ai`.
 
-Baseline work comes before AI work. **Sections 1, 2, 9 and 10**
-(connectivity, security, data channels and observability) are ported from
-libwebrtc too ([#944](https://github.com/aray4702/streaming_media/issues/944)), so the
-library doesn't leave them to a host stack. The Owner chose standard
-WebRTC on the wire for both topologies: the AI server (client-server) and
-P2P calls on web, Android and iOS, with 1:1 calls and small-group mesh, no
-SFU. What is ported and how it differs:
-[libwebrtc parity, section 10](docs/design/libwebrtc-parity.md).
+Baseline work comes before AI work. **Sections 1, 2, 9 and 10** (connectivity, security, data channels and observability) are ported from libwebrtc too ([#944](https://github.com/aray4702/streaming_media/issues/944)), so the library doesn't leave them to a host stack. The Owner chose standard WebRTC on the wire for both topologies: the AI server (client-server) and P2P calls on web, Android and iOS, with 1:1 calls and small-group mesh, no SFU. What is ported and how it differs: [libwebrtc parity, section 10](docs/design/libwebrtc-parity.md).
 
 ## The library
 
-The library implements, in portable C++20, sections 1-10 of
-[Problems WebRTC solves](docs/02-webrtc-problems-solved.md): the resilience
-algorithms and the connection around them. `docs/algorithms/` has 72 algorithm
-documents in sections 1-10: connectivity (STUN, ICE, TURN, SDP, the
-endpoint), security (TLS/DTLS, SRTP), packet loss, jitter and timing,
-congestion control, audio processing, video adaptation, synchronization,
-the RTP/RTCP session layer, data channels and observability. Each one has
-unit tests, an end-to-end test over a simulated network where it has one,
-speed and quality benchmarks where they exist, metrics and structured
-events, and a design and results document.
+The library implements, in portable C++20, sections 1-10 of [Problems WebRTC solves](docs/02-webrtc-problems-solved.md): the resilience algorithms and the connection around them. `docs/algorithms/` has 72 algorithm documents in sections 1-10: connectivity (STUN, ICE, TURN, SDP, the endpoint), security (TLS/DTLS, SRTP), packet loss, jitter and timing, congestion control, audio processing, video adaptation, synchronization, the RTP/RTCP session layer, data channels and observability. Each one has unit tests, an end-to-end test over a simulated network where it has one, speed and quality benchmarks where they exist, metrics and structured events, and a design and results document.
 
-Sections 3-8 have no dependencies. Connectivity (section 1) and security
-(section 2) need two libraries, both fetched by
-CMake at configure time (see `cmake/`): a TLS library behind one interface,
-BoringSSL (default) or mbedTLS 3.6, chosen with `SM_TLS_BACKEND`, and
-libsrtp 2.8.0. Build with `-DSM_WITH_TLS=OFF` to leave both out. Data
-channels (sections 9.6-9.9) are optional and off by default: `SM_WITH_DATACHANNEL` switches
-them on and off, and they also need the TLS library. The observability
-outputs (section 10) have build switches too.
+Sections 3-8 have no dependencies. Connectivity (section 1) and security (section 2) need two libraries, both fetched by CMake at configure time (see `cmake/`): a TLS library behind one interface, BoringSSL (default) or mbedTLS 3.6, chosen with `SM_TLS_BACKEND`, and libsrtp 2.8.0. Build with `-DSM_WITH_TLS=OFF` to leave both out. Data channels (sections 9.6-9.9) are optional and off by default: `SM_WITH_DATACHANNEL` switches them on and off, and they also need the TLS library. The observability outputs (section 10) have build switches too.
 
 ## Documents
 
 Background research:
 
-1. [Existing libraries](docs/01-library-survey.md): WebRTC stacks, SIP/RTP
-   stacks, loss-tolerant transports, codecs and media frameworks, with a
-   recommended starting point.
-2. [Problems WebRTC solves](docs/02-webrtc-problems-solved.md): every problem
-   area mapped to the mechanism that handles it, plus what WebRTC leaves to
-   the application. All ten sections are implemented here.
-3. [WebRTC footprint](docs/03-webrtc-footprint.md): binary and RAM size of
-   libwebrtc and lighter alternatives.
-4. [Call data flow](docs/04-webrtc-call-data-flow.md): how media moves through
-   a one-on-one call, from setup through send, receive and the feedback loop.
-5. [Streaming options](docs/05-streaming-options.md): passthrough, bitrate
-   ladder, live re-encode and simulcast/SVC for streaming a video file, and
-   when each one fits.
+1. [Existing libraries](docs/01-library-survey.md): WebRTC stacks, SIP/RTP stacks, loss-tolerant transports, codecs and media frameworks, with a recommended starting point.
+2. [Problems WebRTC solves](docs/02-webrtc-problems-solved.md): every problem area mapped to the mechanism that handles it, plus what WebRTC leaves to the application. All ten sections are implemented here.
+3. [WebRTC footprint](docs/03-webrtc-footprint.md): binary and RAM size of libwebrtc and lighter alternatives.
+4. [Call data flow](docs/04-webrtc-call-data-flow.md): how media moves through a one-on-one call, from setup through send, receive and the feedback loop.
+5. [Streaming options](docs/05-streaming-options.md): passthrough, bitrate ladder, live re-encode and simulcast/SVC for streaming a video file, and when each one fits.
 
 The library:
 
-- [Program](agents/program.md): vision, goals, agent roles, quality gates and
-  guardrails of the self-evolution loop.
-- [Test bench](testbench/README.md): a whole call through the library over
-  a scripted unreliable link (loss, bursts, jitter, outages, capacity
-  changes, bufferbloat, cross traffic), measured as user-experience metrics.
-  The scenario suite and its baseline are the regression gate.
-- [Fix records](docs/fixes/README.md): every problem found and fixed, with
-  its root cause, fix, regression test and before/after results.
-- [Browser port](web/): the library and test bench as a WebAssembly ES
-  module with a JS API, plus a demo page.
-- [Architecture](docs/design/architecture.md): layers, conventions,
-  observability, and how the modules form a call.
-- [Portability](docs/design/portability.md): platforms, presets, what was
-  verified and how, performance across hardware, footprint.
-- [Testing and benchmarking](docs/design/testing.md): test framework,
-  network emulator, pass criteria, how to regenerate the results.
-- [Algorithms](docs/algorithms/README.md): one document per algorithm,
-  sections 1-10 (design, API skeleton, metrics, test methods, benchmarks,
-  results, verification notes).
-- [Verification results](docs/results/README.md): pass/fail and benchmark
-  numbers per platform.
-- [Comparison with libwebrtc](docs/results/compare-webrtc.md): every test
-  bench scenario run through this library and a prebuilt libwebrtc over
-  the same links ([how](compare/README.md)).
-- [libwebrtc parity](docs/design/libwebrtc-parity.md): what is ported from
-  libwebrtc M157 and how it differs, area by area; section 10 covers the
-  connectivity, security and data channel ports.
-- [Self-hosted TURN server](docs/deploy/turn-server.md): coturn on Amazon
-  Lightsail, for tests on real networks and production.
-- [Fuzz targets](fuzz/README.md): libFuzzer targets for the parsers that
-  read network input.
+- [Program](agents/program.md): vision, goals, agent roles, quality gates and guardrails of the self-evolution loop.
+- [Test bench](testbench/README.md): a whole call through the library over a scripted unreliable link (loss, bursts, jitter, outages, capacity changes, bufferbloat, cross traffic), measured as user-experience metrics. The scenario suite and its baseline are the regression gate.
+- [Fix records](docs/fixes/README.md): every problem found and fixed, with its root cause, fix, regression test and before/after results.
+- [Browser port](web/): the library and test bench as a WebAssembly ES module with a JS API, plus a demo page.
+- [Architecture](docs/design/architecture.md): layers, conventions, observability, and how the modules form a call.
+- [Portability](docs/design/portability.md): platforms, presets, what was verified and how, performance across hardware, footprint.
+- [Testing and benchmarking](docs/design/testing.md): test framework, network emulator, pass criteria, how to regenerate the results.
+- [Algorithms](docs/algorithms/README.md): one document per algorithm, sections 1-10 (design, API skeleton, metrics, test methods, benchmarks, results, verification notes).
+- [Verification results](docs/results/README.md): pass/fail and benchmark numbers per platform.
+- [Comparison with libwebrtc](docs/results/compare-webrtc.md): every test bench scenario run through this library and a prebuilt libwebrtc over the same links ([how](compare/README.md)).
+- [libwebrtc parity](docs/design/libwebrtc-parity.md): what is ported from libwebrtc M157 and how it differs, area by area; section 10 covers the connectivity, security and data channel ports.
+- [Self-hosted TURN server](docs/deploy/turn-server.md): coturn on Amazon Lightsail, for tests on real networks and production.
+- [Fuzz targets](fuzz/README.md): libFuzzer targets for the parsers that read network input.
 
 ## Status
 
@@ -164,8 +80,7 @@ The library:
 | 10. Observability | build and runtime switches (`SM_ENABLE_STATS`, `SM_ENABLE_METRICS`, `SM_ENABLE_EVENTS`, `SM_LOG_MIN_LEVEL`); ICE and DTLS connection stats (#1059) |
 | Apple devices | Audio Units I/O and AVFoundation camera capture (`sm::device`, #1115), VideoToolbox H.264 (#1112); the library and its unit tests run on the iOS simulator in CI (#1107, #1108) |
 
-**Apps** (on the library, deployed with the signaling service, the AI server
-and coturn on Amazon Lightsail):
+**Apps** (on the library, deployed with the signaling service, the AI server and coturn on Amazon Lightsail):
 
 | App | What it is |
 |---|---|
@@ -174,41 +89,20 @@ and coturn on Amazon Lightsail):
 | AI server (`apps/ai_server`) | Answers `ai-` rooms with the library, a turn detector and a reply source; caller-side results in [real-network calls](docs/results/real-network-calls.md) |
 
 
-The native build passes 590 of 590 ctest tests on macOS arm64 (main 8677716f
-plus #1112, 2026-11-02; `interop.Coturn` skips without a local coturn), and
-the iOS simulator build passes its 238 unit tests (Xcode 27.2, the CI job's
-flags). The older full runs on WebAssembly (Node), ASan+UBSan and
-`-fno-exceptions -fno-rtti` cover sections 3-8 only
-([details](docs/results/README.md)). Android and embedded Linux ARM are
-cross-built in CI.
+The native build passes 590 of 590 ctest tests on macOS arm64 (main 8677716f plus #1112, 2026-11-02; `interop.Coturn` skips without a local coturn), and the iOS simulator build passes its 238 unit tests (Xcode 27.2, the CI job's flags). The older full runs on WebAssembly (Node), ASan+UBSan and `-fno-exceptions -fno-rtti` cover sections 3-8 only ([details](docs/results/README.md)). Android and embedded Linux ARM are cross-built in CI.
 
-**Stage 1 (parity with libwebrtc) has no open gaps** on main: see
-[Benchmarks](#benchmarks).
+**Stage 1 (parity with libwebrtc) has no open gaps** on main: see [Benchmarks](#benchmarks).
 
 ## Benchmarks
 
-All numbers below come from the [test bench](testbench/README.md): a whole
-call through the library over a scripted emulated link, in simulated
-time, so a run is repeatable.
+All numbers below come from the [test bench](testbench/README.md): a whole call through the library over a scripted emulated link, in simulated time, so a run is repeatable.
 
 ### Classic WebRTC features vs libwebrtc
 
-The `compare-webrtc` CI job runs every one-way scenario through this
-library and through libwebrtc M157 over the same emulated links, 10 seeds
-each, and publishes the [parity report](https://raw.githubusercontent.com/aray4702/streaming_media/parity-data/parity.md)
-and the [side-by-side table](https://raw.githubusercontent.com/aray4702/streaming_media/parity-data/compare-webrtc.txt).
-On main 85708f32 (2026-11-03):
+The `compare-webrtc` CI job runs every one-way scenario through this library and through libwebrtc M157 over the same emulated links, 10 seeds each, and publishes the [parity report](https://raw.githubusercontent.com/aray4702/streaming_media/parity-data/parity.md) and the [side-by-side table](https://raw.githubusercontent.com/aray4702/streaming_media/parity-data/compare-webrtc.txt). On main 85708f32 (2026-11-03):
 
-- **165 scenarios: 0 behind libwebrtc, 28 cells ahead of it.** A cell
-  counts when the means differ by more than the parity band, which is the
-  larger of the tie floor, 5% and one standard deviation of libwebrtc's
-  seeds.
-- **The 28 ahead cells** are in 7 scenarios with heavy loss, a policed link,
-  shallow-buffer drops, or a long outage of the feedback path. Since #795,
-  when the link shows no sign of congestion the sender drains its queue
-  within 150 ms instead of holding up to 2 s, and after a feedback gap the
-  encoder ramps back up instead of jumping. Setting
-  `uncongested_queue_time_limit` to 0 restores libwebrtc's behaviour.
+- **165 scenarios: 0 behind libwebrtc, 28 cells ahead of it.** A cell counts when the means differ by more than the parity band, which is the larger of the tie floor, 5% and one standard deviation of libwebrtc's seeds.
+- **The 28 ahead cells** are in 7 scenarios with heavy loss, a policed link, shallow-buffer drops, or a long outage of the feedback path. Since #795, when the link shows no sign of congestion the sender drains its queue within 150 ms instead of holding up to 2 s, and after a feedback gap the encoder ramps back up instead of jumping. Setting `uncongested_queue_time_limit` to 0 restores libwebrtc's behaviour.
 
   | Scenario | Audio mouth-to-ear p95 | Video end-to-end p95 | A/V offset p95 |
   |---|---|---|---|
@@ -218,13 +112,8 @@ On main 85708f32 (2026-11-03):
   | Shallow-buffer drops (`issue_21_shallow_drop_repair`) | 483 / 763 ms | | |
 
   (this library / libwebrtc)
-- **The other pairs:** of the 3,586 metric/scenario pairs, 3,476 tie
-  within the tie floor. 68 lean towards this library and 42 towards
-  libwebrtc, all inside the band. In the first comparison (2026-10-14),
-  libwebrtc was better on 88 pairs and this library on 51.
-- **Not compared:** `sm_compare` runs one-way calls, so it skips the 20
-  two-way (user and AI) scenarios, the 3 mesh scenarios, and 7 that
-  libwebrtc can't run the same way.
+- **The other pairs:** of the 3,586 metric/scenario pairs, 3,476 tie within the tie floor. 68 lean towards this library and 42 towards libwebrtc, all inside the band. In the first comparison (2026-10-14), libwebrtc was better on 88 pairs and this library on 51.
+- **Not compared:** `sm_compare` runs one-way calls, so it skips the 20 two-way (user and AI) scenarios, the 3 mesh scenarios, and 7 that libwebrtc can't run the same way.
 
 A sample of the table (mean of 10 seeds, this library / libwebrtc):
 
@@ -242,22 +131,11 @@ A sample of the table (mean of 10 seeds, this library / libwebrtc):
 
 ### Human-AI conversation features
 
-libwebrtc has no counterpart for these (stage 2: #2, #3, #4),
-so they are measured against the targets in
-[program.md section 6.3](agents/program.md) instead. The values are the
-test bench baseline on main (Linux x86_64, the CI `testbench` job). Each
-call is two-way audio on a 100 ms RTT link with three scripted user turns:
+libwebrtc has no counterpart for these (stage 2: #2, #3, #4), so they are measured against the targets in [program.md section 6.3](agents/program.md) instead. The values are the test bench baseline on main (Linux x86_64, the CI `testbench` job). Each call is two-way audio on a 100 ms RTT link with three scripted user turns:
 
-- **Response delay** is what the transport adds between the end of the
-  user's turn and the first AI sample heard, not counting the AI's own
-  time (thinking, the 600 ms its endpointer waits, and generating the first
-  chunk). Target: p95 under 500 ms.
-- **User speech lost** is the share of the user's speech that the AI
-  side concealed or never played. Target: at most 2%.
-- **Barge-in stop** is the time from the user starting to talk over the
-  AI to the AI's voice stopping at the user's ear. The user's device mutes
-  the AI locally as soon as it hears its user, then the AI cancels the
-  rest of its reply.
+- **Response delay** is what the transport adds between the end of the user's turn and the first AI sample heard, not counting the AI's own time (thinking, the 600 ms its endpointer waits, and generating the first chunk). Target: p95 under 500 ms.
+- **User speech lost** is the share of the user's speech that the AI side concealed or never played. Target: at most 2%.
+- **Barge-in stop** is the time from the user starting to talk over the AI to the AI's voice stopping at the user's ear. The user's device mutes the AI locally as soon as it hears its user, then the AI cancels the rest of its reply.
 
 | Scenario | Response delay p50 / p95 | User speech lost | Barge-in stop | Turn-detection errors |
 |---|---|---|---|---|
@@ -269,10 +147,7 @@ call is two-way audio on a 100 ms RTT link with three scripted user turns:
 | conversation_barge_in_capacity_drop | 360 / 360 ms | 0.96% | 210 ms | 0 |
 | conversation_outage_user_turn (2 s outage in the user's turn) | 270 / 306 ms | 22% | 3,390 ms | 2 |
 
-AI-generated media (#4): the AI side's source produces speech at 3x real
-time in 1 s bursts, and the library sends it at real time or, with
-`ai_send_ahead`, slightly early so the user's jitter buffer holds a
-cushion.
+AI-generated media (#4): the AI side's source produces speech at 3x real time in 1 s bursts, and the library sends it at real time or, with `ai_send_ahead`, slightly early so the user's jitter buffer holds a cushion.
 
 | Scenario | Response delay p50 / p95 | Source ahead of real time | Underruns | User speech lost | Barge-in |
 |---|---|---|---|---|---|
@@ -282,30 +157,15 @@ cushion.
 | ai_source_adaptive_loss_5pct (adaptive send-ahead) | 450 / 470 ms | up to 1.9 s | 0 | 0.27% | |
 | ai_source_barge_in | 260 / 314 ms | up to 1.8 s | 0 | 0% | stopped in 210 ms; 5.7 s of queued reply dropped; 0 ms of AI audio heard after the stop |
 
-Two scenarios are outside the conditions the targets cover (up to 5%
-random loss), and their numbers are expected:
+Two scenarios are outside the conditions the targets cover (up to 5% random loss), and their numbers are expected:
 
-- `conversation_burst_loss` (5% loss in bursts of about 5 packets each way)
-  loses 5.7% of the user's speech on the baseline seed (3.05% mean over 20
-  seeds). The Owner decided the 2% target doesn't apply to it (#965).
-  Audio NACK (`up_audio_nack on`, #971, off by default) brings it to a 1.1%
-  mean, the option for native clients.
-- `conversation_outage_user_turn` (the user-to-AI link down for 2 s in the
-  middle of the user's turn) loses 22% of the user's speech, and the AI's
-  turn detector sees a false end of turn and a false barge-in. Only the
-  severity-1 target applies: the AI still hears the user and answers
-  every turn.
+- `conversation_burst_loss` (5% loss in bursts of about 5 packets each way) loses 5.7% of the user's speech on the baseline seed (3.05% mean over 20 seeds). The Owner decided the 2% target doesn't apply to it (#965). Audio NACK (`up_audio_nack on`, #971, off by default) brings it to a 1.1% mean, the option for native clients.
+- `conversation_outage_user_turn` (the user-to-AI link down for 2 s in the middle of the user's turn) loses 22% of the user's speech, and the AI's turn detector sees a false end of turn and a false barge-in. Only the severity-1 target applies: the AI still hears the user and answers every turn.
 
 ### On real networks
 
-- The library's TURN client against the self-hosted coturn on Amazon
-  Lightsail (Oregon), from a home network: allocations, permissions,
-  channel binds and relayed data both ways pass over UDP, TCP and TLS
-  (`interop.Coturn`, #1054).
-- Calls between the web app, the iOS app's controller and the AI server
-  through the Lightsail signaling service and TURN relay, direct and
-  relay-only, with the conversation metrics measured at the caller:
-  [real-network calls](docs/results/real-network-calls.md) (#1121, #1124,
+- The library's TURN client against the self-hosted coturn on Amazon Lightsail (Oregon), from a home network: allocations, permissions, channel binds and relayed data both ways pass over UDP, TCP and TLS (`interop.Coturn`, #1054).
+- Calls between the web app, the iOS app's controller and the AI server through the Lightsail signaling service and TURN relay, direct and relay-only, with the conversation metrics measured at the caller: [real-network calls](docs/results/real-network-calls.md) (#1121, #1124,
   #1126).
 
 ## Building
@@ -319,18 +179,11 @@ out/native/examples/simulated_call
 out/native/testbench/sm_testbench testbench/scenarios/*.scn   # call scenarios
 ```
 
-The `wasm` preset also builds `out/wasm/web/` (`sm_web.js`, `sm_web.wasm`
-and `index.html`). Serve that directory over HTTP to use the demo, or
-`import createSmModule from './sm_web.js'` in your own page or in Node.
+The `wasm` preset also builds `out/wasm/web/` (`sm_web.js`, `sm_web.wasm` and `index.html`). Serve that directory over HTTP to use the demo, or `import createSmModule from './sm_web.js'` in your own page or in Node.
 
-Other presets: `native-asan`, `embedded` (size-optimized, no
-exceptions/RTTI, metrics and events compiled out), `wasm` (set
-`EMSCRIPTEN_ROOT`), `ios`, `ios-simulator`, `android-arm64`,
-`android-armv7` (set `ANDROID_NDK_HOME`), `linux-aarch64`, `linux-armv7`.
-Sections can be disabled with `-DSM_WITH_LOSS|TIMING|CC|AUDIO|VIDEO|SYNC|RTP=OFF`. `SM_WITH_RTP` (the RTP/RTCP session layer) needs loss, timing, cc, sync and video.
+Other presets: `native-asan`, `embedded` (size-optimized, no exceptions/RTTI, metrics and events compiled out), `wasm` (set `EMSCRIPTEN_ROOT`), `ios`, `ios-simulator`, `android-arm64`, `android-armv7` (set `ANDROID_NDK_HOME`), `linux-aarch64`, `linux-armv7`. Sections can be disabled with `-DSM_WITH_LOSS|TIMING|CC|AUDIO|VIDEO|SYNC|RTP=OFF`. `SM_WITH_RTP` (the RTP/RTCP session layer) needs loss, timing, cc, sync and video.
 
-`tools/run_all.sh all` rebuilds every configuration, reruns everything and
-regenerates the algorithm and results documents.
+`tools/run_all.sh all` rebuilds every configuration, reruns everything and regenerates the algorithm and results documents.
 
 ## Using it
 
@@ -357,11 +210,7 @@ metrics.Register("recv.neteq", &jb);
 std::string prometheus = metrics.ToPrometheus();
 ```
 
-Every API takes the current time as an argument and never reads a clock
-or starts a thread, so the application chooses the threading model, and
-the same code runs in real time on a device and in simulated time in
-tests. See [examples/simulated_call.cc](examples/simulated_call.cc) for a
-complete sender/receiver over an emulated unstable link.
+Every API takes the current time as an argument and never reads a clock or starts a thread, so the application chooses the threading model, and the same code runs in real time on a device and in simulated time in tests. See [examples/simulated_call.cc](examples/simulated_call.cc) for a complete sender/receiver over an emulated unstable link.
 
 ## Layout
 
@@ -384,96 +233,42 @@ docs/                                                    research, design, algor
 
 ## Decisions
 
-- **Wire formats:** everything the library sends must be standard
-  RTP/RTCP that any WebRTC-compatible stack can parse: RTP with RFC 8285
-  header extensions and abs-capture-time, RTCP SR/RR, generic NACK, PLI,
-  FIR, loss notification, transport-cc, REMB, RTX, RED, and ULPFEC over
-  RED, with the standard payload formats for Opus (RFC 7587) and H.264
-  (RFC 6184, packetization mode 1). All of these are in place and checked
-  against libwebrtc M157 in CI, except FEC, which still uses its own
-  simple format ([#29](https://github.com/aray4702/streaming_media/issues/29)). H.264 is the only video format so far, and
-  loss notification stays off for it, as in libwebrtc ([#47](https://github.com/aray4702/streaming_media/issues/47)).
-  Connecting to a browser (ICE, DTLS-SRTP, SDP) is part of the library
-  now ([#944](https://github.com/aray4702/streaming_media/issues/944)), also standard WebRTC on the wire,
-  including SDP offer/answer (#1063, #1064).
-- **Build and runtime switches:** `SM_WITH_TLS` and `SM_TLS_BACKEND`
-  (`boringssl` or `mbedtls`) select the TLS library, `SM_WITH_DATACHANNEL`
-  adds data channels, `SM_ENABLE_STATS`, `SM_ENABLE_METRICS` and
-  `SM_ENABLE_EVENTS` compile the stats, metrics and event log in or out,
-  and `SM_LOG_MIN_LEVEL` sets the lowest log level compiled in.
-- **RTP/RTCP in the library:** the library provides the RTP/RTCP session
-  layer (sender, receiver, the codecs' standard RTP payload formats, RTCP
-  scheduling and feedback dispatch), so an app passes encoded frames and
-  packet bytes instead of wiring the building blocks together. Done: the
-  test bench runs every call through it ([#31](https://github.com/aray4702/streaming_media/issues/31) design, [#32](https://github.com/aray4702/streaming_media/issues/32) implementation).
-- **Codecs:** the library contains no audio or video encoder or decoder.
-  The app passes encoded Opus frames and H.264 access units in, and
-  decodes audio through an `AudioDecoder` it supplies. The test bench
-  uses a synthetic encoder: correctly framed H.264 that hits its target
-  size, with no real picture or sound behind it.
-- **Send-side adaptation in the library:** frame dropping, quality
-  scaling and rate allocation are part of the library too, so the app only
-  runs its encoder and decoder. Done so far ([#37](https://github.com/aray4702/streaming_media/issues/37)):
-  `rtp::VideoSendController` runs the frame dropper, keyframe policy and
-  pause per captured frame (the encoder loop is in
-  [architecture.md](docs/design/architecture.md)); the quality scaler and
-  resolution adaptation exist as building blocks but aren't wired in yet.
-- **Call topology:** one-to-one calls, plus small-group mesh (C9). No SFU: the SFU and multiparty pieces (layer selection, active
-  speaker detection, the audio mixer) have been removed ([#27](https://github.com/aray4702/streaming_media/issues/27)).
-  BUNDLE demultiplexing stays, because WebRTC calls bundle.
+- **Wire formats:** everything the library sends must be standard RTP/RTCP that any WebRTC-compatible stack can parse: RTP with RFC 8285 header extensions and abs-capture-time, RTCP SR/RR, generic NACK, PLI, FIR, loss notification, transport-cc, REMB, RTX, RED, and ULPFEC over RED, with the standard payload formats for Opus (RFC 7587) and H.264 (RFC 6184, packetization mode 1). All of these are in place and checked against libwebrtc M157 in CI, except FEC, which still uses its own simple format ([#29](https://github.com/aray4702/streaming_media/issues/29)). H.264 is the only video format so far, and loss notification stays off for it, as in libwebrtc ([#47](https://github.com/aray4702/streaming_media/issues/47)). Connecting to a browser (ICE, DTLS-SRTP, SDP) is part of the library now ([#944](https://github.com/aray4702/streaming_media/issues/944)), also standard WebRTC on the wire, including SDP offer/answer (#1063, #1064).
+- **Build and runtime switches:** `SM_WITH_TLS` and `SM_TLS_BACKEND` (`boringssl` or `mbedtls`) select the TLS library, `SM_WITH_DATACHANNEL` adds data channels, `SM_ENABLE_STATS`, `SM_ENABLE_METRICS` and `SM_ENABLE_EVENTS` compile the stats, metrics and event log in or out, and `SM_LOG_MIN_LEVEL` sets the lowest log level compiled in.
+- **RTP/RTCP in the library:** the library provides the RTP/RTCP session layer (sender, receiver, the codecs' standard RTP payload formats, RTCP scheduling and feedback dispatch), so an app passes encoded frames and packet bytes instead of wiring the building blocks together. Done: the test bench runs every call through it ([#31](https://github.com/aray4702/streaming_media/issues/31) design, [#32](https://github.com/aray4702/streaming_media/issues/32) implementation).
+- **Codecs:** the library contains no audio or video encoder or decoder. The app passes encoded Opus frames and H.264 access units in, and decodes audio through an `AudioDecoder` it supplies. The test bench uses a synthetic encoder: correctly framed H.264 that hits its target size, with no real picture or sound behind it.
+- **Send-side adaptation in the library:** frame dropping, quality scaling and rate allocation are part of the library too, so the app only runs its encoder and decoder. Done so far ([#37](https://github.com/aray4702/streaming_media/issues/37)): `rtp::VideoSendController` runs the frame dropper, keyframe policy and pause per captured frame (the encoder loop is in [architecture.md](docs/design/architecture.md)); the quality scaler and resolution adaptation exist as building blocks but aren't wired in yet.
+- **Call topology:** one-to-one calls, plus small-group mesh (C9). No SFU: the SFU and multiparty pieces (layer selection, active speaker detection, the audio mixer) have been removed ([#27](https://github.com/aray4702/streaming_media/issues/27)). BUNDLE demultiplexing stays, because WebRTC calls bundle.
 
 ## Next steps and open questions
 
 **Where it stands (2026-11-03):**
-- **Library:** it covers sections 1-10. Against libwebrtc M157 it is 0
-  behind and 28 ahead ([Benchmarks](#benchmarks)).
-- **Apps:** the iOS app, the web app and the AI server run on real
-  networks through the Lightsail host ([Status](#status)).
-- **Requirements:** 71 of 97 are done (`tools/requirements.json`); 25 are
-  not assessed yet, and C13 is open.
+- **Library:** it covers sections 1-10. Against libwebrtc M157 it is 0 behind and 28 ahead ([Benchmarks](#benchmarks)).
+- **Apps:** the iOS app, the web app and the AI server run on real networks through the Lightsail host ([Status](#status)).
+- **Requirements:** 71 of 97 are done (`tools/requirements.json`); 25 are not assessed yet, and C13 is open.
 
 **Next steps, in the order the Owner chooses:**
 
-- **Check the latest iOS app on a real iPhone.** In a call from Chrome, the
-  video should be smooth (GPU rendering,
-  [#1133](https://github.com/aray4702/streaming_media/issues/1133)). With
-  iOS voice processing, a barge-in over the speaker should stop the AI
-  ([#1124](https://github.com/aray4702/streaming_media/issues/1124)). Both
-  are checked in the simulator only.
-- **A real AI model.** The AI server answers with scripted speech-like
-  audio behind `AiReplySource`; a model (speech in, speech out) plugs in
-  there. Its generation time adds directly to the response delay.
-- **Protecting the Lightsail server.** Its `/turn` endpoint hands short-lived
-  TURN credentials to anyone who asks. The options are:
+- **Check the latest iOS app on a real iPhone.** In a call from Chrome, the video should be smooth (GPU rendering, [#1133](https://github.com/aray4702/streaming_media/issues/1133)). With iOS voice processing, a barge-in over the speaker should stop the AI ([#1124](https://github.com/aray4702/streaming_media/issues/1124)). Both are checked in the simulator only.
+- **A real AI model.** The AI server answers with scripted speech-like audio behind `AiReplySource`; a model (speech in, speech out) plugs in there. Its generation time adds directly to the response delay.
+- **Protecting the Lightsail server.** Its `/turn` endpoint hands short-lived TURN credentials to anyone who asks. The options are:
   - a shared app key;
-  - credentials only inside a joined call, with a short lifetime and a rate
-    limit;
+  - credentials only inside a joined call, with a short lifetime and a rate limit;
   - user sign-in.
-- **Assessing the 25 new requirements.** F1.1–F1.12, F2.1–F2.5, F9.6–F9.9
-  and F10.1–F10.4 cover the components documented in
-  [Algorithms](docs/algorithms/README.md).
-- **Android (C13).** Unplanned: the Owner moved it to the backlog so the
-  iOS and web apps came first.
+- **Assessing the 25 new requirements.** F1.1–F1.12, F2.1–F2.5, F9.6–F9.9 and F10.1–F10.4 cover the components documented in [Algorithms](docs/algorithms/README.md).
+- **Android (C13).** Unplanned: the Owner moved it to the backlog so the iOS and web apps came first.
 
 **Known open issues:**
 
-- [#14](https://github.com/aray4702/streaming_media/issues/14) (`stage:later`):
-  bitrate takes 15+ s to recover after the link improves.
-- [#148](https://github.com/aray4702/streaming_media/issues/148) (`stage:later`):
-  upscaling 360p to 720p takes 20 ms a frame.
-- [#633](https://github.com/aray4702/streaming_media/issues/633): the test
-  bench uses about 15 MB per simulated minute.
-- [#969](https://github.com/aray4702/streaming_media/issues/969): the
-  response-delay metric with the AI source counts the source's first chunk.
+- [#14](https://github.com/aray4702/streaming_media/issues/14) (`stage:later`): bitrate takes 15+ s to recover after the link improves.
+- [#148](https://github.com/aray4702/streaming_media/issues/148) (`stage:later`): upscaling 360p to 720p takes 20 ms a frame.
+- [#633](https://github.com/aray4702/streaming_media/issues/633): the test bench uses about 15 MB per simulated minute.
+- [#969](https://github.com/aray4702/streaming_media/issues/969): the response-delay metric with the AI source counts the source's first chunk.
 
 **Open questions:**
 
-- **Target hardware:** MCU or embedded Linux, and how much RAM and CPU? The
-  algorithms need an FPU; the packet-level sections could also run on
-  Cortex-M4F/M7-class MCUs.
-- **Which AI model and where it runs:** on the Lightsail host, on a GPU
-  server, or as a hosted API. This decides the AI server's deployment and
-  its share of the response delay.
+- **Target hardware:** MCU or embedded Linux, and how much RAM and CPU? The algorithms need an FPU; the packet-level sections could also run on Cortex-M4F/M7-class MCUs.
+- **Which AI model and where it runs:** on the Lightsail host, on a GPU server, or as a hosted API. This decides the AI server's deployment and its share of the response delay.
 - **Safari and Firefox** for the web app: when.
 
 # License
