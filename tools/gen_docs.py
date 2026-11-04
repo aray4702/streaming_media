@@ -506,7 +506,7 @@ def render_index(plats):
     out.append("")
     out.append("| Section | Mechanism | Why |")
     out.append("|---|---|---|")
-    for sec, what, why in NOT_IMPLEMENTED:
+    for sec, what, why in sorted(NOT_IMPLEMENTED, key=lambda r: int(r[0])):
         out.append(f"| {sec} | {what} | {why} |")
     out.append("")
     return "\n".join(out)
