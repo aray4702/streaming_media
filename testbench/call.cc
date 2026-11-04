@@ -21,6 +21,7 @@
 #include "opus_decoder.h"
 #include "turn_detector.h"
 #include "opus_encoder.h"
+#include "speech_pcm.h"
 #include "sm/audio/aec3.h"
 #include "sm/audio/agc2.h"
 #include "sm/audio/ns.h"
@@ -418,6 +419,11 @@ const std::vector<std::pair<std::string, std::string>>& MetricCatalog() {
         {"transport.relay_protocol", "transport ice: TURN protocol of side a's selected local candidate: 0 none, 1 udp, 2 tcp, 3 tls"},
     };
     for (const auto& [name, meaning] : ice) all.emplace_back(name, meaning);
+    // The bench's own resource use (Report::bench): for `expect` lines only, not in the JSON metrics.
+    all.emplace_back("bench.speech_pcm_peak_kb",
+                     "The bench itself, not the call: most KB of scripted speech PCM its send sides held at once (#633: the "
+                     "signal is made as the call reads it, so this does not grow with the call); for `expect` lines only, not "
+                     "in the JSON metrics");
     return all;
   }();
   return k;
@@ -790,8 +796,9 @@ void EvaluateExpectations(Report& rep) {
   for (const auto& e : rep.scenario.expectations) {
     CheckResult c;
     c.expectation = e;
-    auto it = rep.metrics.find(e.metric);
-    c.found = it != rep.metrics.end();
+    const std::map<std::string, double>& from = rep.metrics.count(e.metric) ? rep.metrics : rep.bench;
+    auto it = from.find(e.metric);
+    c.found = it != from.end();
     c.actual = c.found ? it->second : 0;
     c.passed = c.found && Evaluate(e.op, c.actual, e.value);
     rep.passed = rep.passed && c.passed;
@@ -1020,14 +1027,13 @@ class SendSide {
         opus_loss_(Timestamp::Millis(0)),
         rtx_ack_(cfg.video_ssrc, cfg.rtx_ssrc, s.nack),
         enc_behaviour_{s.encoder_overshoot, s.scene_change_interval.ms(), s.scene_change_frames, s.scene_change_factor} {
-    // libopus encodes what sm_compare gives libwebrtc: the 48 kHz signal as 16-bit PCM (testbench/opus_encoder.h).
+    // libopus encodes what sm_compare gives libwebrtc: the 48 kHz signal as 16-bit PCM (testbench/opus_encoder.h), made
+    // as the call reads it (#633: built whole, it took about 15 MB per simulated minute).
     if (s.audio) {
       // In a scripted conversation (#753) the turns are the pauses: speech within a turn has none, so an endpointer's
       // end of turn is the turn's end, not a pause in the signal (SpeechLike's run up to 1.2 s).
       const bool pauses = !(s.two_way && !s.turns.empty());
-      for (float v : sim::SpeechLike(OpusDefaults::kSampleRateHz, s.duration.seconds() + 1, s.seed + 7, pauses)) {
-        opus_pcm_.push_back(OpusSendEncoder::ToPcm(v));
-      }
+      speech_.emplace(s.duration.seconds() + 1, s.seed + 7, pauses);
     }
     if (s.audio) audio_send_ = session.AddAudioSend(cfg.audio);
     if (s.video) video_send_ = session.AddVideoSend(cfg.video);
@@ -1058,15 +1064,15 @@ class SendSide {
   void SetSpeech(std::function<bool(Timestamp)> speaking) { speaking_ = std::move(speaking); }
   // With SetSpeech: the PCM audio frame k (20 ms from 20k ms) carried, speech or silence, as a listener that decodes
   // it gets it back (the bench takes Opus as transparent here). Empty for a frame not yet captured.
-  std::span<const int16_t> FramePcm(int64_t k) const {
+  // Valid until the next read of the signal (SpeechPcm::Frame).
+  std::span<const int16_t> FramePcm(int64_t k) {
     static const std::vector<int16_t> kSilence(OpusSendEncoder::kFrameSamples, 0);
     if (k < 0 || k >= static_cast<int64_t>(frame_speech_.size())) return {};
     if (!frame_speech_[static_cast<size_t>(k)]) return kSilence;
-    const size_t off = static_cast<size_t>(k) * OpusSendEncoder::kFrameSamples;
-    return std::span<const int16_t>(opus_pcm_).subspan(std::min(off, opus_pcm_.size()),
-                                                       std::min(opus_pcm_.size() - std::min(off, opus_pcm_.size()),
-                                                                OpusSendEncoder::kFrameSamples));
+    return SpeechFrame(k);
   }
+  // The most bytes of the speech signal held at once (bench.speech_pcm_peak_kb, #633).
+  size_t speech_pcm_peak_bytes() const { return speech_ ? speech_->peak_bytes() : 0; }
 
   // The session's events since the last call.
   void OnEvents(Timestamp at) {
@@ -1149,10 +1155,8 @@ class SendSide {
   // Send-ahead (#762): the speech frame k (captured, on the bench's grid, at 20k ms) handed to the library now, ahead
   // of its real-time send time `due`; CaptureAudio then skips it at its own tick.
   void SendAheadFrame(int64_t k, Timestamp due, Timestamp now) {
-    const size_t off = static_cast<size_t>(k) * OpusSendEncoder::kFrameSamples;
     opus_encoder_.SetPacketLossPercent(opus_loss_.percent());
-    const std::vector<uint8_t> frame =
-        opus_encoder_.Encode(std::span<const int16_t>(opus_pcm_).subspan(std::min(off, opus_pcm_.size())));
+    const std::vector<uint8_t> frame = opus_encoder_.Encode(SpeechFrame(k));
     rtp::EncodedAudioFrame f{static_cast<uint32_t>(k * 20 * sr_ / 1000), frame, false};
     f.due_time = due + clock0_;
     session_.SendAudio(audio_send_, f, now + clock0_);
@@ -1164,11 +1168,9 @@ class SendSide {
     const int64_t k = t / 20;
     if (sent_ahead_.erase(k)) return;  // Already handed over ahead of its time (#762).
     opus_encoder_.SetPacketLossPercent(opus_loss_.percent());
-    const size_t opus_off = static_cast<size_t>(k) * OpusSendEncoder::kFrameSamples;
     static const std::vector<int16_t> kSilence(OpusSendEncoder::kFrameSamples, 0);
-    const std::span<const int16_t> opus_in = !speaking_ || speaking_(now)
-                                                 ? std::span<const int16_t>(opus_pcm_).subspan(std::min(opus_off, opus_pcm_.size()))
-                                                 : std::span<const int16_t>(kSilence);
+    const bool speech = !speaking_ || speaking_(now);
+    const std::span<const int16_t> opus_in = speech ? SpeechFrame(k) : std::span<const int16_t>(kSilence);
     if (opt_.link_trace) {
       // What libopus encodes: the frame, zero-padded past the end of the signal (OpusSendEncoder::Encode).
       std::vector<int16_t> in(OpusSendEncoder::kFrameSamples, 0);
@@ -1181,7 +1183,7 @@ class SendSide {
       r.bitrate_bps = opus_encoder_.bitrate_bps();  // Built once from the configured rate: no allocation, no overhead.
       opus_encode_rows_.push_back(r);
     }
-    if (speaking_) frame_speech_.push_back(opus_in.data() != kSilence.data());
+    if (speaking_) frame_speech_.push_back(speech);
     const std::vector<uint8_t> frame = opus_encoder_.Encode(opus_in);
     session_.SendAudio(audio_send_, {static_cast<uint32_t>(k * 20 * sr_ / 1000), frame, false}, now + clock0_);
   }
@@ -1312,8 +1314,12 @@ class SendSide {
   const TimeDelta clock0_;
   const uint32_t audio_ssrc_;
 
+  // The speech frame k (20 ms from 20k ms) of the signal, fewer samples at its end and none past it (the encoder pads
+  // with zeros). Valid until the next read.
+  std::span<const int16_t> SpeechFrame(int64_t k) { return speech_ ? speech_->Frame(k) : std::span<const int16_t>(); }
+
   Random enc_rng_;
-  std::vector<int16_t> opus_pcm_;
+  std::optional<SpeechPcm> speech_;  // The 48 kHz speech signal, with audio.
   OpusSendEncoder opus_encoder_;
   OpusPacketLossRate opus_loss_;  // The in-band FEC input (issue #62).
   int32_t opus_loss_given_ = -1;  // The last fraction it was given, times 256 (issue #547).
@@ -2402,6 +2408,7 @@ Report RunTwoWayCall(const Scenario& s, const RunOptions& opt) {
 
   if (user_speech_loss) rep.metrics["conv.user_speech_lost_pct"] = user_speech_loss->lost_pct();
   if (ice) AddIceMetrics({ice}, rep);
+  rep.bench["bench.speech_pcm_peak_kb"] = static_cast<double>(up_tx.speech_pcm_peak_bytes() + down_tx.speech_pcm_peak_bytes()) / 1024;
 
   EvaluateExpectations(rep);
   if (opt.library_metrics) {
@@ -2875,6 +2882,9 @@ Report RunMeshCall(const Scenario& s, const RunOptions& opt_in) {
     for (auto& c : ice_calls) calls.push_back(c.get());
     AddIceMetrics(calls, rep);
   }
+  size_t speech_pcm_bytes = 0;
+  for (const Endpoint& e : ep) speech_pcm_bytes += e.tx->speech_pcm_peak_bytes();
+  rep.bench["bench.speech_pcm_peak_kb"] = static_cast<double>(speech_pcm_bytes) / 1024;
 
   EvaluateExpectations(rep);
   if (opt.library_metrics) {
@@ -3352,6 +3362,7 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
   dm.repair.AddMetrics(m, s.video, end_ms);
   if (s.apm_rate) ProbeApm(*s.apm_rate, m);
   if (ice) AddIceMetrics({ice}, rep);
+  rep.bench["bench.speech_pcm_peak_kb"] = static_cast<double>(tx.speech_pcm_peak_bytes()) / 1024;
 
   EvaluateExpectations(rep);
   if (opt.library_metrics) {

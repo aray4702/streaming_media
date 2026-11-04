@@ -37,8 +37,10 @@ if(SM_BUILD_TESTS)
             ${PROJECT_SOURCE_DIR}/tests/unit/testbench/turn_detector_test.cc
             ${PROJECT_SOURCE_DIR}/tests/unit/testbench/ai_source_test.cc
             ${PROJECT_SOURCE_DIR}/tests/unit/testbench/ice_overhead_test.cc
+            ${PROJECT_SOURCE_DIR}/tests/unit/testbench/speech_pcm_test.cc
     SUITES TestbenchMetrics OpusEncoder OpusDecoder EncoderModel TestbenchRtcpSeed TestbenchAvSyncRtcp TestbenchEventTiming
-           TestbenchCallMode TurnDetector TestbenchAiSource TestbenchIceOverhead TestbenchIceExtensions)
+           TestbenchCallMode TurnDetector TestbenchAiSource TestbenchIceOverhead TestbenchIceExtensions
+           TestbenchSpeechPcm)
   # sm_testbench refuses `two_way_video` in a one-way call with a clear error (issues #743, #747).
   file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/two_way_rejected.scn "name two_way_rejected\ntwo_way_video up\nduration 2s\n")
   add_test(NAME unit.testbench.two_way_rejected

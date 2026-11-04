@@ -194,6 +194,9 @@ struct Report {
   std::vector<Sample> timeseries;
   std::map<std::string, double> library;  // Every module's own metrics.
   std::map<std::string, int> events;      // Event counts by module/name.
+  // The bench's own resource use, bench.* (#633): not the call's, so it stays out of `metrics` (the JSON, the baseline
+  // and the comparison with libwebrtc never see it); `expect` lines can check it.
+  std::map<std::string, double> bench;
   // Every packet offered to the forward link, when RunOptions::link_trace is set (issue #125).
   std::vector<sim::LinkTraceRecord> link_trace;
   // Every packet offered to the reverse (feedback) link, when RunOptions::link_trace is set (issue #507).
@@ -298,7 +301,7 @@ std::string AudioTraceCsv(const std::vector<AudioTraceRow>& trace);
 std::string AudioSendCsv(const std::vector<AudioSendRow>& rows);
 // Report::frame_trace as CSV: capture_ms,render_time_ms,out_ms,rendered (#931).
 std::string FrameTraceCsv(const std::vector<FrameRenderRow>& rows);
-// Checks rep.scenario's expectations against rep.metrics.
+// Checks rep.scenario's expectations against rep.metrics (and rep.bench).
 void EvaluateExpectations(Report& rep);
 
 // The video delay breakdown (call_common.h) into rep.metrics.

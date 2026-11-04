@@ -1,0 +1,14 @@
+# Issue #633 (Tester run 65, area 5 soak): the bench built the whole call's scripted speech before the call, the
+# float signal (4 B a sample) and its 16-bit PCM (2 B), 48 kHz for the call + 1 s: about 15 MB per simulated minute,
+# 901 MB of peak RSS for a 60 min call. It now makes the signal 1 s at a time as the call reads it (testbench/speech_pcm.h),
+# sample for sample the same, and holds a few blocks whatever the length (bench.speech_pcm_peak_kb, 375 KB at most per
+# send side). Built whole, this 2 min call held 11344 KB of PCM (and 22688 KB of float while it was built): the line
+# below fails on any bench that holds the call's signal. The issue's link (flat60.scn), 2 min instead of 60.
+# The bench's own memory, nothing to compare with libwebrtc: `compare off`.
+
+name issue_633_long_call_speech_memory
+describe A 2 min call on the issue's link: the bench holds a few seconds of its scripted speech, not the whole call's (#633)
+compare off
+duration 120s
+at 0s capacity=3Mbps delay=30ms jitter=10ms loss=1%
+expect bench.speech_pcm_peak_kb <= 375

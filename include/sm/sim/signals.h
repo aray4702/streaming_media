@@ -4,6 +4,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
+#include <cstdint>
 #include <numbers>
 #include <vector>
 
@@ -30,40 +32,58 @@ inline std::vector<float> WhiteNoise(int sample_rate, double seconds, float amp,
 
 // Voiced, speech-like signal: harmonic series with a gliding pitch
 // (90-240 Hz), spectral tilt, a ~4 Hz syllable envelope and optional pauses.
-inline std::vector<float> SpeechLike(int sample_rate, double seconds, uint64_t seed,
-                                     bool with_pauses = true, float amp = 0.3f) {
-  Random rng(seed);
-  size_t n = static_cast<size_t>(seconds * sample_rate);
-  std::vector<float> x(n);
-  double phase = 0;
-  double f0 = 140, f0_target = 160;
-  double syl_phase = rng.Uniform(0, 6.28);
-  double syl_rate = 4.0;
-  bool paused = false;
-  size_t seg_left = 0;
-  for (size_t i = 0; i < n; ++i) {
-    if (seg_left == 0) {
-      f0_target = rng.Uniform(90, 240);
-      syl_rate = rng.Uniform(3, 5.5);
-      paused = with_pauses && rng.Bernoulli(0.25);
-      seg_left = static_cast<size_t>(rng.Uniform(0.25, 0.6) * sample_rate);
+// One sample at a time: the n-th Next() is SpeechLike's n-th sample for the
+// same arguments, whatever the length, so a long signal can be made as it is
+// used instead of all at once (the test bench's calls, issue #633). A copy
+// carries on from where the original is.
+class SpeechLikeGenerator {
+ public:
+  SpeechLikeGenerator(int sample_rate, uint64_t seed, bool with_pauses = true, float amp = 0.3f)
+      : sample_rate_(sample_rate), with_pauses_(with_pauses), amp_(amp), rng_(seed), syl_phase_(rng_.Uniform(0, 6.28)) {}
+
+  float Next() {
+    if (seg_left_ == 0) {
+      f0_target_ = rng_.Uniform(90, 240);
+      syl_rate_ = rng_.Uniform(3, 5.5);
+      paused_ = with_pauses_ && rng_.Bernoulli(0.25);
+      seg_left_ = static_cast<size_t>(rng_.Uniform(0.25, 0.6) * sample_rate_);
     }
-    --seg_left;
-    f0 += (f0_target - f0) * (20.0 / sample_rate);
-    phase += 2 * std::numbers::pi * f0 / sample_rate;
-    if (phase > 2 * std::numbers::pi * 1000) phase -= 2 * std::numbers::pi * 1000;
+    --seg_left_;
+    f0_ += (f0_target_ - f0_) * (20.0 / sample_rate_);
+    phase_ += 2 * std::numbers::pi * f0_ / sample_rate_;
+    if (phase_ > 2 * std::numbers::pi * 1000) phase_ -= 2 * std::numbers::pi * 1000;
     double s = 0;
-    for (int h = 1; h * f0 < sample_rate * 0.45 && h <= 20; ++h) {
+    for (int h = 1; h * f0_ < sample_rate_ * 0.45 && h <= 20; ++h) {
       // Formant-like emphasis near 500 Hz and 1500 Hz on top of 1/h tilt.
-      double fh = h * f0;
+      double fh = h * f0_;
       double formant = 1.0 + 2.0 * std::exp(-std::pow((fh - 500) / 200, 2)) +
                        1.2 * std::exp(-std::pow((fh - 1500) / 300, 2));
-      s += formant / h * std::sin(h * phase);
+      s += formant / h * std::sin(h * phase_);
     }
-    syl_phase += 2 * std::numbers::pi * syl_rate / sample_rate;
-    double env = 0.55 + 0.45 * std::sin(syl_phase);
-    x[i] = paused ? 0.0f : static_cast<float>(amp * 0.35 * env * s);
+    syl_phase_ += 2 * std::numbers::pi * syl_rate_ / sample_rate_;
+    double env = 0.55 + 0.45 * std::sin(syl_phase_);
+    return paused_ ? 0.0f : static_cast<float>(amp_ * 0.35 * env * s);
   }
+
+ private:
+  int sample_rate_;
+  bool with_pauses_;
+  float amp_;
+  Random rng_;
+  double phase_ = 0;
+  double f0_ = 140, f0_target_ = 160;
+  double syl_phase_;  // After rng_: its first draw.
+  double syl_rate_ = 4.0;
+  bool paused_ = false;
+  size_t seg_left_ = 0;
+};
+
+// The whole signal of `seconds` at once.
+inline std::vector<float> SpeechLike(int sample_rate, double seconds, uint64_t seed,
+                                     bool with_pauses = true, float amp = 0.3f) {
+  SpeechLikeGenerator gen(sample_rate, seed, with_pauses, amp);
+  std::vector<float> x(static_cast<size_t>(seconds * sample_rate));
+  for (float& v : x) v = gen.Next();
   return x;
 }
 
