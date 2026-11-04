@@ -186,18 +186,34 @@ The `compare-webrtc` CI job runs every one-way scenario through this
 library and through libwebrtc M157 over the same emulated links, 10 seeds
 each, and publishes the [parity report](https://raw.githubusercontent.com/aray4702/streaming_media/parity-data/parity.md)
 and the [side-by-side table](https://raw.githubusercontent.com/aray4702/streaming_media/parity-data/compare-webrtc.txt).
-On main a78f737a (2026-11-02):
+On main 85708f32 (2026-11-03):
 
-- **163 scenarios, 0 gaps:** no metric is behind libwebrtc, or ahead of
-  it, by more than the parity band (the larger of the tie floor, 5% and
-  one standard deviation of libwebrtc's seeds).
-- Of the 3,540 metric/scenario pairs, 3,453 tie within the tie floor;
-  42 lean towards this library and 45 towards libwebrtc, all inside the
-  band. In the first comparison (2026-10-14), libwebrtc was better on 88
-  pairs and this library on 51.
-- Not compared: the 20 two-way (user and AI) scenarios, the 3 mesh
-  scenarios and 7 that libwebrtc can't run the same way (`sm_compare`
-  runs one-way calls).
+- **165 scenarios: 0 behind libwebrtc, 28 cells ahead of it.** A cell
+  counts when the means differ by more than the parity band, which is the
+  larger of the tie floor, 5% and one standard deviation of libwebrtc's
+  seeds.
+- **The 28 ahead cells** are in 7 scenarios with heavy loss, a policed link,
+  shallow-buffer drops, or a long outage of the feedback path. Since #795,
+  when the link shows no sign of congestion the sender drains its queue
+  within 150 ms instead of holding up to 2 s, and after a feedback gap the
+  encoder ramps back up instead of jumping. Setting
+  `uncongested_queue_time_limit` to 0 restores libwebrtc's behaviour.
+
+  | Scenario | Audio mouth-to-ear p95 | Video end-to-end p95 | A/V offset p95 |
+  |---|---|---|---|
+  | 20% random loss (`issue_536_loss20_av_sync`) | 240 / 728 ms | 512 / 1,776 ms | 355 / 1,173 ms |
+  | 45 s feedback outage (`issue_536_reverse_outage_45s`) | 312 / 2,070 ms | 324 / 2,307 ms | 147 / 1,595 ms |
+  | Policed link (`issue_12_lossbwe_policer`) | 343 / 1,047 ms | 2,051 / 4,019 ms | 1,887 / 3,445 ms |
+  | Shallow-buffer drops (`issue_21_shallow_drop_repair`) | 483 / 763 ms | | |
+
+  (this library / libwebrtc)
+- **The other pairs:** of the 3,586 metric/scenario pairs, 3,476 tie
+  within the tie floor. 68 lean towards this library and 42 towards
+  libwebrtc, all inside the band. In the first comparison (2026-10-14),
+  libwebrtc was better on 88 pairs and this library on 51.
+- **Not compared:** `sm_compare` runs one-way calls, so it skips the 20
+  two-way (user and AI) scenarios, the 3 mesh scenarios, and 7 that
+  libwebrtc can't run the same way.
 
 A sample of the table (mean of 10 seeds, this library / libwebrtc):
 
@@ -311,11 +327,14 @@ The real calls also found and fixed three gaps:
   F10.1–F10.4 cover the connectivity, security, data channel and
   observability components documented in [Algorithms](docs/algorithms/README.md),
   and are not assessed yet.
-- **Known items:**
-  - ICE calls in the test bench should send the negotiated header extension
-    IDs ([#1095](https://github.com/aray4702/streaming_media/issues/1095)).
-  - Issues labelled `stage:later` cover behaviour libwebrtc shares, such as
-    late audio at 20% loss ([#795](https://github.com/aray4702/streaming_media/issues/795)).
+- **Known items:** the open issues labelled `stage:later` are left for a
+  later stage, for example bitrate recovery after the link improves
+  ([#14](https://github.com/aray4702/streaming_media/issues/14)). Fixed since
+  milestone 4 closed:
+  - late audio at 20% loss and during a feedback outage, now ahead of
+    libwebrtc ([#795](https://github.com/aray4702/streaming_media/issues/795));
+  - negotiated header-extension IDs on the wire in test bench ICE calls
+    ([#1095](https://github.com/aray4702/streaming_media/issues/1095)).
 
 **Open questions:**
 
