@@ -18,10 +18,17 @@
 // offer/answer; candidates go to the other side through a signaling queue with no delay (each side delivers them on
 // its next step).
 //
-// One setting differs from RTCConfiguration's defaults on both sides: TCP candidates are off
-// (kTcpCandidatePolicyDisabled), because this library has no TCPPort yet (C4); libwebrtc would add TCP host
-// candidates and pairs. The NAT matrix and the network changes run without a TURN server, so the pairs that need a
-// relay fail there on both sides.
+// Both sides run RTCConfiguration's defaults, including TCP candidates (kTcpCandidatePolicyEnabled, #1151): each
+// endpoint gathers a TCP host candidate (TCPPort, passive on a listen socket) next to its UDP ones, and the TCP pairs
+// are checked too, on the emulated network's TCP (sim::EmulatedSocketServer's stream sockets; libwebrtc's side through
+// its BasicPacketSocketFactory, ice_compare.cc). The NAT matrix and the network changes run without a TURN server, so
+// the pairs that need a relay fail there on both sides.
+//
+// ICE-TCP (#1151): TcpScenarios() block UDP to and from one or both endpoints, as P2PTransportChannelMatrixTest's
+// BLOCK_UDP configuration (fw()->AddRule(false, FP_UDP, FD_ANY, kPublicAddrs[endpoint])): a firewall rule on the
+// emulated network (sim::Network::SetFirewallRule) drops every UDP datagram from or to the endpoint's address, so
+// only the TCP pairs can connect (kMatrix's LTPT: host/prflx over TCP). The blocked endpoints are public; the other is
+// public or behind a NAT.
 //
 // Relay (#1055, C4): RelayScenarios() add one emulated TURN server (sim::TurnServer, libwebrtc's p2p/test/
 // turn_server, which serves both stacks) on its own hosts, at the addresses of libwebrtc's P2PTransportChannelTest
@@ -128,6 +135,7 @@ struct Scenario {
   bool dead = false;  // The changing endpoint has both interfaces from the start, and the first one's links die.
   Turn turn = Turn::kNone;  // A TURN server on the network, given to both endpoints.
   bool relay_only = false;  // IceTransportsType kRelay (candidate filter CF_RELAY) on both endpoints.
+  bool block_udp[2] = {false, false};  // A firewall drops UDP from and to endpoint i (BLOCK_UDP, #1151).
 };
 
 // Each pair of NAT types (libwebrtc's P2PTransportChannelTest matrix without the relay and TCP columns), then loss
@@ -260,10 +268,32 @@ inline std::vector<Scenario> StreamRelayScenarios() {
   return out;
 }
 
+// ICE-TCP (#1151): UDP blocked at one or both public endpoints (kMatrix's !U row and column), and a NAT on the
+// other side, so the call can only connect over TCP.
+inline std::vector<Scenario> TcpScenarios() {
+  std::vector<Scenario> out;
+  auto add = [&](Nat a, bool block_a, Nat b, bool block_b) {
+    Scenario s;
+    s.nat[0] = a;
+    s.nat[1] = b;
+    s.block_udp[0] = block_a;
+    s.block_udp[1] = block_b;
+    s.name = std::string(block_a ? "blockudp" : NatName(a)) + "-" + (block_b ? "blockudp" : NatName(b));
+    out.push_back(s);
+  };
+  add(Nat::kOpen, false, Nat::kOpen, true);
+  add(Nat::kOpen, true, Nat::kOpen, false);
+  add(Nat::kOpen, true, Nat::kOpen, true);
+  add(Nat::kPortRestricted, false, Nat::kOpen, true);
+  add(Nat::kOpen, true, Nat::kPortRestricted, false);
+  return out;
+}
+
 struct Result {
   bool connected = false;
   double connect_ms = -1;
-  std::string pair;  // "host/srflx": local/remote candidate types of the controlling side's selected connection.
+  std::string pair;  // "host/srflx": local/remote candidate types of the controlling side's selected connection
+                     // (PairName: " tcp" after a TCP pair).
   std::string relay;  // "udp/-": relay protocol of each endpoint's selected local candidate when connected.
   int turn[kNumTurnRequests] = {0, 0, 0, 0};  // TURN requests both endpoints sent in the run.
   int checks_at_connect = 0;
@@ -273,6 +303,13 @@ struct Result {
   double recover_ms = -1;
   std::string pair_after;
 };
+
+// "host/srflx": the local/remote candidate types of a selected connection, with " tcp" for a TCP pair (#1151).
+inline std::string PairName(std::string_view local_type, std::string_view remote_type, std::string_view protocol) {
+  std::string out = std::string(local_type) + "/" + std::string(remote_type);
+  if (protocol != "udp") out += " " + std::string(protocol);
+  return out;
+}
 
 // The run: until `kRunTime` after gathering starts. libwebrtc's unit tests wait up to 10 s (kDefaultTimeout) for a
 // connection.
@@ -430,6 +467,17 @@ struct Topology {
       alt_ip[i] = s.nat[i] == Nat::kOpen ? kAlternateIp[i] : kAlternatePrivateIp[i];
       host[i] = std::make_unique<sim::EmulatedSocketServer>(net, net.AddHost(ip[i], realm, link, link));
     }
+    if (s.block_udp[0] || s.block_udp[1]) {
+      // BLOCK_UDP (#1151): UDP from or to a blocked endpoint's address is dropped.
+      const uint32_t blocked[2] = {s.block_udp[0] ? ip[0] : 0, s.block_udp[1] ? ip[1] : 0};
+      net.SetFirewallRule([b0 = blocked[0], b1 = blocked[1]](const sim::Datagram<sim::Wire>& d) {
+        if (d.payload.proto != sim::Wire::Proto::kUdp) return false;
+        for (uint32_t b : {b0, b1}) {
+          if (b != 0 && (d.src.ip == b || d.dst.ip == b)) return true;
+        }
+        return false;
+      });
+    }
   }
 
   // Endpoint i's second interface appears (a new host in the same realm, behind the same NAT if any) and the first
@@ -503,7 +551,12 @@ class EndpointSocketFactory final : public p2p::PacketSocketFactory {
                                                           uint16_t max_port) override {
     return topo_->HostFor(i_, address.ipaddr().v4())->CreateUdpSocket(address, min_port, max_port);
   }
-  // TURN over TCP and TLS (BasicPacketSocketFactory::CreateClientTcpSocket on the emulated TCP).
+  // TCP host candidates (#1151): TCPPort's listen socket (BasicPacketSocketFactory::CreateServerTcpSocket).
+  std::unique_ptr<p2p::AsyncListenSocket> CreateServerTcpSocket(const p2p::SocketAddress& address, uint16_t min_port,
+                                                                uint16_t max_port, int opts) override {
+    return topo_->HostFor(i_, address.ipaddr().v4())->CreateServerTcpSocket(address, min_port, max_port, opts);
+  }
+  // TCP connections and TURN over TCP and TLS (BasicPacketSocketFactory::CreateClientTcpSocket on the emulated TCP).
   std::unique_ptr<p2p::AsyncPacketSocket> CreateClientTcpSocket(Timestamp now, const p2p::SocketAddress& local_address,
                                                                 const p2p::SocketAddress& remote_address,
                                                                 const p2p::PacketSocketTcpOptions& options) override {
@@ -531,8 +584,7 @@ inline Result RunSm(const Scenario& s, uint64_t seed) {
   };
   Endpoint ep[2];
   std::deque<Candidate> signaling[2];  // Candidates for endpoint i.
-  PeerConnectionAllocatorConfig pc_config;
-  pc_config.tcp_candidates_enabled = false;  // See the file comment.
+  PeerConnectionAllocatorConfig pc_config;  // RTCConfiguration's defaults, TCP candidates on (see the file comment).
   if (s.relay_only) pc_config.candidate_filter = CF_RELAY;
   std::vector<RelayServerConfig> turn_servers;
   if (s.turn != Turn::kNone) {
@@ -597,7 +649,8 @@ inline Result RunSm(const Scenario& s, uint64_t seed) {
   };
   auto pair = [&] {
     const Connection* sel = ep[0].ch->selected_connection();
-    return std::string(sel->local_candidate().type_name()) + "/" + std::string(sel->remote_candidate().type_name());
+    return PairName(sel->local_candidate().type_name(), sel->remote_candidate().type_name(),
+                    sel->local_candidate().protocol());
   };
   auto relay = [&] {
     std::string out;

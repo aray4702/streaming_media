@@ -2,7 +2,7 @@
 // p2p/base/port.{h,cc} and port_interface.h (compare/webrtc/reference/
 // p2p/base/).
 //
-// A Port gathers the candidates of one transport (UDP for now) on one
+// A Port gathers the candidates of one transport (UDP, TCP or a relay) on one
 // network interface and answers the STUN traffic that reaches it from
 // addresses it has no connection to:
 // - AddAddress makes a candidate with libwebrtc's priority (type preference,
@@ -32,8 +32,8 @@
 // signal, and the owner (the allocator, #1001) deletes it.
 //
 // The owner also runs the connections' STUN transactions through
-// Process(now). TURN ports are in sm/p2p/turn_port.h (#1031). Not here
-// yet: TCP ports (C4), mDNS name registration and the local network access
+// Process(now). TURN ports are in sm/p2p/turn_port.h (#1031), TCP ports
+// in sm/p2p/tcp_port.h (#1151). Not here: mDNS name registration and the local network access
 // permission (Chromium's; with no permission factory libwebrtc grants
 // every address, as here).
 #pragma once
