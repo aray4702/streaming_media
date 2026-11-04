@@ -2139,7 +2139,7 @@ MILESTONE3 = [
         "Requirement C4 part 2. The emulated sockets are ours (libwebrtc's `EmulatedNetwork` is a different design); "
         "the framing classes are ports.",
         "`async_tcp_socket_unittest.cc` and `async_stun_tcp_socket_unittest.cc` cases; the stream-in-pieces fuzz target "
-        "`tcp_framing` (corpus replayed as `fuzz.tcp_framing`). PR #1034.",
+        "`tcp_framing` (corpus replayed as `fuzz.tcp_framing`). PR #1040 (#1034).",
         extra_files=[]),
     _m3("1.10", "sdp", "SDP model and parse/write",
         "Describing a call to a peer, a browser included -> the session description model and SDP text in both directions",
@@ -2325,7 +2325,7 @@ MILESTONE3 = [
         ["10.1"],
         "Requirement C8. Beyond libwebrtc by design; parity 10.1 lists the histograms libwebrtc records that we do not.",
         "`unit.Observability`, `Metrics`, `Histogram`, `EventLog` and `Logging` pass in the default build; the off build is "
-        "checked in 10.3. PR #988."),
+        "checked in 10.3. PR #1012 (#988)."),
     _m3("10.2", "connection-stats", "ICE and DTLS connection stats",
         "Seeing what a call is doing -> `getStats`-style transport, candidate-pair, candidate and certificate stats",
         ["pc/connection_stats.h"],
@@ -2336,7 +2336,7 @@ MILESTONE3 = [
         ["10.9"],
         "Requirement C8. Names follow M157's `rtcstats_objects.h`: 59 of its 65 fields are kept; the rest are "
         "deprecated or unused here. Behind `SM_ENABLE_STATS`; off, the call returns not supported.",
-        "`unit.PcConnectionStats` passes on both TLS backends. PRs #1059 and #1078."),
+        "`unit.PcConnectionStats` passes on both TLS backends. PR #1078 (#1059)."),
     _m3("10.3", "observability-off", "The observability-off check",
         "Observability must never change what a call does -> an all-off build produces the same media results, bit for bit",
         [],
@@ -2360,7 +2360,7 @@ MILESTONE3 = [
         "`test/fuzzers/` (each target's counterpart is listed in `fuzz/README.md`)",
         ["10.1"],
         "Requirement C10. 15 targets, listed with their libwebrtc counterparts in `fuzz/README.md`.",
-        "Local fuzzing runs found no crash (STUN: 811k executions in 90 s). The libFuzzer build itself (`SM_BUILD_FUZZERS=ON`) is not built in CI, as accepted for C2. PRs #989, #1019, #1042, #1058, #1067, #1073.",
+        "Local fuzzing runs found no crash (STUN: 811k executions in 90 s). The libFuzzer build itself (`SM_BUILD_FUZZERS=ON`) is not built in CI, as accepted for C2. PRs #1013 (#989), #1019 and #1022 (STUN), #1042, #1068 (#1058), #1067, #1073.",
         extra_files=["fuzz/README.md", "fuzz/CMakeLists.txt"]),
 ]
 ALGORITHMS += MILESTONE3
