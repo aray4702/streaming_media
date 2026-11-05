@@ -28,8 +28,9 @@
 // - LiveKit (C19, #1164): `--livekit=ws[s]://HOST:PORT` joins the LiveKit room `--room` instead (call_client.h), with
 //   a token from `--token=http[s]://HOST:PORT/lk-token` (the signaling service; default: --signaling's host).
 //   `--livekit=auto` takes the URL /lk-token returns. `--peer=ID` is the identity (default native-<n>). It publishes
-//   the microphone (and with --video the camera) and, with `--subscribe`, subscribes to the room (one remote audio and
-//   video until C18). Its result needs the publisher connected and audio sent; received audio only with --subscribe.
+//   the microphone (and with --video the camera) and receives every participant (C20, #1172); its stats lines carry
+//   each one's stats (livekit_group), the active speaker, and who joined and left. `--publish-only` doesn't subscribe.
+//   Its result needs the publisher connected and audio played out (published audio only with --publish-only).
 //
 //   sm_call_smoke --livekit=ws://127.0.0.1:7880 --token=http://127.0.0.1:8080/lk-token --room=team --video
 //
@@ -342,7 +343,7 @@ int main(int argc, char** argv) {
   std::printf("{\"type\":\"call-result\",\"client\":\"sm_call_smoke\",\"label\":%s,\"room\":%s,%s%s\"stats\":%s}\n",
               net::JsonEscape(label).c_str(), net::JsonEscape(room).c_str(), talk.Json().c_str(), v, stats.c_str());
   // A LiveKit call publishes: connected (the publisher connection) with audio sent; received audio only when it
-  // subscribed (C18 for more than the first offer's streams).
+  // subscribed (every participant's, mixed, C20).
   const bool ok = st.state == apps::CallState::kConnected &&
                   (livekit.empty() || subscribe ? st.audio_played_s > 1.0 : st.audio_packets_sent > 50);
   std::printf("smoke: %s\n", ok ? "ok" : "FAILED");
