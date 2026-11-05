@@ -259,13 +259,17 @@ bool WebSocketClient::Connect(const Url& url) {
   return true;
 }
 
-void WebSocketClient::Send(std::string_view text) {
+void WebSocketClient::Send(std::string_view text) { SendFrame(kWsText, text); }
+
+void WebSocketClient::SendBinary(std::string_view data) { SendFrame(kWsBinary, data); }
+
+void WebSocketClient::SendFrame(uint8_t opcode, std::string_view payload) {
   if (state_ == State::kOpen) {
-    const auto f = WsEncodeFrame(kWsText, text, true);
+    const auto f = WsEncodeFrame(opcode, payload, true);
     out_.insert(out_.end(), f.begin(), f.end());
     Flush();
   } else if (state_ != State::kClosed) {
-    pending_.emplace_back(text);
+    pending_.emplace_back(opcode, std::string(payload));
   }
 }
 
@@ -406,8 +410,8 @@ void WebSocketClient::Poll() {
     }
     in_.erase(in_.begin(), in_.begin() + static_cast<long>(end + 4));
     state_ = State::kOpen;
-    for (const auto& m : pending_) {
-      const auto f = WsEncodeFrame(kWsText, m, true);
+    for (const auto& [opcode, m] : pending_) {
+      const auto f = WsEncodeFrame(opcode, m, true);
       out_.insert(out_.end(), f.begin(), f.end());
     }
     pending_.clear();

@@ -22,6 +22,13 @@
     seconds=<s> hangs up after s seconds and, with result=1, POSTs one JSON line of the call's metrics to /result
                 (getStats: candidate pair, RTT, loss, concealment, jitter buffer, available bitrate, video fps
                 and freezes, plus the conversation timings).
+  Group calls through the LiveKit SFU (C19, #1164; docs/deploy/livekit.md): the "Group" button, or group=1 with
+  room=<code>&auto=1, joins the LiveKit room <code> with the official livekit-client SDK (vendored in
+  vendor/livekit-client/, loaded from this server). The token comes from GET /lk-token (this page's host); the LiveKit
+  URL is lk=<url>, else the one /lk-token returns, else this page's origin (nginx routes /rtc to LiveKit). The camera
+  and microphone are published with simulcast (the SDK's default layers), video in codec=<h264|vp8|...> (default
+  h264, which every client here decodes); relay=1 sets iceTransportPolicy 'relay'. Every remote participant gets a
+  tile (C20 builds the full grid); report=1 posts the received audio and video per participant.
 -->
 <html>
 <head>
@@ -32,13 +39,17 @@
   body { font: 14px system-ui, sans-serif; margin: 1em; }
   video { width: 320px; background: #222; margin: 2px; }
   #stats { white-space: pre; font: 12px monospace; }
+  .tile { display: inline-block; position: relative; vertical-align: top; }
+  .tile span { position: absolute; left: 6px; top: 4px; color: #fff; font-size: 12px; text-shadow: 0 0 2px #000; }
 </style>
+<script src="vendor/livekit-client/livekit-client.umd.js"></script>
 </head>
 <body>
 <h3>streaming_media call</h3>
 <div>
   <input id="room" placeholder="room code" size="12">
   <button id="join">Join</button>
+  <button id="group">Group</button>
   <button id="ai">Call the AI</button>
   <button id="mute" disabled>Mute</button>
   <button id="hangup" disabled>Hang up</button>
@@ -160,7 +171,102 @@ async function join(code) {
   $('mute').disabled = $('hangup').disabled = false;
 }
 
+// --- Group calls through the LiveKit SFU (C19) -----------------------------------------------------------------------
+// One LiveKit Room: the SDK runs the signaling (protobuf over WebSocket) and its two peer connections (publisher and
+// subscriber). Each remote participant gets a tile with its video and audio.
+let group = null;  // {room, tiles: Map identity -> {div, video, audio, tracks: Map sid -> track}}
+
+async function joinGroup(code) {
+  if (ws || group || !code) return;
+  const LK = window.LivekitClient;
+  if (!LK) { setState('error: livekit-client did not load'); return; }
+  room = code;
+  setState('starting');
+  const r = await fetch('/lk-token?room=' + encodeURIComponent(code) + '&identity=' + encodeURIComponent(myId));
+  const t = await r.json();
+  if (!r.ok) { setState('error: ' + (t.error || r.status)); room = null; return; }
+  const url = params.get('lk') || t.url || (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host;
+  const lkRoom = new LK.Room({
+    adaptiveStream: true, dynacast: true,
+    publishDefaults: {simulcast: true, videoCodec: params.get('codec') || 'h264'},
+  });
+  group = {room: lkRoom, tiles: new Map()};
+  const tile = participant => {
+    let g = group.tiles.get(participant.identity);
+    if (!g) {
+      const div = document.createElement('div'); div.className = 'tile';
+      const video = document.createElement('video'); video.autoplay = true; video.playsInline = true;
+      const label = document.createElement('span'); label.textContent = participant.identity;
+      div.append(video, label); $('remotes').appendChild(div);
+      g = {div, video, audio: null, tracks: new Map()};
+      group.tiles.set(participant.identity, g);
+    }
+    return g;
+  };
+  lkRoom.on(LK.RoomEvent.ParticipantConnected, p => tile(p))
+    .on(LK.RoomEvent.TrackSubscribed, (track, pub, p) => {
+      const g = tile(p);
+      g.tracks.set(pub.trackSid, track);
+      if (track.kind === 'video') track.attach(g.video);
+      else { g.audio = track.attach(); g.div.appendChild(g.audio); }
+    })
+    .on(LK.RoomEvent.TrackUnsubscribed, (track, pub, p) => {
+      const g = group && group.tiles.get(p.identity);
+      track.detach();
+      if (g) g.tracks.delete(pub.trackSid);
+    })
+    .on(LK.RoomEvent.ParticipantDisconnected, p => {
+      const g = group && group.tiles.get(p.identity);
+      if (g) { g.div.remove(); group.tiles.delete(p.identity); }
+    })
+    .on(LK.RoomEvent.ConnectionStateChanged, s => setState('group: ' + s))
+    .on(LK.RoomEvent.Disconnected, () => setState('disconnected'));
+  const rtcConfig = params.get('relay') === '1' ? {iceTransportPolicy: 'relay'} : undefined;
+  await lkRoom.connect(url, t.token, rtcConfig ? {rtcConfig} : {});
+  for (const p of lkRoom.remoteParticipants.values()) tile(p);
+  await lkRoom.localParticipant.enableCameraAndMicrophone();
+  const cam = lkRoom.localParticipant.getTrackPublication(LK.Track.Source.Camera);
+  if (cam && cam.track) $('local').srcObject = new MediaStream([cam.track.mediaStreamTrack]);
+  $('mute').disabled = $('hangup').disabled = false;
+}
+
+// Per remote participant: audio bytes and decoded video frames from its tracks' receivers; and what this page sends
+// (the camera's simulcast encodings and codec).
+async function groupReport() {
+  const out = {participants: {}, sending: {}};
+  if (!group) return out;
+  for (const [identity, g] of group.tiles) {
+    const s = {audioBytesIn: 0, videoFrames: 0, videoWidth: 0, videoCodec: ''};
+    for (const track of g.tracks.values()) {
+      const rep = await track.getRTCStatsReport().catch(() => null);
+      if (!rep) continue;
+      const byId = {}; rep.forEach(r => { byId[r.id] = r; });
+      rep.forEach(r => {
+        if (r.type !== 'inbound-rtp') return;
+        if (r.kind === 'audio') s.audioBytesIn += r.bytesReceived || 0;
+        if (r.kind === 'video') {
+          s.videoFrames += r.framesDecoded || 0; s.videoWidth = r.frameWidth || s.videoWidth;
+          const c = byId[r.codecId]; if (c) s.videoCodec = c.mimeType;
+        }
+      });
+    }
+    out.participants[identity] = s;
+  }
+  const LK = window.LivekitClient;
+  const cam = group.room.localParticipant.getTrackPublication(LK.Track.Source.Camera);
+  const sender = cam && cam.track && cam.track.sender;
+  if (sender) {
+    const p = sender.getParameters();
+    out.sending.encodings = (p.encodings || []).map(e => ({rid: e.rid || '', active: e.active !== false,
+                                                          maxBitrate: e.maxBitrate || 0}));
+    out.sending.codec = (p.codecs && p.codecs[0] && p.codecs[0].mimeType) || '';
+  }
+  out.connection = group.room.state;
+  return out;
+}
+
 function hangup() {
+  if (group) { group.room.disconnect(); for (const g of group.tiles.values()) g.div.remove(); group = null; }
   for (const peer of [...calls.keys()]) { send({type: 'bye', to: peer}); drop(peer); }
   if (ws) { ws.close(); ws = null; }
   if (stream) { for (const t of stream.getTracks()) t.stop(); stream = null; }
@@ -169,8 +275,14 @@ function hangup() {
 }
 
 $('join').onclick = () => join($('room').value.trim());
+$('group').onclick = () => joinGroup($('room').value.trim()).catch(e => setState('error: ' + e));
 $('ai').onclick = () => { $('room').value = 'ai-' + Math.random().toString(36).slice(2, 8); join($('room').value); };
 $('mute').onclick = () => {
+  if (group) {
+    const lp = group.room.localParticipant, on = !lp.isMicrophoneEnabled;
+    lp.setMicrophoneEnabled(on).then(() => { $('mute').textContent = on ? 'Mute' : 'Unmute'; });
+    return;
+  }
   const audio = stream && stream.getAudioTracks()[0];
   if (audio) { audio.enabled = !audio.enabled; $('mute').textContent = audio.enabled ? 'Mute' : 'Unmute'; }
 };
@@ -435,6 +547,14 @@ async function tick() {
     report.calls[peer] = {connection: call.pc.connectionState, ice: call.pc.iceConnectionState, bytesIn: s.bytesIn,
                           audioBytesIn: s.audioBytesIn, videoFrames: s.videoFrames, bytesOut: s.bytesOut, candidate: s.candidate};
   }
+  if (group) {
+    report.group = await groupReport();
+    for (const [id, g] of Object.entries(report.group.participants)) {
+      lines.push(`${id}: audio in ${g.audioBytesIn} B  video frames ${g.videoFrames} (${g.videoWidth} px, ${g.videoCodec || '-'})`);
+    }
+    const enc = report.group.sending.encodings || [];
+    lines.push(`sending: ${report.group.sending.codec || '-'}, ${enc.length} simulcast encodings ${enc.map(e => e.rid).join(' ')}`);
+  }
   $('stats').textContent = lines.join('\n');
   if (params.get('report') === '1' && room) {
     fetch('/report', {method: 'POST', body: JSON.stringify(report)}).catch(() => {});
@@ -443,7 +563,9 @@ async function tick() {
 setInterval(() => tick().catch(() => {}), 1000);
 
 if (params.get('room')) $('room').value = params.get('room');
-if (params.get('auto') === '1' && params.get('room')) join(params.get('room')).catch(e => setState('error: ' + e));
+if (params.get('auto') === '1' && params.get('room')) {
+  (params.get('group') === '1' ? joinGroup : join)(params.get('room')).catch(e => setState('error: ' + e));
+}
 if (params.get('seconds')) setTimeout(() => finish().catch(e => setState('error: ' + e)), 1000 * +params.get('seconds'));
 </script>
 </body>
