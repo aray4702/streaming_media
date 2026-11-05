@@ -79,6 +79,12 @@ struct SendSideConfig {
   bool control_handler = true;
   DataRate video_min = DataRate::KilobitsPerSec(30);
   DataRate video_max = DataRate::KilobitsPerSec(10000);
+  // VideoSendStreamImpl's max_padding_bitrate_ (CalculateMaxPadBitrateBps, video_send_stream_impl.cc:107-172):
+  // the video stream's pad-up rate in the allocator while it is not disable_padding_ (from its first encoded
+  // frame until an encoder time-out). Zero for one stream without min_transmit_bitrate; with simulcast, the
+  // targets of the lower active layers plus min(1.2 x the top one's minimum, its target) (C17, issue #1162;
+  // rtp::SimulcastAllocationLimits computes it).
+  DataRate video_pad_up = DataRate::Zero();
   // With the allocator (RtpVideoSender::OnBitrateUpdated): the packet size
   // the overhead rate is computed for (RTP max_packet_size; the transport
   // overhead is added) and the RTP header bytes of a media packet (12 plus the
@@ -198,6 +204,11 @@ class SendSideController : public MetricsSource {
   // overhead, tracked over 1 s and taken off the encoder target (issue #619).
   void OnVideoPacketized(size_t encoder_output_size, size_t packetized_payload_size, Timestamp now);
   void OnVideoEncoderReconfigured(Timestamp now);
+  // VideoSendStreamImpl::OnEncoderConfigurationChanged's new limits (encoder_min_bitrate_,
+  // encoder_max_bitrate_, max_padding_bitrate_): they replace `video_min`, `video_max` and
+  // `video_pad_up`, and reach the allocator with the next registration (ConfigureAllocation, or the
+  // reallocation OnVideoEncoderReconfigured queues). For simulcast (C17, issue #1162).
+  void SetVideoAllocationLimits(DataRate min, DataRate max, DataRate pad_up);
   // The reallocation OnVideoEncoderReconfigured queued, once the reconfiguring frame is packetized.
   void RunPendingReconfigure(Timestamp now);
   bool video_registered() const { return video_registered_; }

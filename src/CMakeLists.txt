@@ -325,7 +325,9 @@ if(SM_WITH_VIDEO)
     video/quality_convergence.cc
     video/quality_scaler.cc
     video/video_stream_adapter.cc
-    video/resource_adaptation_processor.cc)
+    video/resource_adaptation_processor.cc
+    video/simulcast.cc
+    video/simulcast_rate_allocator.cc)
   list(APPEND SM_SECTIONS video)
   if(SM_WITH_VIDEOTOOLBOX)
     # Hardware H.264 through VideoToolbox on macOS and iOS (C11 part 1, #1104): libwebrtc's RTCVideoEncoderH264 and
@@ -372,6 +374,7 @@ if(SM_WITH_RTP)
     rtp/send_side_controller.cc
     rtp/session.cc
     rtp/sps_vui_rewriter.cc
+    rtp/simulcast_send_controller.cc
     rtp/video_send_controller.cc)
   list(APPEND SM_SECTIONS rtp)
 endif()

@@ -453,6 +453,14 @@ ParseResult ParseScenario(const std::string& text) {
     } else if (key == "quality_scaling") {
       if (!need(2) || (tok[1] != "on" && tok[1] != "off")) return fail("usage: quality_scaling on|off");
       s.quality_scaling = tok[1] == "on";
+    } else if (key == "simulcast") {
+      const int v = need(2) ? std::atoi(tok[1].c_str()) : 0;
+      if (v != 2 && v != 3) return fail("usage: simulcast 2|3");
+      s.simulcast = v;
+    } else if (key == "simulcast_view") {
+      const int v = need(2) ? std::atoi(tok[1].c_str()) : -2;
+      if (!need(2) || v < 0 || v > 2) return fail("usage: simulcast_view 0|1|2");
+      s.simulcast_view = v;
     } else if (key == "host_rtt_inf") {
       TimeDelta t;
       if (!need(2) || !ParseTime(tok[1], &t)) return fail("usage: host_rtt_inf <time>");
@@ -627,6 +635,8 @@ std::string FormatScenario(const Scenario& s) {
   rate("min_rate", s.min_rate, d.min_rate);
   rate("max_rate", s.max_rate, d.max_rate);
   if (s.keyframe_interval != d.keyframe_interval) o += "keyframe_interval " + FormatTime(s.keyframe_interval) + "\n";
+  if (s.simulcast != d.simulcast) o += "simulcast " + std::to_string(s.simulcast) + "\n";
+  if (s.simulcast_view != d.simulcast_view) o += "simulcast_view " + std::to_string(s.simulcast_view) + "\n";
   if (s.bitrate_adjuster != d.bitrate_adjuster) o += std::string("bitrate_adjuster ") + (s.bitrate_adjuster ? "on" : "off") + "\n";
   if (s.rate_utilization_tracker != d.rate_utilization_tracker)
     o += std::string("rate_utilization_tracker ") + (s.rate_utilization_tracker ? "on" : "off") + "\n";

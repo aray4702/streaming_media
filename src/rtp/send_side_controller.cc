@@ -196,6 +196,8 @@ void SendSideController::Start(Timestamp now) {
 
 void SendSideController::RegisterVideo(Timestamp now) {
   rates_time_ = now;
+  // GetAllocationConfig: pad_up_bitrate_bps is 0 while disable_padding_, else max_padding_bitrate_.
+  video_alloc_cfg_.pad_up = video_disable_padding_ ? DataRate::Zero() : cfg_.video_pad_up;
   allocator_.AddObserver("video", video_alloc_cfg_, video_observer_);
   video_registered_ = true;
   NotifyAllocationLimits(now);
@@ -275,6 +277,14 @@ void SendSideController::OnVideoEncoderReconfigured(Timestamp now) {
   pending_reconfigure_ = true;
 }
 
+void SendSideController::SetVideoAllocationLimits(DataRate min, DataRate max, DataRate pad_up) {
+  cfg_.video_min = min;
+  cfg_.video_max = max;
+  cfg_.video_pad_up = pad_up;
+  video_alloc_cfg_.min = min;
+  video_alloc_cfg_.max = max;
+}
+
 void SendSideController::RunPendingReconfigure(Timestamp now) {
   if (!pending_reconfigure_) return;
   pending_reconfigure_ = false;
@@ -329,6 +339,7 @@ void SendSideController::AddPaddingSender(RtpSender* sender) {
       const uint64_t id = next_id_++;
       cc::PacedPacket pp{id, cc::PacketPriority::kPadding, DataSize::Bytes(static_cast<int64_t>(sp.packet.size()) + cfg_.transport_overhead_bytes), now};
       pp.header_size = DataSize::Bytes(static_cast<int64_t>(sp.packet.HeaderSize()));
+      pp.ssrc = sp.packet.ssrc;
       out.push_back(pp);
       queued_[id] = std::move(sp);
       ++stats_.padding;
@@ -368,6 +379,9 @@ void SendSideController::Enqueue(SenderPacket p, Timestamp now) {
   pp.header_size = DataSize::Bytes(static_cast<int64_t>(p.packet.HeaderSize()));
   pp.is_key_frame = p.is_key_frame;
   pp.first_packet_of_frame = p.first_packet_of_frame;
+  // The queue keeps a StreamQueue per SSRC; a keyframe flushes its SSRC and its RTX SSRC (GetRtxSsrcForMedia).
+  pp.ssrc = p.packet.ssrc;
+  if (p.sender && p.packet.ssrc == p.sender->config().ssrc) pp.rtx_ssrc = p.sender->config().rtx_ssrc;
   queued_[id] = std::move(p);
   pacer_.Enqueue(pp);
   // A keyframe flushed the video stream's queue: those packets are never sent. The sender is not told:

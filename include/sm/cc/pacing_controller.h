@@ -12,9 +12,12 @@
 //   - the time that is credited since the last send is capped at 2 s;
 //   - a queue that cannot drain within `queue_time_limit` (2 s, judged on the
 //     average queue time, not the oldest packet) raises the rate;
-//   - the first packet of a keyframe flushes the queued packets of the video
-//     stream (video, FEC, retransmissions; padding with
-//     `keyframe_flush_padding`), as EnqueuePacket does;
+//   - the first packet of a keyframe, when the queue holds no keyframe packet
+//     of its SSRC, flushes the queued packets of that SSRC and of its RTX SSRC
+//     (video, FEC, retransmissions; padding with `keyframe_flush_padding`), as
+//     EnqueuePacket does (RemovePacketsForSsrc for the SSRC, then for
+//     GetRtxSsrcForMedia's); a simulcast layer's keyframe leaves the other
+//     layers' packets queued (C17);
 //   - padding fills a requested padding rate, 5 ms of it at a time.
 // Packets are queued per priority level, as PrioritizedPacketQueue does:
 //   0 audio, 1 retransmission, 3 video and FEC (one FIFO), 4 padding
@@ -30,6 +33,7 @@
 #include <array>
 #include <cstdint>
 #include <deque>
+#include <map>
 #include <optional>
 #include <set>
 #include <vector>
@@ -83,8 +87,11 @@ struct PacingControllerConfig {
 // Level 2 (video retransmission) is used only with
 // prioritize_audio_retransmission, which is off by default, and the
 // time-to-live per level (PacketQueueTTL) is infinite by default, so neither
-// is ported. A one-to-one call has one stream of each kind, so the round robin
-// between the SSRCs of a level is not needed either. SizeInBytes is the packets'
+// is ported. Each SSRC has its own queue per level (StreamQueue), and a level
+// serves the SSRCs that have packets at it in round robin, one packet each
+// (streams_by_prio_), as Pop does: a simulcast stream's layers share the video
+// level fairly (C17, issue #1162). The culling of streams that have been empty
+// for 500 ms only frees memory there and is not ported. SizeInBytes is the packets'
 // wire sizes; SizeInPayloadBytes is libwebrtc's, the size less the RTP header
 // (PacedPacket::header_size), which here still holds the transport overhead.
 // Enqueue times are kept minus the time the queue has spent paused, so that
@@ -112,16 +119,19 @@ class PrioritizedPacketQueue {
   TimeDelta AverageQueueTime() const;
   void UpdateAverageQueueTime(Timestamp now);
   void SetPauseState(bool paused, Timestamp now);
-  // RemovePacketsForSsrc for the video stream and its RTX stream, as
-  // PacingController::EnqueuePacket calls it on a keyframe: the
-  // retransmission, video and FEC levels, and with `include_padding` the
-  // padding level too (padding goes out on the video stream's RTX SSRC).
-  std::vector<PacedPacket> RemoveVideoStreamPackets(bool include_padding = false);
+  // RemovePacketsForSsrc for a video stream and its RTX stream, as
+  // PacingController::EnqueuePacket calls it on a keyframe: every packet of
+  // `ssrc` and of `rtx_ssrc` (if any), at every level but padding, and with
+  // `include_padding` the padding too.
+  std::vector<PacedPacket> RemoveVideoStreamPackets(uint32_t ssrc, std::optional<uint32_t> rtx_ssrc,
+                                                    bool include_padding = false);
   // PrioritizedPacketQueue::RemovePacketsForSsrc (prioritized_packet_queue.cc:337-380): every
   // queued packet of one stream, at every level, in queue order. The queue does not know SSRCs,
   // so the caller says which packets are the stream's (`is_stream`).
   std::vector<PacedPacket> RemoveStreamPackets(const std::function<bool(const PacedPacket&)>& is_stream);
   bool HasKeyframePackets() const { return num_keyframe_packets_ > 0; }
+  // Whether a keyframe packet of `ssrc` is queued (HasKeyframePackets(ssrc)).
+  bool HasKeyframePackets(uint32_t ssrc) const;
 
   static int Level(PacketPriority p);
 
@@ -129,8 +139,17 @@ class PrioritizedPacketQueue {
   // `enqueue_time` is minus the time the queue spent paused before it.
   struct Queued { PacedPacket p; Timestamp enqueue_time; std::multiset<Timestamp>::iterator oldest_it; };
   void DequeueInternal(Queued& q);
+  // StreamQueue: one SSRC's packets per level, and its queued keyframe packets.
+  struct StreamQueue {
+    std::array<std::deque<Queued>, kNumPriorityLevels> levels;
+    int keyframe_packets = 0;
+  };
+  // Drops the SSRCs whose queue at `level` has become empty from the level's round robin.
+  void PruneEmptyStreams(int level);
 
-  std::array<std::deque<Queued>, kNumPriorityLevels> levels_;
+  std::map<uint32_t, StreamQueue> streams_;
+  // Per level, the SSRCs with packets at it, in the order they are served.
+  std::array<std::deque<uint32_t>, kNumPriorityLevels> streams_by_prio_;
   std::multiset<Timestamp> enqueue_times_;
   DataSize size_bytes_, size_payload_;
   size_t size_packets_ = 0;

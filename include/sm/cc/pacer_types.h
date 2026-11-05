@@ -4,6 +4,7 @@
 #include <array>
 #include <cstdint>
 #include <functional>
+#include <optional>
 #include <vector>
 
 #include "sm/core/metrics.h"
@@ -29,6 +30,10 @@ struct PacedPacket {
   // The RTP header bytes in `size` (RtpPacketToSend::headers_size()). libwebrtc's queue counts
   // payload and padding only, plus the transport overhead (PacingController::QueueSizeData).
   DataSize header_size = DataSize::Zero();
+  // The packet's SSRC (the queue keeps one StreamQueue per SSRC) and, for a media packet, its
+  // stream's RTX SSRC (PacketRouter::GetRtxSsrcForMedia, for the keyframe flush).
+  uint32_t ssrc = 0;
+  std::optional<uint32_t> rtx_ssrc;
 };
 
 // PacketRouter::GeneratePadding, as the pacer sees it: the packets that make about

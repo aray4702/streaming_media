@@ -45,6 +45,8 @@ class EndpointWorld {
     std::string error;
     std::string last_offer, last_answer;  // SDP text.
     int offers = 0, answers = 0;
+    // Edits a description's text on its way to ep[to] (an SFU's SDP that this library's endpoint can't produce).
+    std::function<std::string(int to, SdpType type, std::string sdp)> munge;
 
     // ep[from] makes an offer and applies it; the other end answers when the offer arrives.
     bool Offer(int from, Timestamp now) {
@@ -70,6 +72,7 @@ class EndpointWorld {
             if (!cand || !ep[i]->AddIceCandidate(*cand, now, &e)) Failed("AddIceCandidate: " + e);
             continue;
           }
+          if (munge) m.text = munge(i, m.type, std::move(m.text));
           auto desc = SdpDeserialize(m.type, m.text, &perr);
           if (!desc) {
             Failed("SdpDeserialize: " + perr.description + " at " + perr.line);

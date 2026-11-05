@@ -23,6 +23,7 @@
 #include "sm/sim/network_link.h"
 #include "sm/sim/signals.h"
 #include "sm/video/freeze_detector.h"
+#include "sm/video/simulcast.h"
 
 #include "api/audio_codecs/builtin_audio_decoder_factory.h"
 #include "api/audio_codecs/audio_encoder.h"
@@ -45,6 +46,7 @@
 #include "api/video_codecs/video_decoder_factory.h"
 #include "api/video_codecs/video_encoder.h"
 #include "api/video_codecs/video_encoder_factory.h"
+#include "media/engine/simulcast_encoder_adapter.h"
 #include "audio/audio_receive_stream.h"
 #include "video/stream_synchronization.h"
 #include "video/video_receive_stream2.h"
@@ -488,6 +490,10 @@ constexpr char kSenderCname[] = "sender@testbench";
 constexpr int kOpusPt = 111, kAudioRedPt = 63, kVideoPt = 125, kRtxPt = 98, kRedPt = 118, kUlpfecPt = 119,
               kRtxRedPt = 99;
 constexpr w::RtpHeaderExtensionId kTransportSeqExtId(1);
+// Simulcast (C17): the layers' SSRC step and the RID / repaired RID extension ids, as testbench/call.cc registers them.
+constexpr uint32_t kSimulcastSsrcStep = 0x100;
+constexpr w::RtpHeaderExtensionId kRidExtId(2), kRepairedRidExtId(3);
+constexpr const char* kSimulcastRids[] = {"q", "h", "f"};
 constexpr int64_t kUdpIpOverhead = 28;
 constexpr int kAudioRate = 48000;
 constexpr int kAudioBlock = kAudioRate / 100;  // 10 ms.
@@ -544,6 +550,7 @@ class FecRecoveredSeqs final : public w::RecoveredPacketReceiver {
 struct VideoModel {
   const Scenario* s = nullptr;
   Random rng;
+  Random* shared_rng = nullptr;  // Simulcast (C17): the layers draw from one generator, in layer order.
   int64_t frames_captured = 0, frames_encoded = 0, keyframes = 0, bytes = 0;
   int64_t qp_sum = 0, encode_us_sum = 0;  // testbench/encoder_model.h (issue #84).
   int64_t height_sum = 0;                  // Encoded frame heights (quality scaling, issue #84).
@@ -579,7 +586,17 @@ struct VideoModel {
 class ModelEncoder final : public w::VideoEncoder {
  public:
   explicit ModelEncoder(VideoModel* m) : m_(m) {}
-  int InitEncode(const w::VideoCodec*, const Settings&) override { return WEBRTC_VIDEO_CODEC_OK; }
+  // Simulcast (C17): a SimulcastEncoderAdapter sub-encoder; InitEncode finds its layer by the stream's width.
+  ModelEncoder(const std::vector<VideoModel*>* layer_models, const std::vector<int>* layer_widths)
+      : m_(layer_models->front()), layer_models_(layer_models), layer_widths_(layer_widths) {}
+  int InitEncode(const w::VideoCodec* codec, const Settings&) override {
+    if (layer_models_ && codec) {
+      for (size_t i = 0; i < layer_widths_->size() && i < layer_models_->size(); ++i) {
+        if ((*layer_widths_)[i] == codec->width) m_ = (*layer_models_)[i];
+      }
+    }
+    return WEBRTC_VIDEO_CODEC_OK;
+  }
   int32_t RegisterEncodeCompleteCallback(w::EncodedImageCallback* cb) override {
     cb_ = cb;
     return WEBRTC_VIDEO_CODEC_OK;
@@ -602,7 +619,7 @@ class ModelEncoder final : public w::VideoEncoder {
                                                        m_->s->scene_change_frames, m_->s->scene_change_factor};
     const double factor =
         testbench::EncoderModel::DeltaSizeFactor(behaviour, (capture_us - m_->start_us) / 1000, m_->s->video_fps);
-    int64_t bytes = static_cast<int64_t>(key ? per_frame * 4 : per_frame * m_->rng.Uniform(0.8, 1.2) * factor);
+    int64_t bytes = static_cast<int64_t>(key ? per_frame * 4 : per_frame * (m_->shared_rng ? *m_->shared_rng : m_->rng).Uniform(0.8, 1.2) * factor);
     bytes = std::max<int64_t>(bytes, 200);
     const std::vector<uint8_t> au = ModelAccessUnit(key, static_cast<size_t>(bytes));
     auto buf = w::EncodedImageBuffer::Create(au.data(), au.size());
@@ -683,6 +700,8 @@ class ModelEncoder final : public w::VideoEncoder {
   }
 
   VideoModel* m_;
+  const std::vector<VideoModel*>* layer_models_ = nullptr;  // Simulcast: every layer's model.
+  const std::vector<int>* layer_widths_ = nullptr;
   w::EncodedImageCallback* cb_ = nullptr;
   uint32_t rate_bps_ = 0;
   std::shared_ptr<bool> alive_ = std::make_shared<bool>(true);  // For delayed encoded callbacks.
@@ -728,13 +747,35 @@ w::SdpVideoFormat ModelH264Format() {
 class ModelEncoderFactory final : public w::VideoEncoderFactory {
  public:
   explicit ModelEncoderFactory(VideoModel* m) : m_(m) {}
+  // Simulcast (C17): Create returns libwebrtc's SimulcastEncoderAdapter over this factory's per-layer encoders, as
+  // the media engine's encoder factory does for a codec without native simulcast.
+  void EnableSimulcast(const std::vector<VideoModel*>* layer_models, const std::vector<int>* layer_widths) {
+    layer_models_ = layer_models;
+    layer_widths_ = layer_widths;
+  }
   std::vector<w::SdpVideoFormat> GetSupportedFormats() const override { return {ModelH264Format()}; }
-  std::unique_ptr<w::VideoEncoder> Create(const w::Environment&, const w::SdpVideoFormat&) override {
+  std::unique_ptr<w::VideoEncoder> Create(const w::Environment& env, const w::SdpVideoFormat& format) override {
+    if (layer_models_) return std::make_unique<w::SimulcastEncoderAdapter>(env, &layers_, nullptr, format);
     return std::make_unique<ModelEncoder>(m_);
   }
 
  private:
+  // The adapter's factory: one encoder model per layer.
+  class Layers final : public w::VideoEncoderFactory {
+   public:
+    explicit Layers(ModelEncoderFactory* f) : f_(f) {}
+    std::vector<w::SdpVideoFormat> GetSupportedFormats() const override { return {ModelH264Format()}; }
+    std::unique_ptr<w::VideoEncoder> Create(const w::Environment&, const w::SdpVideoFormat&) override {
+      return std::make_unique<ModelEncoder>(f_->layer_models_, f_->layer_widths_);
+    }
+
+   private:
+    ModelEncoderFactory* f_;
+  };
   VideoModel* m_;
+  const std::vector<VideoModel*>* layer_models_ = nullptr;
+  const std::vector<int>* layer_widths_ = nullptr;
+  Layers layers_{this};
 };
 
 class ModelDecoderFactory final : public w::VideoDecoderFactory {
@@ -971,8 +1012,30 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
   run_on(sender_q.get(), [&] { send_call = make_call(sender_env, send_audio_state); });
   run_on(receiver_q.get(), [&] { recv_call = make_call(env, recv_audio_state); });
 
-  const std::vector<w::RtpExtension> extensions = {
+  // Simulcast (C17, issue #1162): one VideoSendStream with an SSRC, RTX SSRC and RID per layer, and a
+  // SimulcastEncoderAdapter over one encoder model per layer, as testbench/call.cc's `simulcast`. The receive Call has
+  // a receive stream per layer; the measurement follows the viewed layer (`simulcast_view`), whose SSRCs are
+  // video_ssrc and rtx_ssrc below.
+  const int sc_layers = s.video && s.simulcast > 1 ? s.simulcast : 0;
+  const int sc_view = sc_layers ? (s.simulcast_view < 0 ? sc_layers - 1 : std::min(s.simulcast_view, sc_layers - 1)) : 0;
+  auto layer_ssrc = [](int i) { return kVideoSsrc + kSimulcastSsrcStep * static_cast<uint32_t>(i); };
+  auto layer_rtx_ssrc = [](int i) { return kRtxSsrc + kSimulcastSsrcStep * static_cast<uint32_t>(i); };
+  const uint32_t video_ssrc = layer_ssrc(sc_view);
+  const uint32_t rtx_ssrc = layer_rtx_ssrc(sc_view);
+  // The layer of a packet of a layer other than the viewed one (media or RTX SSRC), or -1.
+  auto other_layer = [&](uint32_t ssrc) {
+    for (int i = 0; i < sc_layers; ++i) {
+      if (i != sc_view && (ssrc == layer_ssrc(i) || (s.nack && ssrc == layer_rtx_ssrc(i)))) return i;
+    }
+    return -1;
+  };
+  auto is_video_ssrc = [&](uint32_t ssrc) { return ssrc == video_ssrc || other_layer(ssrc) >= 0; };
+  std::vector<w::RtpExtension> extensions = {
       w::RtpExtension(w::RtpExtension::kTransportSequenceNumberUri, kTransportSeqExtId)};
+  if (sc_layers) {
+    extensions.emplace_back(w::RtpExtension::kRidUri, kRidExtId);
+    extensions.emplace_back(w::RtpExtension::kRepairedRidUri, kRepairedRidExtId);
+  }
   const w::RtpHeaderExtensionMap extension_map(extensions);
 
   // --- Measurement state ----------------------------------------------------
@@ -981,7 +1044,30 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
   model.rng = Random(s.seed + 13);
   model.start_us = t0.us();
   model.now = [&] { return rel(sim.Now()); };
-  testbench::RtxAckPhase rtx_ack(kVideoSsrc, kRtxSsrc, s.nack);
+  // Simulcast: the other layers' encoder models, drawing from the viewed model's generator in layer order (as the test
+  // bench's encoder models share one), and the per-layer models by layer index.
+  std::vector<std::unique_ptr<VideoModel>> other_models;
+  std::vector<VideoModel*> layer_models;
+  for (int i = 0; i < sc_layers; ++i) {
+    if (i == sc_view) {
+      layer_models.push_back(&model);
+      continue;
+    }
+    auto lm = std::make_unique<VideoModel>();
+    lm->s = &s;
+    lm->shared_rng = &model.rng;
+    lm->start_us = t0.us();
+    layer_models.push_back(lm.get());
+    other_models.push_back(std::move(lm));
+  }
+  if (sc_layers) model.shared_rng = &model.rng;
+  // Each layer's width, to find a SimulcastEncoderAdapter sub-encoder's layer at InitEncode.
+  std::vector<int> layer_widths;
+  if (sc_layers) {
+    for (const auto& l : sm::video::CreateEncoderStreams({}, s.video_width, s.video_height, testbench::SimulcastEncoderConfig(s)))
+      layer_widths.push_back(l.width);
+  }
+  testbench::RtxAckPhase rtx_ack(video_ssrc, rtx_ssrc, s.nack);
   std::vector<testbench::AudioSendRow> audio_reports;  // Each audio report block the sender received (issue #484).
   if (opt.link_trace) model.rtx_ack = &rtx_ack;
   // The last media or RTX packet of a frame (RFC 4588 keeps the original RTP timestamp) before it renders marks it
@@ -993,6 +1079,7 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
   };
   int64_t w_send = 0, w_good = 0;
   testbench::FirstDelivery first_delivery;
+  std::unordered_map<int, std::unique_ptr<testbench::FirstDelivery>> other_delivery;  // Simulcast: per other layer.
   testbench::RepairMeter repair;  // Issue #509: the repair metrics by the test bench's rule.
   // VideoReceiveStream does not expose the packets its ULPFEC receiver recovers, so the harness runs libwebrtc's
   // UlpfecReceiver on the same input: every RED packet that arrives on the video SSRC, in arrival order, as
@@ -1001,7 +1088,7 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
   // never passes a recovered packet to DecodeFec (ulpfec_receiver.cc), so they recover nothing.
   FecRecoveredSeqs fec_tap_sink(repair);
   std::unique_ptr<w::UlpfecReceiver> fec_tap;
-  if (s.video && s.fec) fec_tap = std::make_unique<w::UlpfecReceiver>(kVideoSsrc, kUlpfecPt, &fec_tap_sink, sim.clock());
+  if (s.video && s.fec) fec_tap = std::make_unique<w::UlpfecReceiver>(video_ssrc, kUlpfecPt, &fec_tap_sink, sim.clock());
   std::optional<uint32_t> audio_ts0;
   std::vector<double> video_e2e, rtt_samples, queue_samples, jb_delay;
   testbench::AudioNetDelayMeter audio_net_delay;
@@ -1047,7 +1134,7 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
       w_send += wire;
       RtpInfo r = ParseRtp(data);
       if (r.ok) trace_seq = r.seq;
-      if (r.ok && r.payload_len == 0 && (r.ssrc == kAudioSsrc || r.ssrc == kVideoSsrc || r.ssrc == kRtxSsrc)) {
+      if (r.ok && r.payload_len == 0 && (r.ssrc == kAudioSsrc || r.ssrc == video_ssrc || r.ssrc == rtx_ssrc || other_layer(r.ssrc) >= 0)) {
         link_kind = sm::sim::LinkKind::kPadding;
       }
       if (r.ok && r.payload_len > 0) {
@@ -1057,7 +1144,12 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
           repair.OnSent(sm::sim::LinkKind::kAudio, data.size(), 0, 0);
           if (!audio_ts0) audio_ts0 = r.ts;
           link_kind = sm::sim::LinkKind::kAudio;
-        } else if (r.ssrc == kVideoSsrc) {
+        } else if (const int ol = other_layer(r.ssrc); ol >= 0) {
+          // Simulcast (C17): another layer is on the link, but the repair and frame meters follow the viewed one.
+          link_kind = r.ssrc == layer_ssrc(ol) ? sm::sim::LinkKind::kVideo
+                      : r.payload_len > 2      ? sm::sim::LinkKind::kRtx
+                                               : sm::sim::LinkKind::kPadding;
+        } else if (r.ssrc == video_ssrc) {
           if (!model.rtp_ts_offset && model.first_rtp_ts) model.rtp_ts_offset = r.ts - *model.first_rtp_ts;
           bool fec = r.pt == kRedPt && (payload[0] & 0x7f) == kUlpfecPt;
           link_kind = fec ? sm::sim::LinkKind::kFec : sm::sim::LinkKind::kVideo;
@@ -1066,10 +1158,10 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
             auto ft = model.frame_times.find(r.ts - *model.rtp_ts_offset);
             if (ft != model.frame_times.end()) ft->second.last_sent = rel(now);
           }
-        } else if (r.ssrc == kRtxSsrc && r.payload_len > 2) {
+        } else if (r.ssrc == rtx_ssrc && r.payload_len > 2) {
           link_kind = sm::sim::LinkKind::kRtx;
           repair.OnSent(link_kind, data.size(), 0, 0);
-        } else if (r.ssrc == kRtxSsrc) {
+        } else if (r.ssrc == rtx_ssrc) {
           link_kind = sm::sim::LinkKind::kPadding;  // RTX header only (no retransmitted payload).
         }
       }
@@ -1105,7 +1197,7 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
       const RtpInfo r = ParseRtp(data);
       trace_ts = r.ts;
       trace_marker = (data[1] & 0x80) ? 1 : 0;
-      if (r.ssrc == kRtxSsrc && r.payload_len >= 2) {
+      if (r.ssrc == rtx_ssrc && r.payload_len >= 2) {
         trace_osn = (data[r.payload_off] << 8) | data[r.payload_off + 1];
       }
       if (link_kind == sm::sim::LinkKind::kVideo) {
@@ -1132,6 +1224,7 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
 
   // --- Streams ----------------------------------------------------------------
   ModelEncoderFactory encoder_factory(&model);
+  if (sc_layers) encoder_factory.EnableSimulcast(&layer_models, &layer_widths);
   // #931's frame trace: a row per decoded frame, found again by its RTP timestamp when it renders.
   std::unordered_map<uint32_t, size_t> frame_row;
   ModelDecoderFactory decoder_factory([&](uint32_t rtp_ts, int64_t render_time_ms) {
@@ -1187,6 +1280,9 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
   w::VideoSendStream* video_send = nullptr;
   w::AudioReceiveStreamInterface* audio_recv = nullptr;
   w::VideoReceiveStreamInterface* video_recv = nullptr;
+  std::vector<w::VideoReceiveStreamInterface*> other_recv;  // Simulcast: the other layers (C17).
+  ModelDecoderFactory other_decoder_factory(nullptr);
+  RenderSink other_renderer([](const w::VideoFrame&) {});
   testbench::SyncTs0 sync_ts0;  // Issue #895.
   // libwebrtc's own measurements, updated from the same GetInfo once a second as UpdateDelay updates its own, so
   // the sync rows carry the relative delay it computes (issue #895).
@@ -1214,7 +1310,7 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
       w::VideoSendStream::Config c(&send_transport);
       c.rtp.payload_name = "H264";
       c.rtp.payload_type = kVideoPt;
-      c.rtp.ssrcs = {kVideoSsrc};
+      c.rtp.ssrcs = {video_ssrc};
       c.rtp.c_name = kSenderCname;
       c.rtp.extensions = extensions;
       // `video_max_payload` (issue #257): the same whole-packet limit this library's sender uses,
@@ -1227,7 +1323,7 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
       if (s.nack) {
         c.rtp.nack.rtp_history_ms = 1000;
         c.rtp.rtx.payload_type = kRtxPt;
-        c.rtp.rtx.ssrcs = {kRtxSsrc};
+        c.rtp.rtx.ssrcs = {rtx_ssrc};
       }
       if (s.fec) {
         c.rtp.ulpfec.red_payload_type = kRedPt;
@@ -1246,10 +1342,31 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
       ec.simulcast_layers[0].min_bitrate_bps = static_cast<int>(s.video_min.bps());
       ec.max_bitrate_bps = static_cast<int>(s.video_max.bps());
       ec.frame_drop_enabled = true;
+      if (sc_layers) {
+        // Simulcast (C17): an SSRC, RTX SSRC and RID per layer, and an encoding per layer
+        // (testbench::SimulcastEncoderConfig: the stream maximum and the lowest layer's minimum, every layer at the
+        // scenario's frame rate). Quality scaling stays off, as WebRtcVideoSendStream allows it for one active layer.
+        c.rtp.ssrcs.clear();
+        c.rtp.rtx.ssrcs.clear();
+        c.rtp.rids.clear();
+        for (int i = 0; i < sc_layers; ++i) {
+          c.rtp.ssrcs.push_back(layer_ssrc(i));
+          if (s.nack) c.rtp.rtx.ssrcs.push_back(layer_rtx_ssrc(i));
+          c.rtp.rids.push_back(kSimulcastRids[i]);
+        }
+        const sm::video::VideoEncoderConfig sc = testbench::SimulcastEncoderConfig(s);
+        ec.number_of_streams = sc.number_of_streams;
+        ec.simulcast_layers = std::vector<w::VideoStream>(sc.number_of_streams);
+        for (size_t i = 0; i < sc.number_of_streams; ++i) {
+          ec.simulcast_layers[i].max_framerate = sc.simulcast_layers[i].max_framerate;
+          ec.simulcast_layers[i].min_bitrate_bps = sc.simulcast_layers[i].min_bitrate_bps;
+        }
+        ec.max_bitrate_bps = sc.max_bitrate_bps;
+      }
       video_send = send_call->CreateVideoSendStream(std::move(c), std::move(ec));
       // A camera: MAINTAIN_FRAMERATE when the quality scaler is on (issue #84),
       // otherwise no adaptation.
-      video_send->SetSource(&source, s.quality_scaling ? w::DegradationPreference::MAINTAIN_FRAMERATE
+      video_send->SetSource(&source, s.quality_scaling && !sc_layers ? w::DegradationPreference::MAINTAIN_FRAMERATE
                                                        : w::DegradationPreference::DISABLED);
     }
   });
@@ -1267,7 +1384,7 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
     }
     if (s.video) {
       w::VideoReceiveStreamInterface::Config c(&recv_transport);
-      c.rtp.remote_ssrc = kVideoSsrc;
+      c.rtp.remote_ssrc = video_ssrc;
       // The receiver measures the RTT as a receive-only endpoint does: RRTR in its reports, DLRR in the sender's
       // (rtcp_sender.cc BuildExtendedReports, rtcp_receiver.cc HandleXrDlrrReportBlock). ModuleRtpRtcpImpl2::
       // PeriodicUpdate gives it to CallStats, which feeds VideoReceiveStream2::OnRttUpdate, so the jitter estimator's
@@ -1276,7 +1393,7 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
       c.rtp.rtcp_xr.receiver_reference_time_report = true;
       if (s.nack) {
         c.rtp.nack.rtp_history_ms = 1000;
-        c.rtp.rtx_ssrc = kRtxSsrc;
+        c.rtp.rtx_ssrc = rtx_ssrc;
         c.rtp.rtx_associated_payload_types[kRtxPt] = kVideoPt;
       }
       if (s.fec) {
@@ -1288,12 +1405,34 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
       c.decoders.push_back(w::VideoReceiveStreamInterface::Decoder(ModelH264Format(), kVideoPt));
       c.renderer = &renderer;
       if (s.av_sync) c.sync_group = "sm";
-      video_recv = recv_call->CreateVideoReceiveStream(std::move(c));
+      // Simulcast (C17): a receive stream per layer (an SFU receives every layer), created in layer order, so that the
+      // RTCP schedules (each receive stream's RTCPSender draws from a generator seeded when it is built) are the same
+      // whichever layer is viewed, as the test bench's receiver's are; the other layers are outside the sync group and
+      // the measurement.
+      for (int i = 0; i < std::max(sc_layers, 1); ++i) {
+        if (!sc_layers || i == sc_view) {
+          video_recv = recv_call->CreateVideoReceiveStream(std::move(c));
+          continue;
+        }
+        w::VideoReceiveStreamInterface::Config lc(&recv_transport);
+        lc.rtp.remote_ssrc = layer_ssrc(i);
+        lc.rtp.rtcp_xr.receiver_reference_time_report = true;
+        if (s.nack) {
+          lc.rtp.nack.rtp_history_ms = 1000;
+          lc.rtp.rtx_ssrc = layer_rtx_ssrc(i);
+          lc.rtp.rtx_associated_payload_types[kRtxPt] = kVideoPt;
+        }
+        lc.decoder_factory = &other_decoder_factory;
+        lc.decoders.push_back(w::VideoReceiveStreamInterface::Decoder(ModelH264Format(), kVideoPt));
+        lc.renderer = &other_renderer;
+        other_recv.push_back(recv_call->CreateVideoReceiveStream(std::move(lc)));
+      }
     }
   });
   run_on(receiver_q.get(), [&] {
     if (audio_recv) audio_recv->Start();
     if (video_recv) video_recv->Start();
+    for (w::VideoReceiveStreamInterface* r : other_recv) r->Start();
     recv_call->SignalChannelNetworkState(w::MediaType::AUDIO, w::kNetworkUp);
     recv_call->SignalChannelNetworkState(w::MediaType::VIDEO, w::kNetworkUp);
   });
@@ -1396,9 +1535,17 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
         bool first = true;
         if (r.ssrc == kAudioSsrc) {
           first = first_delivery.Deliver(testbench::FirstDelivery::kAudio, r.seq);
-        } else if (r.ssrc == kVideoSsrc) {
+        } else if (const int ol = other_layer(r.ssrc); ol >= 0) {
+          // Simulcast (C17): each layer counts its own sequence numbers once, as the test bench.
+          auto& fd = other_delivery[ol];
+          if (!fd) fd = std::make_unique<testbench::FirstDelivery>();
+          const uint8_t* osn = p.data.data() + r.payload_off;
+          first = r.ssrc == layer_ssrc(ol)
+                      ? fd->Deliver(testbench::FirstDelivery::kVideo, r.seq)
+                      : r.payload_len > 2 && fd->Deliver(testbench::FirstDelivery::kVideo, static_cast<uint16_t>((osn[0] << 8) | osn[1]));
+        } else if (r.ssrc == video_ssrc) {
           first = first_delivery.Deliver(testbench::FirstDelivery::kVideo, r.seq);
-        } else if (r.ssrc == kRtxSsrc) {
+        } else if (r.ssrc == rtx_ssrc) {
           // RTX with only its original sequence number is padding.
           const uint8_t* osn = p.data.data() + r.payload_off;
           first = r.payload_len > 2 &&
@@ -1414,7 +1561,7 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
         // Padding on the audio SSRC carries no audio and gives no sample (#783).
         if (audio_ts0 && !audio_net_delay.started()) audio_net_delay.Start(*audio_ts0, kAudioRate);
         audio_net_delay.OnArrival(r.ts, /*carries_audio=*/r.payload_len > 0, at);
-      } else if (r.ssrc == kVideoSsrc && r.payload_len > 0) {
+      } else if (r.ssrc == video_ssrc && r.payload_len > 0) {
         bool fec = r.pt == kRedPt && (p.data[r.payload_off] & 0x7f) == kUlpfecPt;
         if (!fec) {
           repair.OnVideoArrived(r.seq);
@@ -1424,7 +1571,7 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
           w::RtpPacketReceived red(&extension_map, at_w);
           if (red.Parse(p.data.data(), p.data.size()) && fec_tap->AddReceivedRedPacket(red)) fec_tap->ProcessReceivedFec();
         }
-      } else if (r.ssrc == kRtxSsrc && r.payload_len > 2) {
+      } else if (r.ssrc == rtx_ssrc && r.payload_len > 2) {
         repair.OnRtxArrived(static_cast<uint16_t>((p.data[r.payload_off] << 8) | p.data[r.payload_off + 1]));
         frame_complete(r.ts, at);
       }
@@ -1660,7 +1807,7 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
   run_on(sender_q.get(), [&] {
     if (video_send) {
       auto vs = video_send->GetStats();
-      auto it = vs.substreams.find(kVideoSsrc);
+      auto it = vs.substreams.find(video_ssrc);
       if (it != vs.substreams.end()) {
         keyframe_requests = it->second.rtcp_packet_type_counts.pli_packets + it->second.rtcp_packet_type_counts.fir_packets;
       }
@@ -1689,6 +1836,10 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
     if (video_recv) {
       video_recv->Stop();
       recv_call->DestroyVideoReceiveStream(video_recv);
+    }
+    for (w::VideoReceiveStreamInterface* r : other_recv) {
+      r->Stop();
+      recv_call->DestroyVideoReceiveStream(r);
     }
     recv_call.reset();
   });
@@ -1793,6 +1944,15 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
     m["video.keyframes"] = static_cast<double>(model.keyframes);
     m["video.keyframe_requests"] = static_cast<double>(keyframe_requests);
     m["video.encoder_dropped"] = static_cast<double>(model.frames_captured - model.frames_encoded);
+    if (sc_layers) {
+      std::vector<int64_t> frames, bytes, keys;
+      for (const VideoModel* lm : layer_models) {
+        frames.push_back(lm->frames_encoded);
+        bytes.push_back(lm->bytes);
+        keys.push_back(lm->keyframes);
+      }
+      testbench::AddSimulcastMetrics(s, frames, bytes, keys, rep);
+    }
     m["video.encoder_target_avg_kbps"] =
         model.frames_captured
             ? static_cast<double>(model.encoder_rate_bps_sum) / static_cast<double>(model.frames_captured) / 1000
@@ -1805,7 +1965,7 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
   const double audio_wire_kbps =
       s.audio ? static_cast<double>((audio_frame_bytes * (s.red ? 2 : 1) + 12 + 4 + kUdpIpOverhead) * 8 * 50) / 1000.0 : 0;
   std::sort(rep.timeseries.begin(), rep.timeseries.end(), [](const Sample& a, const Sample& b) { return a.t_s < b.t_s; });
-  testbench::AddCcMetrics(s, (s.video ? s.video_max.kbps() : 0) + audio_wire_kbps, rep);
+  testbench::AddCcMetrics(s, (s.video ? testbench::VideoDemandKbps(s) : 0) + audio_wire_kbps, rep);
   m["cc.queue_p95_ms"] = testbench::Percentile(queue_samples, 95);
   m["cc.queue_max_ms"] = queue_samples.empty() ? 0 : *std::max_element(queue_samples.begin(), queue_samples.end());
   {

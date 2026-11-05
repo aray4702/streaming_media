@@ -82,7 +82,19 @@ RtpPacket RtpSender::NewPacket(uint8_t pt, uint32_t rtp_timestamp, bool marker) 
     --mid_remaining_;
     ++stats_.mid_packets;
   }
+  // AttachMidAndRid(/*rtx=*/false): the RID until the media SSRC has been acked.
+  if (!cfg_.rid.empty() && !ssrc_has_acked_ && cfg_.extensions &&
+      sync::ExtensionAccessor(*cfg_.extensions).SetString(p, sync::uri::kRid, cfg_.rid)) {
+    ++stats_.rid_packets;
+  }
   return p;
+}
+
+void RtpSender::AttachRtxRid(RtpPacket& p) {
+  if (cfg_.rid.empty() || !cfg_.extensions || !cfg_.rtx_ssrc || p.ssrc != *cfg_.rtx_ssrc) return;
+  const sync::ExtensionAccessor access(*cfg_.extensions);
+  access.Remove(p, sync::uri::kRid);
+  if (!rtx_ssrc_has_acked_ && access.SetString(p, sync::uri::kRepairedRid, cfg_.rid)) ++stats_.repaired_rid_packets;
 }
 
 void RtpSender::Queue(RtpPacket p, PacketKind kind, cc::PacketPriority prio) {
@@ -206,6 +218,7 @@ size_t RtpSender::MediaHeaderSize() const {
     if (cfg_.extensions->IdOf(sync::uri::kTransportCc)) access.SetTransportSeq(p, 0);
     if (cfg_.extensions->IdOf(sync::uri::kAbsSendTime)) access.SetAbsSendTime(p, Timestamp::Micros(0));
     if (mid_remaining_ > 0 && !cfg_.mid.empty()) access.SetString(p, sync::uri::kMid, cfg_.mid);
+    if (!cfg_.rid.empty() && !ssrc_has_acked_) access.SetString(p, sync::uri::kRid, cfg_.rid);
   }
   return p.HeaderSize();
 }
@@ -325,6 +338,7 @@ size_t RtpSender::HeaderSizeWith(std::optional<video::Rotation> rotation,
   if (cfg_.extensions->IdOf(sync::uri::kTransportCc)) access.SetTransportSeq(p, 0);
   if (cfg_.extensions->IdOf(sync::uri::kAbsSendTime)) access.SetAbsSendTime(p, Timestamp::Micros(0));
   if (mid_remaining_ > 0 && !cfg_.mid.empty()) access.SetString(p, sync::uri::kMid, cfg_.mid);
+  if (!cfg_.rid.empty() && !ssrc_has_acked_) access.SetString(p, sync::uri::kRid, cfg_.rid);
   if (rotation) access.SetRaw(p, sync::uri::kVideoOrientation, {static_cast<uint8_t>(*rotation)});
   if (SetsAbsoluteCaptureTime(abs_capture_time)) {
     access.SetRaw(p, sync::uri::kAbsCaptureTime, sync::SerializeAbsoluteCaptureTime(*abs_capture_time));
@@ -391,6 +405,7 @@ void RtpSender::OnNack(std::span<const uint16_t> seqs, Timestamp now, TimeDelta 
   }
   for (RtpPacket& r : rtx_.OnNack(seqs, now, rtt)) {
     ++stats_.rtx_packets;
+    AttachRtxRid(r);
     Queue(std::move(r), PacketKind::kRtx, cc::PacketPriority::kRetransmission);
   }
 }
@@ -403,6 +418,7 @@ void RtpSender::OnEarlyLoss(std::span<const uint16_t> seqs, Timestamp now) {
     std::optional<RtpPacket> r = rtx_.ReSendEarlyLoss(seq, now);
     if (!r) continue;
     ++stats_.rtx_packets;
+    AttachRtxRid(*r);
     Queue(std::move(*r), PacketKind::kRtx, cc::PacketPriority::kRetransmission);
   }
 }
@@ -436,6 +452,7 @@ std::vector<SenderPacket> RtpSender::GeneratePadding(size_t target_bytes, Timest
       std::optional<RtpPacket> r = rtx_.GetPayloadPaddingPacket(
           [&](const RtpPacket& original) { return original.payload.size() + kRtxHeaderSize <= room; });
       if (!r) break;
+      AttachRtxRid(*r);
       bytes_left -= std::min(bytes_left, r->payload.size());
       ++stats_.padding_packets;
       ++stats_.payload_padding_packets;
@@ -513,6 +530,7 @@ size_t RtpSender::RtxPacketOverhead() const {
   if (!rtx_ssrc_has_acked_ && ssrc_has_acked_) {
     constexpr size_t kRtpExtensionHeaderSize = 2;  // Two-byte header form, the larger.
     if (!cfg_.mid.empty()) overhead += kRtpExtensionHeaderSize + cfg_.mid.size();
+    if (!cfg_.rid.empty()) overhead += kRtpExtensionHeaderSize + cfg_.rid.size();
     // Extensions are rounded up to 4 bytes: adding MID and RRID may add up to 3 bytes of padding.
     overhead += 3;
   }
@@ -533,6 +551,14 @@ size_t RtpSender::ExpectedPerPacketOverhead() const {
     if (!cfg_.video && cfg_.extensions->IdOf(sync::uri::kAudioLevel)) access.SetRaw(p, sync::uri::kAudioLevel, {0});
     if ((send_mid_rid || send_mid_rid_on_rtx) && !cfg_.mid.empty() && cfg_.extensions->IdOf(sync::uri::kMid)) {
       access.SetString(p, sync::uri::kMid, std::string(16, 'm'));
+    }
+    // RtpStreamId and RepairedRtpStreamId at their largest (16); the repaired RID shares the RID's
+    // space, so it counts only once the media SSRC no longer sends the RID.
+    if (!cfg_.rid.empty() && send_mid_rid && cfg_.extensions->IdOf(sync::uri::kRid)) {
+      access.SetString(p, sync::uri::kRid, std::string(16, 'r'));
+    }
+    if (!cfg_.rid.empty() && send_mid_rid_on_rtx && !send_mid_rid && cfg_.extensions->IdOf(sync::uri::kRepairedRid)) {
+      access.SetString(p, sync::uri::kRepairedRid, std::string(16, 'r'));
     }
   }
   constexpr size_t kRtxHeaderSize = 2;  // Reserved in case the packet is resent in an RTX packet.
@@ -585,6 +611,10 @@ void RtpSender::ExportMetrics(MetricsWriter& w) const {
   w.Counter("payload_padding_packets", stats_.payload_padding_packets);
   w.Counter("nacks_without_rtx", stats_.nacks_without_rtx);
   w.Counter("mid_packets", stats_.mid_packets);
+  if (!cfg_.rid.empty()) {
+    w.Counter("rid_packets", stats_.rid_packets);
+    w.Counter("repaired_rid_packets", stats_.repaired_rid_packets);
+  }
   w.Counter("audio_level_packets", stats_.audio_level_packets);
   w.Counter("video_orientation_packets", stats_.video_orientation_packets);
   w.Counter("abs_capture_time_packets", stats_.abs_capture_time_packets);

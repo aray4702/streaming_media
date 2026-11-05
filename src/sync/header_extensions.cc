@@ -178,6 +178,23 @@ std::optional<std::vector<uint8_t>> ExtensionAccessor::GetRaw(const RtpPacket& p
   return std::nullopt;
 }
 
+bool ExtensionAccessor::Remove(RtpPacket& p, const char* u) const {
+  auto id = map_.IdOf(u);
+  if (!id || p.extension.empty()) return false;
+  auto all = ParseHeaderExtensions(p.extension_profile, p.extension);
+  if (!all) return false;
+  auto it = std::find_if(all->begin(), all->end(), [&](const HeaderExtension& e) { return e.id == *id; });
+  if (it == all->end()) return false;
+  all->erase(it);
+  if (all->empty()) {
+    p.extension.clear();
+    p.extension_profile = 0;
+    return true;
+  }
+  p.extension = Encode(*all, (p.extension_profile & 0xFFF0) == kTwoByteExtensionProfileId);
+  return true;
+}
+
 bool ExtensionAccessor::SetString(RtpPacket& p, const char* u, const std::string& v) const {
   return SetRaw(p, u, std::vector<uint8_t>(v.begin(), v.end()));
 }

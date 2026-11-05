@@ -151,6 +151,7 @@ VideoSendId Session::AddVideoSend(const VideoStreamConfig& v) {
   c.max_payload_size = v.max_payload_size;  // Sized per frame from the header (SendVideo).
   c.rtx_ssrc = v.rtx_ssrc;
   c.rtx_payload_type = v.rtx_payload_type;
+  c.rid = v.rid;
   const uint16_t rtx_initial_seq = c.rtx.initial_seq;
   c.rtx = v.rtx;
   c.rtx.initial_seq = rtx_initial_seq;
@@ -459,6 +460,16 @@ void Session::Start(Timestamp now) {
     // The audio channel's RTCPSender is built with the video one and seeded from the same clock time
     // (rtcp_sender.cc:130), so it draws the same intervals (#517).
     audio_rtcp_ = std::make_unique<RtcpEngine>(r);
+  }
+  // Simulcast (C17, issue #1162): RtpVideoSender has an RTP module per layer, and each sends its own sender reports
+  // (SR + SDES, on the video report interval) for its SSRC, so the receiver's report blocks about every layer carry
+  // an LSR and the layer's sender gets its own RTT (RTCPReceiver::HandleReportBlock). Built with the first one and
+  // seeded from the same clock time (rtcp_sender.cc:130), they draw the same intervals. The first layer's are the
+  // session's own (rtcp_).
+  for (size_t i = 1; i < video_send_.size(); ++i) {
+    RtcpConfig r = MakeRtcpConfig(cfg_);
+    r.local_ssrc = video_send_[i].sender->config().ssrc;
+    video_layer_rtcp_.push_back(std::make_unique<RtcpEngine>(r));
   }
   SendSideController::AudioAllocation audio;
   for (const auto& a : audio_send_) {
@@ -872,6 +883,7 @@ void Session::HandleRtcp(std::span<const uint8_t> bytes, Timestamp now) {
   // next report echoes it in a DLRR (ModuleRtpRtcpImpl2::GetFeedbackState, rtp_rtcp_impl2.cc:268;
   // RTCPSender::BuildExtendedReports). Issue #893.
   if (audio_rtcp_) audio_rtcp_->OnRtcp(bytes, now);
+  for (auto& l : video_layer_rtcp_) l->OnRtcp(bytes, now);  // Each layer module's RTCPReceiver (RRTR for its DLRR).
   for (const auto& sr : in.sender_reports) {
     for (auto& v : video_recv_) {
       if (v.receiver && v.ssrc == sr.ssrc) v.receiver->OnSenderReport(sr, now);
@@ -1171,6 +1183,14 @@ void Session::Process(Timestamp now) {
   for (auto& v : video_recv_) {
     if (v.receiver) v.receiver->CommitReceiveStatistics();
   }
+  for (size_t i = 0; i < video_layer_rtcp_.size(); ++i) {
+    RtcpEngine& l = *video_layer_rtcp_[i];
+    l.SetSenderState(video_send_[i + 1].sender->SenderState(now, l.BuildsReport(now)));
+    for (RtcpOutgoing& o : l.Process(now)) {
+      const DataSize wire = DataSize::Bytes(static_cast<int64_t>(o.bytes.size()) + cfg_.send_side.transport_overhead_bytes);
+      out_.push_back({std::move(o.bytes), OutgoingKind::kRtcp, wire});
+    }
+  }
   if (audio_rtcp_) {
     audio_rtcp_->SetSenderState(audio_send_.front().sender->SenderState(now, audio_rtcp_->BuildsReport(now)));
     for (RtcpOutgoing& o : audio_rtcp_->Process(now)) {
@@ -1235,6 +1255,7 @@ void Session::ProcessTransportFeedback(Timestamp now) {
 Timestamp Session::NextProcessTime(Timestamp now) const {
   Timestamp next = rtcp_.NextProcessTime(now);
   if (audio_rtcp_) next = std::min(next, audio_rtcp_->NextProcessTime(now));
+  for (const auto& l : video_layer_rtcp_) next = std::min(next, l->NextProcessTime(now));
   if (audio_recv_rtcp_) next = std::min(next, audio_recv_rtcp_->NextProcessTime(now));
   if (HasSendStreams()) next = std::min(next, send_.NextProcessTime(now));
   if (next_rtt_update_.IsFinite()) next = std::min(next, next_rtt_update_);
