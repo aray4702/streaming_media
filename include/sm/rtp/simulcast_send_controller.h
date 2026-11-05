@@ -145,6 +145,7 @@ class SimulcastSendController : public MetricsSource {
   size_t active_layers() const;
   const cc::FrameDropper& frame_dropper() const { return dropper_; }
   bool paused() const { return paused_; }
+  bool has_pending_frame() const { return pending_frame_.has_value(); }
   double input_fps() const { return input_fps_ > 0 ? input_fps_ : cfg_.fps; }
   uint64_t layer_switches() const { return layer_switches_; }
   void ExportMetrics(MetricsWriter& w) const override;

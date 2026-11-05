@@ -339,6 +339,7 @@ void SendSideController::AddPaddingSender(RtpSender* sender) {
       const uint64_t id = next_id_++;
       cc::PacedPacket pp{id, cc::PacketPriority::kPadding, DataSize::Bytes(static_cast<int64_t>(sp.packet.size()) + cfg_.transport_overhead_bytes), now};
       pp.header_size = DataSize::Bytes(static_cast<int64_t>(sp.packet.HeaderSize()));
+      pp.ssrc = sp.packet.ssrc;
       out.push_back(pp);
       queued_[id] = std::move(sp);
       ++stats_.padding;
@@ -378,6 +379,9 @@ void SendSideController::Enqueue(SenderPacket p, Timestamp now) {
   pp.header_size = DataSize::Bytes(static_cast<int64_t>(p.packet.HeaderSize()));
   pp.is_key_frame = p.is_key_frame;
   pp.first_packet_of_frame = p.first_packet_of_frame;
+  // The queue keeps a StreamQueue per SSRC; a keyframe flushes its SSRC and its RTX SSRC (GetRtxSsrcForMedia).
+  pp.ssrc = p.packet.ssrc;
+  if (p.sender && p.packet.ssrc == p.sender->config().ssrc) pp.rtx_ssrc = p.sender->config().rtx_ssrc;
   queued_[id] = std::move(p);
   pacer_.Enqueue(pp);
   // A keyframe flushed the video stream's queue: those packets are never sent. The sender is not told:

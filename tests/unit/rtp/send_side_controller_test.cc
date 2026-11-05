@@ -599,6 +599,9 @@ SM_TEST(SendSideController, FlushedResendIsNotSentAgainUnderPacerV2AndRtxV2) {
   SenderPacket key = Media(100, PacketKind::kVideo, cc::PacketPriority::kVideo, 1100);
   key.is_key_frame = true;
   key.first_packet_of_frame = true;
+  // The stream's keyframe: the flush takes its SSRC and its RTX SSRC (GetRtxSsrcForMedia).
+  key.packet.ssrc = sc.ssrc;
+  key.sender = &sender;
   c.Enqueue(key, now);
   SM_ASSERT_GT(c.stats().flushed, 0u);
   // Asked again later, the sender ignores it: the flushed resend is still pending.

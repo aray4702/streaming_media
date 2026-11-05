@@ -673,6 +673,8 @@ class Session : public MetricsSource {
   SessionStats stats_;
   std::unique_ptr<SyncableStream> sync_audio_, sync_video_;
   std::unique_ptr<RtcpEngine> audio_rtcp_;  // SessionConfig::audio_rtcp.
+  // Simulcast (C17): the RTCP of every video send stream after the first (its own SRs), as RtpVideoSender's module per layer.
+  std::vector<std::unique_ptr<RtcpEngine>> video_layer_rtcp_;
   std::unique_ptr<RtcpEngine> audio_recv_rtcp_;  // SessionConfig::audio_receive_rtcp.
   std::unique_ptr<sync::RtpStreamsSynchronizer> av_sync_;
 };

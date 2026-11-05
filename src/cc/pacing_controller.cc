@@ -132,8 +132,10 @@ TimeDelta PrioritizedPacketQueue::AverageQueueTime() const {
 }
 
 Timestamp PrioritizedPacketQueue::LeadingPacketEnqueueTime(PacketPriority p) const {
-  const auto& level = levels_[static_cast<size_t>(Level(p))];
-  return level.empty() ? Timestamp::MinusInfinity() : level.front().enqueue_time;
+  // The leading packet of the SSRC next in the level's round robin.
+  const auto level = static_cast<size_t>(Level(p));
+  if (streams_by_prio_[level].empty()) return Timestamp::MinusInfinity();
+  return streams_.at(streams_by_prio_[level].front()).levels[level].front().enqueue_time;
 }
 
 Timestamp PrioritizedPacketQueue::OldestEnqueueTime() const {
@@ -153,8 +155,13 @@ void PrioritizedPacketQueue::Push(Timestamp now, PacedPacket p) {
   ++size_per_priority_[static_cast<size_t>(p.priority)];
   if (p.is_key_frame) ++num_keyframe_packets_;
   p.enqueue_time = now;
+  const auto level = static_cast<size_t>(Level(p.priority));
+  StreamQueue& stream = streams_[p.ssrc];
+  if (p.is_key_frame) ++stream.keyframe_packets;
+  // StreamQueue::EnqueuePacket: the SSRC joins the level's round robin when it had nothing there.
+  if (stream.levels[level].empty()) streams_by_prio_[level].push_back(p.ssrc);
   q.p = p;
-  levels_[static_cast<size_t>(Level(p.priority))].push_back(std::move(q));
+  stream.levels[level].push_back(std::move(q));
 }
 
 void PrioritizedPacketQueue::DequeueInternal(Queued& q) {
@@ -162,35 +169,67 @@ void PrioritizedPacketQueue::DequeueInternal(Queued& q) {
   size_payload_ -= q.p.size - q.p.header_size;
   --size_packets_;
   --size_per_priority_[static_cast<size_t>(q.p.priority)];
-  if (q.p.is_key_frame) --num_keyframe_packets_;
+  if (q.p.is_key_frame) {
+    --num_keyframe_packets_;
+    if (auto it = streams_.find(q.p.ssrc); it != streams_.end()) --it->second.keyframe_packets;
+  }
   queue_time_sum_ -= last_update_time_ - q.enqueue_time - pause_time_sum_;
   enqueue_times_.erase(q.oldest_it);
 }
 
+bool PrioritizedPacketQueue::HasKeyframePackets(uint32_t ssrc) const {
+  auto it = streams_.find(ssrc);
+  return it != streams_.end() && it->second.keyframe_packets > 0;
+}
+
 std::optional<PacedPacket> PrioritizedPacketQueue::Pop() {
-  for (auto& level : levels_) {
-    if (level.empty()) continue;
-    Queued q = std::move(level.front());
-    level.pop_front();
+  // The highest level with packets; its first SSRC gives one packet and goes to the back of the round robin if it
+  // has more there.
+  for (size_t level = 0; level < static_cast<size_t>(kNumPriorityLevels); ++level) {
+    auto& order = streams_by_prio_[level];
+    if (order.empty()) continue;
+    const uint32_t ssrc = order.front();
+    order.pop_front();
+    auto& packets = streams_[ssrc].levels[level];
+    Queued q = std::move(packets.front());
+    packets.pop_front();
+    if (!packets.empty()) order.push_back(ssrc);
     DequeueInternal(q);
     return q.p;
   }
   return std::nullopt;
 }
 
-std::vector<PacedPacket> PrioritizedPacketQueue::RemoveVideoStreamPackets(bool include_padding) {
-  // The levels that hold the video stream's packets: retransmission (1) and
-  // video and FEC (3), and padding (4), which libwebrtc sends on the video
-  // stream's RTX SSRC. Audio is another stream.
+void PrioritizedPacketQueue::PruneEmptyStreams(int level) {
+  auto& order = streams_by_prio_[static_cast<size_t>(level)];
+  std::deque<uint32_t> kept;
+  for (uint32_t ssrc : order) {
+    if (!streams_[ssrc].levels[static_cast<size_t>(level)].empty()) kept.push_back(ssrc);
+  }
+  order.swap(kept);
+}
+
+std::vector<PacedPacket> PrioritizedPacketQueue::RemoveVideoStreamPackets(uint32_t ssrc, std::optional<uint32_t> rtx_ssrc,
+                                                                          bool include_padding) {
+  // RemovePacketsForSsrc(ssrc), then RemovePacketsForSsrc(rtx_ssrc): every level of each, in level order.
   std::vector<PacedPacket> removed;
-  for (PacketPriority prio : {PacketPriority::kRetransmission, PacketPriority::kVideo, PacketPriority::kPadding}) {
-    if (prio == PacketPriority::kPadding && !include_padding) continue;
-    auto& level = levels_[static_cast<size_t>(Level(prio))];
-    for (Queued& q : level) {
-      DequeueInternal(q);
-      removed.push_back(q.p);
+  for (std::optional<uint32_t> s : {std::optional<uint32_t>(ssrc), rtx_ssrc}) {
+    if (!s) continue;
+    auto it = streams_.find(*s);
+    if (it == streams_.end()) continue;
+    for (int level = 0; level < kNumPriorityLevels; ++level) {
+      // Audio is never on a video SSRC (and packets queued without an SSRC share 0).
+      if (level == Level(PacketPriority::kAudio)) continue;
+      if (level == Level(PacketPriority::kPadding) && !include_padding) continue;
+      auto& packets = it->second.levels[static_cast<size_t>(level)];
+      if (packets.empty()) continue;
+      for (Queued& q : packets) {
+        DequeueInternal(q);
+        removed.push_back(q.p);
+      }
+      packets.clear();
+      PruneEmptyStreams(level);
     }
-    level.clear();
   }
   return removed;
 }
@@ -198,17 +237,23 @@ std::vector<PacedPacket> PrioritizedPacketQueue::RemoveVideoStreamPackets(bool i
 std::vector<PacedPacket> PrioritizedPacketQueue::RemoveStreamPackets(
     const std::function<bool(const PacedPacket&)>& is_stream) {
   std::vector<PacedPacket> removed;
-  for (auto& level : levels_) {
-    std::deque<Queued> kept;
-    for (Queued& q : level) {
-      if (is_stream(q.p)) {
-        DequeueInternal(q);
-        removed.push_back(q.p);
-      } else {
-        kept.push_back(std::move(q));
+  for (int level = 0; level < kNumPriorityLevels; ++level) {
+    bool any = false;
+    for (auto& [ssrc, stream] : streams_) {
+      auto& packets = stream.levels[static_cast<size_t>(level)];
+      std::deque<Queued> kept;
+      for (Queued& q : packets) {
+        if (is_stream(q.p)) {
+          DequeueInternal(q);
+          removed.push_back(q.p);
+          any = true;
+        } else {
+          kept.push_back(std::move(q));
+        }
       }
+      packets.swap(kept);
     }
-    level.swap(kept);
+    if (any) PruneEmptyStreams(level);
   }
   return removed;
 }
@@ -359,11 +404,11 @@ Timestamp PacingController::NextSendTime(Timestamp now) const {
 
 void PacingController::Enqueue(PacedPacket p) {
   const Timestamp now = Cur(p.enqueue_time);
-  if (p.is_key_frame && p.first_packet_of_frame && p.priority == PacketPriority::kVideo && !queue_.HasKeyframePackets() &&
+  if (p.is_key_frame && p.first_packet_of_frame && p.priority == PacketPriority::kVideo && !queue_.HasKeyframePackets(p.ssrc) &&
       !queue_.Empty()) {
     const size_t before = flushed_.size();
     queue_.UpdateAverageQueueTime(now);
-    for (PacedPacket& f : queue_.RemoveVideoStreamPackets(cfg_.keyframe_flush_padding)) flushed_.push_back(f);
+    for (PacedPacket& f : queue_.RemoveVideoStreamPackets(p.ssrc, p.rtx_ssrc, cfg_.keyframe_flush_padding)) flushed_.push_back(f);
     ++stats_.keyframe_flushes;
     stats_.flushed_packets += flushed_.size() - before;
     SM_EVENT(cfg_.events, now, "pacer", "keyframe_flush", static_cast<double>(flushed_.size() - before), 0);

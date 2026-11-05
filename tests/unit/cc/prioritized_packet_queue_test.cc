@@ -14,8 +14,9 @@
 //     SendsNewVideoPacketAfterPurgingLastOldRtxPacket and
 //     SendsPacketsAfterTttlIfPrioHigherThanPushedPackets: PacketQueueTTL is
 //     infinite on every level by default;
-//   - ReturnsEqualPrioPacketsInRoundRobinOrder: round robin between the SSRCs of
-//     one level (simulcast); a one-to-one call has one stream per level.
+// ReturnsEqualPrioPacketsInRoundRobinOrder (round robin between the SSRCs of one level) is ported since
+// simulcast (C17, issue #1162). Packets take the SSRC of their kind's stream: audio, video (and FEC), and the
+// video stream's RTX (retransmissions and padding).
 #include <optional>
 #include <vector>
 
@@ -28,14 +29,26 @@ using namespace sm::cc;
 namespace {
 
 constexpr int64_t kDefaultPayloadSize = 789;
+constexpr uint32_t kAudioSsrc = 1, kVideoSsrc = 2, kRtxSsrc = 3;
 
-PacedPacket CreatePacket(PacketPriority type, uint64_t seq, bool is_key_frame = false) {
+uint32_t SsrcOf(PacketPriority type) {
+  switch (type) {
+    case PacketPriority::kAudio: return kAudioSsrc;
+    case PacketPriority::kVideo:
+    case PacketPriority::kFec: return kVideoSsrc;
+    default: return kRtxSsrc;
+  }
+}
+
+PacedPacket CreatePacket(PacketPriority type, uint64_t seq, bool is_key_frame = false,
+                         std::optional<uint32_t> ssrc = std::nullopt) {
   PacedPacket p;
   p.id = seq;
   p.priority = type;
   p.size = DataSize::Bytes(kDefaultPayloadSize);
   p.is_key_frame = is_key_frame;
   p.is_padding = type == PacketPriority::kPadding;
+  p.ssrc = ssrc.value_or(SsrcOf(type));
   return p;
 }
 
@@ -55,7 +68,7 @@ SM_TEST(PrioritizedPacketQueue, ReturnsPacketsInPrioritizedOrder) {
   queue.Push(now, CreatePacket(PacketPriority::kVideo, 2));
   queue.Push(now, CreatePacket(PacketPriority::kFec, 3));
   queue.Push(now, CreatePacket(PacketPriority::kRetransmission, 4));  // Of video.
-  queue.Push(now, CreatePacket(PacketPriority::kRetransmission, 5));  // Of audio.
+  queue.Push(now, CreatePacket(PacketPriority::kRetransmission, 5, false, kAudioSsrc));  // Of audio.
   queue.Push(now, CreatePacket(PacketPriority::kAudio, 6));
 
   // Packets are returned in high to low order.
@@ -247,13 +260,13 @@ SM_TEST(PrioritizedPacketQueue, ClearsPackets) {
   SM_EXPECT_EQ(queue.SizeInPackets(), 6u);
 
   // Remove all of them.
-  SM_EXPECT_EQ(queue.RemoveVideoStreamPackets().size(), 6u);
+  SM_EXPECT_EQ(queue.RemoveVideoStreamPackets(kVideoSsrc, kRtxSsrc).size(), 6u);
   SM_EXPECT_TRUE(queue.Empty());
   SM_EXPECT_EQ(queue.SizeInBytes().bytes(), 0);
   SM_EXPECT_EQ(queue.AverageQueueTime().us(), 0);
 
   // No more packets are removed when called again.
-  SM_EXPECT_TRUE(queue.RemoveVideoStreamPackets().empty());
+  SM_EXPECT_TRUE(queue.RemoveVideoStreamPackets(kVideoSsrc, kRtxSsrc).empty());
   SM_EXPECT_TRUE(queue.Empty());
 }
 
@@ -271,11 +284,11 @@ SM_TEST(PrioritizedPacketQueue, ClearPacketsAffectsOnlySpecifiedSsrc) {
   queue.Push(now, CreatePacket(PacketPriority::kPadding, 4));
   SM_EXPECT_EQ(queue.SizeInPackets(), 4u);
 
-  // libwebrtc returns the removed packets level by level: retransmission, then video.
-  std::vector<PacedPacket> removed = queue.RemoveVideoStreamPackets();
+  // RemovePacketsForSsrc(ssrc), then RemovePacketsForSsrc(rtx_ssrc): the video packet, then the retransmission.
+  std::vector<PacedPacket> removed = queue.RemoveVideoStreamPackets(kVideoSsrc, kRtxSsrc);
   SM_ASSERT_EQ(removed.size(), 2u);
-  SM_EXPECT_EQ(removed[0].id, 2u);
-  SM_EXPECT_EQ(removed[1].id, 1u);
+  SM_EXPECT_EQ(removed[0].id, 1u);
+  SM_EXPECT_EQ(removed[1].id, 2u);
   SM_EXPECT_EQ(queue.SizeInPackets(), 2u);
 
   // The audio packet first, then the padding.
@@ -294,10 +307,10 @@ SM_TEST(PrioritizedPacketQueue, ClearPacketsIncludesPaddingOnRequest) {
   queue.Push(now, CreatePacket(PacketPriority::kAudio, 3));
   queue.Push(now, CreatePacket(PacketPriority::kRetransmission, 4));
 
-  std::vector<PacedPacket> removed = queue.RemoveVideoStreamPackets(/*include_padding=*/true);
+  std::vector<PacedPacket> removed = queue.RemoveVideoStreamPackets(kVideoSsrc, kRtxSsrc, /*include_padding=*/true);
   SM_ASSERT_EQ(removed.size(), 3u);
-  SM_EXPECT_EQ(removed[0].id, 4u);  // Level by level: retransmission, video, padding.
-  SM_EXPECT_EQ(removed[1].id, 2u);
+  SM_EXPECT_EQ(removed[0].id, 2u);  // The video SSRC, then the RTX SSRC level by level: retransmission, padding.
+  SM_EXPECT_EQ(removed[1].id, 4u);
   SM_EXPECT_EQ(removed[2].id, 1u);
   SM_EXPECT_EQ(PopId(queue), 3u);  // Audio stays.
   SM_EXPECT_TRUE(queue.Empty());
@@ -321,7 +334,7 @@ SM_TEST(PrioritizedPacketQueue, ReportsKeyframePackets) {
 
   queue.Push(now, CreatePacket(PacketPriority::kVideo, 4, /*is_key_frame=*/true));
   SM_EXPECT_TRUE(queue.HasKeyframePackets());
-  queue.RemoveVideoStreamPackets();
+  queue.RemoveVideoStreamPackets(kVideoSsrc, kRtxSsrc);
   SM_EXPECT_TRUE(!queue.HasKeyframePackets());
 }
 
@@ -333,7 +346,7 @@ SM_TEST(PrioritizedPacketQueue, RemoveStreamPacketsTakesOneStreamAtEveryLevel) {
   // Ids 1-3 are the audio stream (two media packets and a retransmission), 4-5 the video stream.
   queue.Push(Timestamp::Millis(0), CreatePacket(PacketPriority::kVideo, 4));
   queue.Push(Timestamp::Millis(0), CreatePacket(PacketPriority::kAudio, 1));
-  queue.Push(Timestamp::Millis(10), CreatePacket(PacketPriority::kRetransmission, 3));
+  queue.Push(Timestamp::Millis(10), CreatePacket(PacketPriority::kRetransmission, 3, false, kAudioSsrc));
   queue.Push(Timestamp::Millis(10), CreatePacket(PacketPriority::kAudio, 2));
   queue.Push(Timestamp::Millis(20), CreatePacket(PacketPriority::kVideo, 5));
   queue.UpdateAverageQueueTime(Timestamp::Millis(30));
@@ -355,4 +368,35 @@ SM_TEST(PrioritizedPacketQueue, RemoveStreamPacketsTakesOneStreamAtEveryLevel) {
   SM_EXPECT_TRUE(queue.Empty());
   // Nothing more to remove.
   SM_EXPECT_TRUE(queue.RemoveStreamPackets([](const PacedPacket&) { return true; }).empty());
+}
+
+// ReturnsEqualPrioPacketsInRoundRobinOrder: simulcast layers at one level take turns, one packet each (C17).
+SM_TEST(PrioritizedPacketQueue, ReturnsEqualPrioPacketsInRoundRobinOrder) {
+  const Timestamp now = Timestamp::Millis(0);
+  PrioritizedPacketQueue queue;
+  queue.Push(now, CreatePacket(PacketPriority::kVideo, 1, false, 100));
+  queue.Push(now, CreatePacket(PacketPriority::kVideo, 2, false, 101));
+  queue.Push(now, CreatePacket(PacketPriority::kVideo, 3, false, 101));
+  for (uint64_t seq = 4; seq <= 7; ++seq) queue.Push(now, CreatePacket(PacketPriority::kVideo, seq, false, 102));
+  // The first packet of each SSRC, then the second of those that have more, then the last stream's.
+  for (uint64_t want : {1u, 2u, 4u, 3u, 5u, 6u, 7u}) SM_EXPECT_EQ(PopId(queue), want);
+  SM_EXPECT_TRUE(queue.Empty());
+}
+
+// A simulcast layer's keyframe flushes its own SSRC and RTX SSRC only (PacingController::EnqueuePacket with
+// HasKeyframePackets(ssrc) and RemovePacketsForSsrc): the other layers' packets stay queued (C17).
+SM_TEST(PrioritizedPacketQueue, KeyframeFlushIsPerSsrc) {
+  const Timestamp now = Timestamp::Millis(0);
+  PrioritizedPacketQueue queue;
+  queue.Push(now, CreatePacket(PacketPriority::kVideo, 1, false, 100));
+  queue.Push(now, CreatePacket(PacketPriority::kVideo, 2, true, 101));
+  queue.Push(now, CreatePacket(PacketPriority::kRetransmission, 3, false, 200));  // Layer 100's RTX.
+  SM_EXPECT_TRUE(queue.HasKeyframePackets(101));
+  SM_EXPECT_FALSE(queue.HasKeyframePackets(100));
+  const std::vector<PacedPacket> removed = queue.RemoveVideoStreamPackets(100, 200);
+  SM_ASSERT_EQ(removed.size(), 2u);
+  SM_EXPECT_EQ(removed[0].id, 1u);
+  SM_EXPECT_EQ(removed[1].id, 3u);
+  SM_EXPECT_EQ(PopId(queue), 2u);  // Layer 101's keyframe packet stays.
+  SM_EXPECT_TRUE(queue.Empty());
 }

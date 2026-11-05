@@ -715,6 +715,7 @@ video::VideoEncoderConfig SimulcastEncoderConfig(const Scenario& s) {
   c.codec_type = video::VideoCodecType::kH264;
   c.number_of_streams = static_cast<size_t>(std::max(1, s.simulcast));
   c.simulcast_layers.assign(c.number_of_streams, video::VideoStream{});
+  for (auto& l : c.simulcast_layers) l.max_framerate = s.video_fps;
   c.simulcast_layers[0].min_bitrate_bps = static_cast<int>(s.video_min.bps());
   c.max_bitrate_bps = static_cast<int>(s.video_max.bps());
   return c;
@@ -3592,7 +3593,9 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
         tx.frames_encoded() ? static_cast<double>(tx.height_sum()) / static_cast<double>(tx.frames_encoded()) : 0;
     m["video.keyframes"] = static_cast<double>(tx.keyframes_sent());
     m["video.keyframe_requests"] = static_cast<double>(tx.keyframe_requests());
-    m["video.encoder_dropped"] = static_cast<double>(tx.frames_skipped());
+    // Captured frames the viewed layer did not encode, as sm_compare counts libwebrtc (frames_captured - frames_encoded);
+    // without simulcast, the frames the library dropped.
+    m["video.encoder_dropped"] = static_cast<double>(tx.frames_captured() - tx.frames_encoded());
     m["video.encoder_target_avg_kbps"] =
         tx.frames_captured()
             ? static_cast<double>(tx.encoder_target_bps_sum()) / static_cast<double>(tx.frames_captured()) / 1000
