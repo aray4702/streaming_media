@@ -345,6 +345,7 @@ struct CallClient::LiveKit {
   std::map<std::string, livekit::ParticipantInfo> others;  // identity -> info
   std::vector<std::string> pending_sub_candidates, pending_pub_candidates;
   std::string subscriber = "none";  // The subscriber connection's state, for the stats.
+  bool subscriber_connected = false;
   // C20: the participants in the order they joined, who joined and left after us, the speakers (participant sid ->
   // its latest active SpeakerInfo; SpeakersChanged sends changes only), the local meters, the identities that have
   // been active speakers, the mute states announced, and the video tracks whose size was asked for.
@@ -646,7 +647,9 @@ void CallClient::MakeSubscriber(Timestamp now) {
   c.audio = false;
   c.video = false;
   c.receive_remote_tracks = true;
-  c.enable_data_channels = true;  // The server's offer carries LiveKit's data channels (_reliable, _lossy).
+  // The server's offer carries LiveKit's data channels (_reliable, _lossy). Built without SM_WITH_DATACHANNEL (the
+  // iOS presets) the section is rejected, which LiveKit accepts: its signaling carries what the client needs.
+  c.enable_data_channels = true;
   c.audio_decoder_factory = [](const std::string&) -> std::unique_ptr<rtp::AudioDecoder> {
     return std::make_unique<testbench::OpusAudioDecoder>(kRate);
   };
@@ -1055,7 +1058,13 @@ void CallClient::AddCandidate(std::map<std::string, std::string>& m, Timestamp n
 Timestamp CallClient::Step(Timestamp now) {
   if (state_ == CallState::kEnded || !ep_) return now + TimeDelta::Millis(10);
   ep_->Process(now);
-  if (sub_) sub_->Process(now);
+  if (sub_) {
+    sub_->Process(now);
+    if (!lk_->subscriber_connected && sub_->IsConnected()) {
+      lk_->subscriber_connected = true;
+      Log("subscriber connected in " + std::to_string(static_cast<int>((now - start_).ms_f())) + " ms");
+    }
+  }
   if (lk_ && now >= lk_->next_ping) {  // LiveKit's keepalive: ping_req every ping_interval.
     SendSignal(livekit::EncodePing(now.us() / 1000, lk_->rtt_ms < 0 ? 0 : static_cast<int64_t>(lk_->rtt_ms)));
     lk_->next_ping = now + lk_->ping_interval;
@@ -1318,7 +1327,7 @@ void CallClient::UpdateStats(Timestamp now) {
     c.livekit_room = lk_->room;
     c.livekit_participants = static_cast<int>(lk_->others.size());
     c.livekit_published = static_cast<int>(lk_->published.size());
-    c.livekit_subscriber = lk_->subscriber;
+    c.livekit_subscriber = lk_->subscriber + (lk_->subscriber_connected ? ", connected" : "");
     c.livekit_signal_rtt_ms = lk_->rtt_ms;
     RefreshGroup(now);
     c.livekit_group = participants();
