@@ -10,6 +10,7 @@ import os
 import subprocess
 import sys
 import unittest
+import urllib.error
 import urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -230,6 +231,115 @@ class TurnTest(unittest.TestCase):
         run(go())
         html = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'web', 'index.html')).read()
         self.assertIn('if (!urls.length) { iceServers = []; return; }', html)
+
+
+def b64url_decode(part):
+    return base64.urlsafe_b64decode(part + '=' * (-len(part) % 4))
+
+
+def verify_jwt(token, secret):
+    """The claims of an HS256 JWT whose signature checks with `secret`; raises otherwise."""
+    import hashlib
+    import hmac
+    head, body, sig = token.split('.')
+    want = hmac.new(secret.encode(), (head + '.' + body).encode(), hashlib.sha256).digest()
+    if not hmac.compare_digest(want, b64url_decode(sig)):
+        raise ValueError('bad signature')
+    if json.loads(b64url_decode(head)) != {'alg': 'HS256', 'typ': 'JWT'}:
+        raise ValueError('bad header')
+    return json.loads(b64url_decode(body))
+
+
+class LiveKitTokenTest(unittest.TestCase):
+    """GET /lk-token (C19): a LiveKit access token signed with the environment's key pair."""
+
+    def test_token_claims_and_signature(self):
+        now = 1_700_000_000
+        tok = server.livekit_token('APIkey1', 'very-secret', 'room-1', 'web-abc', now)
+        claims = verify_jwt(tok, 'very-secret')
+        self.assertEqual(claims['iss'], 'APIkey1')
+        self.assertEqual(claims['sub'], 'web-abc')
+        self.assertEqual((claims['nbf'], claims['exp']), (now, now + 3600))
+        self.assertEqual(claims['video'], {'roomJoin': True, 'room': 'room-1', 'canPublish': True,
+                                           'canSubscribe': True, 'canPublishData': True})
+        with self.assertRaises(ValueError):
+            verify_jwt(tok, 'another-secret')
+        self.assertNotIn('very-secret', tok)
+
+    def test_input_is_validated(self):
+        q = lambda **kw: {k: [v] for k, v in kw.items()}
+        ok = server.livekit_token_response('k', 's', '', q(room='r', identity='a.b_c-1'))
+        self.assertEqual(ok[0], 200)
+        for bad in (q(room='r'), q(identity='i'), q(room='', identity='i'), q(room='r/x', identity='i'),
+                    q(room='r', identity='.hidden'), q(room='r' * 65, identity='i'), q(room='r', identity='a b'),
+                    q(room='r', identity='é')):
+            self.assertEqual(server.livekit_token_response('k', 's', '', bad)[0], 400, bad)
+        # subscribe=0: a publish-only grant (the native client until C18).
+        pub_only = server.livekit_token_response('k', 's', '', q(room='r', identity='i', subscribe='0'))
+        self.assertEqual(verify_jwt(pub_only[1]['token'], 's')['video']['canSubscribe'], False)
+        self.assertEqual(verify_jwt(ok[1]['token'], 's')['video']['canSubscribe'], True)
+        self.assertEqual(server.livekit_token_response('', '', '', q(room='r', identity='i'))[0], 503)
+        self.assertEqual(server.livekit_token_response('k', '', '', q(room='r', identity='i'))[0], 503)
+
+    def test_http_lk_token(self):
+        async def go():
+            svc = server.Service(livekit_key='devkey', livekit_secret='secret', livekit_url='wss://lk.example')
+            await svc.start()
+            loop = asyncio.get_running_loop()
+
+            def get(path):
+                try:
+                    with urllib.request.urlopen('http://127.0.0.1:%d%s' % (svc.port, path)) as r:
+                        return r.status, json.loads(r.read())
+                except urllib.error.HTTPError as e:
+                    return e.code, json.loads(e.read())
+            code, body = await loop.run_in_executor(None, get, '/lk-token?room=team-7&identity=web-1')
+            self.assertEqual(code, 200)
+            self.assertEqual((body['url'], body['ttl']), ('wss://lk.example', 3600))
+            claims = verify_jwt(body['token'], 'secret')
+            self.assertEqual((claims['iss'], claims['sub'], claims['video']['room']), ('devkey', 'web-1', 'team-7'))
+            self.assertNotIn('secret', json.dumps(body).replace(body['token'], ''))
+            code, body = await loop.run_in_executor(None, get, '/lk-token?room=../x&identity=web-1')
+            self.assertEqual(code, 400)
+            # The existing protocol is unchanged next to it.
+            a = await Client.connect(svc.port)
+            await a.send({'type': 'join', 'room': 'team-7', 'peer': 'A'})
+            self.assertEqual(await a.recv(), {'type': 'joined', 'peers': []})
+            a.close()
+            await svc.stop()
+        run(go())
+
+    def test_vendored_files_match_their_checksums(self):
+        # The web app's livekit-client (no CDN at runtime) and the native client's .proto files, as pinned.
+        import hashlib
+        root = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..')
+        for d in ('web/vendor/livekit-client', 'call/livekit/protocol'):
+            base = os.path.join(root, d)
+            with open(os.path.join(base, 'SHA256SUMS')) as f:
+                lines = [l.split() for l in f if l.strip()]
+            self.assertTrue(lines, d)
+            for digest, name in lines:
+                with open(os.path.join(base, name), 'rb') as g:
+                    self.assertEqual(hashlib.sha256(g.read()).hexdigest(), digest, name)
+        html = open(os.path.join(root, 'web', 'index.html')).read()
+        self.assertIn('<script src="vendor/livekit-client/livekit-client.umd.js"></script>', html)
+        self.assertNotIn('cdn', html.lower())
+
+    def test_http_lk_token_unconfigured(self):
+        async def go():
+            svc = server.Service()
+            await svc.start()
+            loop = asyncio.get_running_loop()
+
+            def get():
+                try:
+                    urllib.request.urlopen('http://127.0.0.1:%d/lk-token?room=r&identity=i' % svc.port)
+                except urllib.error.HTTPError as e:
+                    return e.code
+                return 200
+            self.assertEqual(await loop.run_in_executor(None, get), 503)
+            await svc.stop()
+        run(go())
 
 
 if __name__ == '__main__':

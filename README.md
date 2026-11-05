@@ -30,7 +30,7 @@ The library grows in two stages, both measured on the same test bench ([program.
 1. **Baseline: what WebRTC handles** (current stage). These are the problems in sections 1-10 of [Problems WebRTC solves](docs/02-webrtc-problems-solved.md): connectivity, security, packet loss, jitter and timing, congestion control, audio, video, synchronization, data channels and observability. The bar is parity with libwebrtc's current mechanisms, not older or simpler variants. Parity is measured by running every test bench scenario through both libraries over the same emulated links ([comparison](docs/results/compare-webrtc.md)). Each gap is an issue labelled `stage:baseline`.
 2. **Human-AI streaming.** Features for problems that arise because the other side of the call is an AI, added one at a time on top of the baseline without regressing it. Examples are a two-way conversation test bench, metrics for response delay, barge-in and how cleanly the user's speech reaches the AI, and AI media sent in faster-than-real-time bursts and cancelled on barge-in. These issues are labelled `stage:ai`.
 
-Baseline work comes before AI work. **Sections 1, 2, 9 and 10** (connectivity, security, data channels and observability) are ported from libwebrtc too ([#944](https://github.com/aray4702/streaming_media/issues/944)), so the library doesn't leave them to a host stack. The Owner chose standard WebRTC on the wire for both topologies: the AI server (client-server) and P2P calls on web, Android and iOS, with 1:1 calls and small-group mesh, no SFU. What is ported and how it differs: [libwebrtc parity, section 10](docs/design/libwebrtc-parity.md).
+Baseline work comes before AI work. **Sections 1, 2, 9 and 10** (connectivity, security, data channels and observability) are ported from libwebrtc too ([#944](https://github.com/aray4702/streaming_media/issues/944)), so the library doesn't leave them to a host stack. The Owner chose standard WebRTC on the wire for both topologies: the AI server (client-server) and P2P calls on web, Android and iOS, with 1:1 calls peer-to-peer; group calls of up to 6 go through an SFU, LiveKit (#1160; the small-group mesh is dropped). What is ported and how it differs: [libwebrtc parity, section 10](docs/design/libwebrtc-parity.md).
 
 ## The library
 
@@ -115,7 +115,7 @@ The `compare-webrtc` CI job runs every one-way scenario through this library and
 
   (this library / libwebrtc)
 - **The other pairs:** of the 3,609 metric/scenario pairs, 3,456 tie within the tie floor. 110 lean towards this library and 43 towards libwebrtc, all inside the band. In the first comparison (2026-10-14), libwebrtc was better on 88 pairs and this library on 51.
-- **Not compared:** `sm_compare` runs one-way calls, so it skips the 20 two-way (user and AI) scenarios, the 3 mesh scenarios, and 8 that libwebrtc can't run the same way. The ICE comparison (`sm_ice_compare`) runs separately, including ICE-TCP and mDNS paths, and matches libwebrtc on every seed.
+- **Not compared:** `sm_compare` runs one-way calls, so it skips the 20 two-way (user and AI) scenarios and 7 that libwebrtc can't run the same way (the mesh scenarios were removed with the mesh, C16). The ICE comparison (`sm_ice_compare`) runs separately, including ICE-TCP and mDNS paths, and matches libwebrtc on every seed.
 
 A sample of the table (mean of 10 seeds, this library / libwebrtc):
 

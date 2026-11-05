@@ -6,9 +6,11 @@
 #include <cmath>
 #include <cstdio>
 #include <random>
+#include <utility>
 
 #include "ai_server.h"
 #include "json.h"
+#include "livekit_proto.h"
 #include "opus_decoder.h"
 #include "opus_encoder.h"
 #include "sm/audio/aec3.h"
@@ -40,6 +42,11 @@ constexpr size_t kMaxCapture = kRate;               // 1 s of microphone waiting
 constexpr size_t kPlayoutTarget = 3 * k10ms;        // Played-out audio kept ready for the device.
 constexpr size_t kBands = 3;                        // 48 kHz: three 16 kHz bands (SplittingFilter).
 constexpr size_t kBandSamples = audio::SplittingFilter::kSamplesPerBand;
+// RTCIceCandidateInit as JSON, the form LiveKit's TrickleRequest carries (candidateInit).
+std::string CandidateInitJson(const pc::IceCandidate& cand) {
+  return "{\"candidate\":" + net::JsonEscape(cand.ToString()) + ",\"sdpMid\":" + net::JsonEscape(cand.sdp_mid()) +
+         ",\"sdpMLineIndex\":" + std::to_string(cand.sdp_mline_index()) + "}";
+}
 }  // namespace
 
 const char* CallStateName(CallState s) {
@@ -262,6 +269,23 @@ class CallClient::Video {
   }
 };
 
+// --- LiveKit's session (C19) -----------------------------------------------------------------------------------------
+
+struct CallClient::LiveKit {
+  bool joined = false;
+  std::string room, sid, identity;
+  std::string audio_cid, video_cid;
+  std::map<std::string, std::string> published;  // cid -> track sid
+  bool offered = false;
+  uint32_t offer_id = 0;
+  TimeDelta ping_interval = TimeDelta::Seconds(10);
+  Timestamp next_ping = Timestamp::PlusInfinity();
+  double rtt_ms = -1;
+  std::map<std::string, livekit::ParticipantInfo> others;  // identity -> info
+  std::vector<std::string> pending_sub_candidates, pending_pub_candidates;
+  std::string subscriber = "none";  // The subscriber connection's state, for the stats.
+};
+
 // --- CallStats -------------------------------------------------------------------------------------------------------
 
 std::string CallStats::Text() const {
@@ -287,7 +311,12 @@ std::string CallStats::Text() const {
                 static_cast<unsigned long long>(video_frames_decoded),
                 static_cast<unsigned long long>(video_frames_rendered), video_recv_width, video_recv_height,
                 video_send_rotation, video_recv_rotation, dtls_cipher.empty() ? "-" : dtls_cipher.c_str(), srtp_cipher.empty() ? "-" : srtp_cipher.c_str());
-  return buf;
+  std::string out = buf;
+  if (livekit_participants >= 0) {
+    out += "\nlivekit: " + livekit_room + "  others " + std::to_string(livekit_participants) + "  published " +
+           std::to_string(livekit_published) + "  subscriber " + livekit_subscriber;
+  }
+  return out;
 }
 
 std::string CallStats::ToJson() const {
@@ -314,7 +343,16 @@ std::string CallStats::ToJson() const {
          ",\"local_candidate\":" + net::JsonEscape(local_candidate) +
          ",\"remote_candidate\":" + net::JsonEscape(remote_candidate) + ",\"dtls_cipher\":" + net::JsonEscape(dtls_cipher) +
          ",\"srtp_cipher\":" + net::JsonEscape(srtp_cipher) + ",\"capture_chain\":" + net::JsonEscape(capture_chain) +
-         ",\"ended_reason\":" + net::JsonEscape(ended_reason) + "}";
+         ",\"ended_reason\":" + net::JsonEscape(ended_reason) + LiveKitJson() + "}";
+}
+
+std::string CallStats::LiveKitJson() const {
+  if (livekit_participants < 0) return "";
+  char b[160];
+  std::snprintf(b, sizeof b, ",\"livekit_participants\":%d,\"livekit_published\":%d,\"livekit_signal_rtt_ms\":%.0f",
+                livekit_participants, livekit_published, livekit_signal_rtt_ms);
+  return b + std::string(",\"livekit_room\":") + net::JsonEscape(livekit_room) +
+         ",\"livekit_subscriber\":" + net::JsonEscape(livekit_subscriber);
 }
 
 // --- CallClient ------------------------------------------------------------------------------------------------------
@@ -336,12 +374,21 @@ CallClient::CallClient(CallClientConfig config, std::function<void(const std::st
       std::clamp(32000, config_.opus_min_bitrate_bps, std::max(config_.opus_min_bitrate_bps, config_.opus_max_bitrate_bps)),
       true);
   if (config_.audio_processing) apm_ = std::make_unique<AudioProcessor>(config_.echo_cancellation, config_.agc);
+  if (config_.livekit) {
+    lk_ = std::make_unique<LiveKit>();
+    lk_->audio_cid = "sm-audio-" + config_.peer_id;  // The a=msid track ids of the publisher's offer.
+    if (config_.livekit_publish_video) lk_->video_cid = "sm-video-" + config_.peer_id;
+  }
 }
 
 CallClient::~CallClient() {
-  ep_.reset();  // Before the allocator and the sockets it uses.
+  sub_.reset();  // The endpoints before the allocators and the sockets they use.
+  ep_.reset();
+  sub_allocator_.reset();
   allocator_.reset();
 }
+
+pc::PeerEndpoint* CallClient::receiver() const { return lk_ ? sub_.get() : ep_.get(); }
 
 void CallClient::Log(const std::string& line) const {
   if (config_.verbose) std::fprintf(stderr, "[call %s] %s\n", config_.room.c_str(), line.c_str());
@@ -363,6 +410,10 @@ void CallClient::SetTurnResponse(const std::string& json) {
 void CallClient::Start(Timestamp now) {
   start_ = now;
   state_ = CallState::kWaitingForPeer;
+  if (lk_) {  // The WebSocket's URL carries the join (the token names the room and identity).
+    Log("joining the LiveKit room as " + config_.peer_id);
+    return;
+  }
   SendSignal("{\"type\":\"join\",\"room\":" + net::JsonEscape(config_.room) + ",\"peer\":" +
              net::JsonEscape(config_.peer_id) + "}");
   Log("joining as " + config_.peer_id);
@@ -379,13 +430,21 @@ void CallClient::End(const std::string& why, Timestamp now) {
     if (start_.IsFinite()) stats_.duration_s = (now - start_).seconds();
   }
   Log("ended (" + why + ")");
+  sub_.reset();
   ep_.reset();
+  sub_allocator_.reset();
   allocator_.reset();
 }
 
 void CallClient::Hangup(Timestamp now) {
   if (state_ == CallState::kEnded) return;
-  if (!remote_.empty()) SendSignal("{\"type\":\"bye\"," + To() + "}");
+  if (lk_) {
+    livekit::LeaveRequest leave;
+    leave.reason = livekit::kClientInitiated;
+    SendSignal(livekit::EncodeLeave(leave));
+  } else if (!remote_.empty()) {
+    SendSignal("{\"type\":\"bye\"," + To() + "}");
+  }
   End("hang-up", now);
 }
 
@@ -409,11 +468,27 @@ void CallClient::MakeEndpoint(Timestamp now) {
   c.video = true;  // Received from the web app even with our camera off; the AI server offers audio only.
   c.enable_data_channels = false;
   c.audio_decoder = decoder_.get();
+  if (lk_) {
+    // LiveKit's publisher connection: it sends only (the subscriber connection receives), and its tracks are the
+    // ones AddTrackRequest announced, matched by cid (the a=msid track id).
+    c.video = config_.livekit_publish_video;
+    c.audio_decoder = nullptr;
+    c.audio_track_id = lk_->audio_cid;
+    if (!lk_->video_cid.empty()) c.video_track_id = lk_->video_cid;
+    c.stream_id = "sm-" + config_.peer_id;
+  }
   // The allocator registration: the Opus range plus the overhead at 20 ms frames (issue #569's path).
   c.audio_stream.min_bitrate = DataRate::BitsPerSec(config_.opus_min_bitrate_bps);
   c.audio_stream.max_bitrate = DataRate::BitsPerSec(std::max(config_.opus_min_bitrate_bps, config_.opus_max_bitrate_bps));
   ep_ = std::make_unique<pc::PeerEndpoint>(std::move(c), now);
   ep_->SetOnIceCandidate([this](std::unique_ptr<pc::IceCandidate> cand) {
+    if (lk_) {
+      livekit::TrickleRequest t;
+      t.candidate_init = CandidateInitJson(*cand);
+      t.target = livekit::SignalTarget::kPublisher;
+      SendSignal(livekit::EncodeTrickle(t));
+      return;
+    }
     SendSignal("{\"type\":\"candidate\"," + To() + ",\"candidate\":" + net::JsonEscape(cand->ToString()) +
                ",\"sdpMid\":" + net::JsonEscape(cand->sdp_mid()) +
                ",\"sdpMLineIndex\":" + std::to_string(cand->sdp_mline_index()) + "}");
@@ -425,12 +500,204 @@ void CallClient::Offer(Timestamp now) {
   std::string error;
   auto offer = ep_->CreateOffer(&error);
   if (!offer) return End("CreateOffer failed: " + error, now);
-  SendSignal("{\"type\":\"offer\"," + To() + ",\"sdp\":" + net::JsonEscape(pc::SdpSerialize(*offer)) + "}");
+  if (lk_) {
+    livekit::SessionDescription sd;
+    sd.type = "offer";
+    sd.sdp = pc::SdpSerialize(*offer);
+    sd.id = ++lk_->offer_id;
+    SendSignal(livekit::EncodeOffer(sd));
+    lk_->offered = true;
+  } else {
+    SendSignal("{\"type\":\"offer\"," + To() + ",\"sdp\":" + net::JsonEscape(pc::SdpSerialize(*offer)) + "}");
+  }
   if (!ep_->SetLocalDescription(std::move(offer), now, &error)) End("SetLocalDescription failed: " + error, now);
+}
+
+// --- LiveKit (C19) ---------------------------------------------------------------------------------------------------
+
+void CallClient::MakeSubscriber(Timestamp now) {
+  if (sub_ || state_ == CallState::kEnded || !network_) return;
+  sub_allocator_ = std::make_unique<p2p::BasicPortAllocator>(network_.get(), &sockets_);
+  sub_allocator_->SetConfiguration(now, stun_, turn_, 0, p2p::NO_PRUNE);
+  sub_allocator_->set_flags(p2p::PORTALLOCATOR_DISABLE_TCP);
+  if (config_.relay_only) sub_allocator_->SetCandidateFilter(p2p::CF_RELAY);
+  pc::PeerEndpointConfig c;
+  c.allocator = sub_allocator_.get();
+  c.certificate_name = "sm-call";
+  c.transport.async_dns_resolver_factory = &resolver_;
+  c.audio = true;
+  c.video = true;
+  c.enable_data_channels = true;  // The server's offer carries LiveKit's data channels (_reliable, _lossy).
+  c.audio_decoder = decoder_.get();
+  c.stream_id = "sm-" + config_.peer_id + "-sub";
+  sub_ = std::make_unique<pc::PeerEndpoint>(std::move(c), now);
+  sub_->SetOnIceCandidate([this](std::unique_ptr<pc::IceCandidate> cand) {
+    livekit::TrickleRequest t;
+    t.candidate_init = CandidateInitJson(*cand);
+    t.target = livekit::SignalTarget::kSubscriber;
+    SendSignal(livekit::EncodeTrickle(t));
+  });
+}
+
+void CallClient::LiveKitPublish(Timestamp now) {
+  // Our tracks, as the SDKs' LocalParticipant.publishTrack announces them before the publisher's offer.
+  livekit::AddTrackRequest audio;
+  audio.cid = lk_->audio_cid;
+  audio.name = "microphone";
+  audio.type = livekit::TrackType::kAudio;
+  audio.source = livekit::TrackSource::kMicrophone;
+  audio.disable_red = true;  // Plain Opus: the library's sender doesn't send RED audio.
+  SendSignal(livekit::EncodeAddTrack(audio));
+  if (!lk_->video_cid.empty()) {
+    livekit::AddTrackRequest video;
+    video.cid = lk_->video_cid;
+    video.name = "camera";
+    video.type = livekit::TrackType::kVideo;
+    video.source = livekit::TrackSource::kCamera;
+    video.width = static_cast<uint32_t>(config_.livekit_video_width);
+    video.height = static_cast<uint32_t>(config_.livekit_video_height);
+    // One layer until C17 (simulcast send).
+    video.layers.push_back({livekit::VideoQuality::kHigh, video.width, video.height, 0, 0});
+    SendSignal(livekit::EncodeAddTrack(video));
+  }
+  (void)now;
+}
+
+void CallClient::LiveKitTrickle(const std::string& candidate_init, bool subscriber, Timestamp now) {
+  pc::PeerEndpoint* ep = subscriber ? sub_.get() : ep_.get();
+  if (!ep || !ep->remote_description()) {
+    (subscriber ? lk_->pending_sub_candidates : lk_->pending_pub_candidates).push_back(candidate_init);
+    return;
+  }
+  auto m = net::JsonParseFlat(candidate_init);
+  if (m["candidate"].empty()) return;  // End of candidates.
+  const std::string& idx = m["sdpMLineIndex"];
+  const int index = idx.empty() || idx == "null" ? 0 : std::atoi(idx.c_str());
+  const std::string mid = m["sdpMid"] == "null" ? "" : m["sdpMid"];
+  pc::SdpParseError perr;
+  std::string error;
+  if (auto cand = pc::IceCandidate::Create(mid, index, m["candidate"], &perr)) ep->AddIceCandidate(*cand, now, &error);
+}
+
+void CallClient::LiveKitSubscriberOffer(const std::string& sdp, uint32_t id, Timestamp now) {
+  MakeSubscriber(now);
+  if (!sub_) return;
+  pc::SdpParseError perr;
+  std::string error;
+  auto desc = pc::SdpDeserialize(pc::SdpType::kOffer, sdp, &perr);
+  if (!desc || !sub_->SetRemoteDescription(std::move(desc), now, &error)) {
+    // A renegotiation (another participant's tracks) or several remote streams: C18's multi-stream receive. The
+    // publisher path goes on; this end receives what the first offer brought.
+    lk_->subscriber = "offer " + std::to_string(id) + " not applied (needs C18): " + (desc ? error : perr.description);
+    Log("subscriber: " + lk_->subscriber);
+    return;
+  }
+  auto answer = sub_->CreateAnswer(&error);
+  if (!answer) {
+    lk_->subscriber = "CreateAnswer failed: " + error;
+    Log("subscriber: " + lk_->subscriber);
+    return;
+  }
+  livekit::SessionDescription sd;
+  sd.type = "answer";
+  sd.sdp = pc::SdpSerialize(*answer);
+  sd.id = id;
+  SendSignal(livekit::EncodeAnswer(sd));
+  if (!sub_->SetLocalDescription(std::move(answer), now, &error)) {
+    lk_->subscriber = "SetLocalDescription failed: " + error;
+    Log("subscriber: " + lk_->subscriber);
+    return;
+  }
+  lk_->subscriber = "answered offer " + std::to_string(id);
+  Log("subscriber: " + lk_->subscriber);
+  for (const std::string& c : std::exchange(lk_->pending_sub_candidates, {})) LiveKitTrickle(c, true, now);
+}
+
+void CallClient::OnLiveKit(const std::string& bytes, Timestamp now) {
+  using Kind = livekit::SignalResponse::Kind;
+  const livekit::SignalResponse r = livekit::DecodeSignalResponse(bytes);
+  switch (r.kind) {
+    case Kind::kJoin: {
+      if (lk_->joined) break;
+      lk_->joined = true;
+      lk_->room = r.join.room_name;
+      lk_->sid = r.join.participant.sid;
+      lk_->identity = r.join.participant.identity;
+      for (const auto& p : r.join.other_participants) lk_->others[p.identity] = p;
+      // The server's ICE servers (on the host: coturn, with a REST credential) next to /turn's.
+      for (const auto& s : r.join.ice_servers) {
+        std::string urls;
+        for (const auto& u : s.urls) urls += (urls.empty() ? "" : ",") + net::JsonEscape(u);
+        ParseTurnResponse("{\"urls\":[" + urls + "],\"username\":" + net::JsonEscape(s.username) +
+                              ",\"credential\":" + net::JsonEscape(s.credential) + "}",
+                          &stun_, &turn_);
+      }
+      if (r.join.ping_interval_s > 0) lk_->ping_interval = TimeDelta::Seconds(r.join.ping_interval_s);
+      lk_->next_ping = now + lk_->ping_interval;
+      Log("joined LiveKit room " + lk_->room + " as " + lk_->identity + " (" + lk_->sid + "), server " +
+          r.join.server_version + ", " + std::to_string(r.join.other_participants.size()) + " others, " +
+          std::to_string(r.join.ice_servers.size()) + " ICE servers, subscriber primary " +
+          (r.join.subscriber_primary ? "yes" : "no"));
+      MakeEndpoint(now);
+      LiveKitPublish(now);
+      break;
+    }
+    case Kind::kTrackPublished: {
+      lk_->published[r.track_published.cid] = r.track_published.track.sid;
+      Log("published " + r.track_published.cid + " as " + r.track_published.track.sid);
+      const bool all = lk_->published.count(lk_->audio_cid) &&
+                       (lk_->video_cid.empty() || lk_->published.count(lk_->video_cid));
+      if (all && !lk_->offered && ep_) Offer(now);
+      break;
+    }
+    case Kind::kAnswer: {
+      if (!ep_) break;
+      pc::SdpParseError perr;
+      std::string error;
+      auto desc = pc::SdpDeserialize(pc::SdpType::kAnswer, r.description.sdp, &perr);
+      if (!desc || !ep_->SetRemoteDescription(std::move(desc), now, &error)) {
+        return End("bad publisher answer: " + (desc ? error : perr.description), now);
+      }
+      for (const std::string& c : std::exchange(lk_->pending_pub_candidates, {})) LiveKitTrickle(c, false, now);
+      break;
+    }
+    case Kind::kOffer:
+      LiveKitSubscriberOffer(r.description.sdp, r.description.id, now);
+      break;
+    case Kind::kTrickle:
+      LiveKitTrickle(r.trickle.candidate_init, r.trickle.target == livekit::SignalTarget::kSubscriber, now);
+      break;
+    case Kind::kUpdate:
+      for (const auto& p : r.participants) {
+        if (p.identity == lk_->identity) continue;
+        if (p.state == livekit::ParticipantInfo::State::kDisconnected) {
+          if (lk_->others.erase(p.identity)) Log("participant left: " + p.identity);
+        } else {
+          if (!lk_->others.count(p.identity)) Log("participant joined: " + p.identity);
+          lk_->others[p.identity] = p;
+        }
+      }
+      break;
+    case Kind::kLeave:
+      End("LiveKit server leave (reason " + std::to_string(r.leave.reason) + ")", now);
+      break;
+    case Kind::kPongResp:
+      // Our ping's timestamp (this clock, in ms) comes back: the signaling round trip.
+      if (now.us() / 1000 >= r.pong.last_ping_timestamp) {
+        lk_->rtt_ms = static_cast<double>(now.us() / 1000 - r.pong.last_ping_timestamp);
+      }
+      break;
+    case Kind::kInvalid:
+      Log("undecodable LiveKit message (" + std::to_string(bytes.size()) + " bytes)");
+      break;
+    default:
+      break;  // Speakers, connection quality, stream state, refreshed token: nothing to do yet (C20).
+  }
 }
 
 void CallClient::OnSignal(const std::string& text, Timestamp now) {
   if (state_ == CallState::kEnded) return;
+  if (lk_) return OnLiveKit(text, now);
   auto m = net::JsonParseFlat(text);
   const std::string& type = m["type"];
   if (type == "joined") {
@@ -486,6 +753,11 @@ void CallClient::AddCandidate(std::map<std::string, std::string>& m, Timestamp n
 Timestamp CallClient::Step(Timestamp now) {
   if (state_ == CallState::kEnded || !ep_) return now + TimeDelta::Millis(10);
   ep_->Process(now);
+  if (sub_) sub_->Process(now);
+  if (lk_ && now >= lk_->next_ping) {  // LiveKit's keepalive: ping_req every ping_interval.
+    SendSignal(livekit::EncodePing(now.us() / 1000, lk_->rtt_ms < 0 ? 0 : static_cast<int64_t>(lk_->rtt_ms)));
+    lk_->next_ping = now + lk_->ping_interval;
+  }
   if (state_ != CallState::kConnected && ep_->IsConnected() && ep_->session()) {
     state_ = CallState::kConnected;
     connect_ms_ = (now - start_).ms_f();
@@ -501,14 +773,17 @@ Timestamp CallClient::Step(Timestamp now) {
     }
     Audio(now);
     if (video_enabled_) video_->Send(*ep_, config_.video_fps, now);
-    video_->Receive(*ep_, now);
+    if (pc::PeerEndpoint* rx = receiver(); rx && rx->session()) video_->Receive(*rx, now);
     ep_->FlushOutgoing(now);
+    if (sub_ && sub_->session()) sub_->FlushOutgoing(now);
     if (now >= next_stats_) {
       UpdateStats(now);
       next_stats_ = now + TimeDelta::Seconds(1);
     }
   }
-  return std::min(ep_->NextProcessTime(now), now + TimeDelta::Millis(5));
+  Timestamp next = std::min(ep_->NextProcessTime(now), now + TimeDelta::Millis(5));
+  if (sub_) next = std::min(next, sub_->NextProcessTime(now));
+  return next;
 }
 
 void CallClient::Wait(Timestamp now, TimeDelta wait) {
@@ -525,7 +800,9 @@ void CallClient::Audio(Timestamp now) {
       if (playout_ring_.size() >= kPlayoutTarget) break;
     }
     std::array<float, k10ms> pcm{};
-    if (ep_->audio_receive()) s->GetAudio(*ep_->audio_receive(), pcm, now);
+    if (pc::PeerEndpoint* rx = receiver(); rx && rx->session() && rx->audio_receive()) {
+      rx->session()->GetAudio(*rx->audio_receive(), pcm, now);
+    }
     if (apm_) apm_->Render(pcm);
     std::lock_guard<std::mutex> lock(audio_mu_);
     for (float v : pcm) playout_ring_.push_back(static_cast<int16_t>(std::clamp(v, -1.f, 1.f) * 32767));
@@ -618,7 +895,14 @@ void CallClient::UpdateStats(Timestamp now) {
   for (const auto& o : r.outbound) {
     if (!o.video) c.audio_packets_sent += o.packets_sent;
   }
-  for (const auto& in : r.inbound) {
+  // Received audio: the subscriber connection's with LiveKit.
+  rtp::StatsReport rx_report;
+  const rtp::StatsReport* rr = &r;
+  if (lk_) {
+    if (sub_ && sub_->session()) sub_->session()->GetStats(now, &rx_report);
+    rr = &rx_report;
+  }
+  for (const auto& in : rr->inbound) {
     if (in.video) continue;
     c.audio_packets_received += in.packets_received;
     c.audio_packets_lost += in.packets_lost;
@@ -678,6 +962,13 @@ void CallClient::UpdateStats(Timestamp now) {
   c.capture_chain = apm_ ? apm_->chain() : "off";
   c.opus_kbps = encoder_->target_bitrate_bps() / 1000.0;
   c.audio_allocation_kbps = audio_allocation_kbps_;
+  if (lk_) {
+    c.livekit_room = lk_->room;
+    c.livekit_participants = static_cast<int>(lk_->others.size());
+    c.livekit_published = static_cast<int>(lk_->published.size());
+    c.livekit_subscriber = lk_->subscriber;
+    c.livekit_signal_rtt_ms = lk_->rtt_ms;
+  }
   std::lock_guard<std::mutex> lock(stats_mu_);
   stats_ = std::move(c);
 }

@@ -73,21 +73,14 @@ struct Scenario {
   // `two_way_video both|up|down` (issue #747): in a two-way call with video, which directions send it: both (the
   // default), up (user to AI) or down (AI to user). Only for `call two-way`.
   bool video_up = true, video_down = true;
-  // `call mesh <N>` (issue #1072, part 1 of C9): a mesh call of N = 3 or 4 participants (0: not a mesh). Each
-  // participant is an endpoint with one session per other participant, as a browser mesh has one RTCPeerConnection
-  // per peer, and its own access link: the uplink follows the `at` lines, the downlink the `reverse at` lines, each
-  // overridden per participant by `participant <i> [reverse] at ...`. RunCall also runs N = 2 internally, as the 1:1
-  // reference for mesh.upload_cost_ratio.
-  int mesh = 0;
-  // `transport direct|ice` (issue #1087): with `ice`, each connection (the one-way and two-way call's, each pair of
-  // a mesh's) is set up through the full stack, between two C6 part 3 endpoints: offer/answer and trickled
-  // candidates, ICE on an emulated network with NATs, STUN and TURN, DTLS, and the call's media as SRTP over the
-  // bundled transport, on the scenario's links (testbench/ice_transport.h). Direct (the default) sends the media
+  // `transport direct|ice` (issue #1087): with `ice`, the call's connection (the one-way or the two-way call's) is
+  // set up through the full stack, between two C6 part 3 endpoints: offer/answer and trickled candidates, ICE on an
+  // emulated network with NATs, STUN and TURN, DTLS, and the call's media as SRTP over the bundled transport, on the scenario's links (testbench/ice_transport.h). Direct (the default) sends the media
   // straight over the links. A build without TLS (wasm, sm_compare) runs `ice` as direct; such a build doesn't
   // register the `transport ice` scenarios as tests, and they say `compare off`.
   bool transport_ice = false;
   // `nat [a|b] none|open_cone|addr_restricted|port_restricted|symmetric`: the NAT in front of side a (the sender,
-  // the user, the lower-numbered participant) or b; both without a side. -1: none (a public address), else a
+  // the user) or b; both without a side. -1: none (a public address), else a
   // sim::NatType.
   int ice_nat[2] = {-1, -1};
   // `turn udp|tcp|tls|off`: relay through the emulated TURN server over that protocol (both sides, relay only).
@@ -252,14 +245,6 @@ struct Scenario {
 
   std::vector<LinkChange> forward;
   std::vector<LinkChange> reverse;
-  // `participant <i> at ...` and `participant <i> reverse at ...` (issue #1072): changes to participant i's (1-based)
-  // uplink or downlink in a mesh call, applied after the scenario's own at the same time, in file order.
-  struct ParticipantChange {
-    int participant = 1;
-    bool reverse = false;  // The downlink.
-    LinkChange change;
-  };
-  std::vector<ParticipantChange> participant_links;
   std::vector<Expectation> expectations;
 };
 
