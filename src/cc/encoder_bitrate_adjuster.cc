@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <string>
 
 namespace sm::cc {
 
@@ -374,6 +375,126 @@ void EncoderBitrateAdjuster::ExportMetrics(MetricsWriter& w) const {
   w.Gauge("link_utilization_factor", link_factor_);
   w.Gauge("media_utilization_factor", media_factor_);
   w.Gauge("adjusted_kbps", adjusted_.kbps());
+}
+
+// ---- EncoderBitrateAdjuster::AdjustRateAllocation for simulcast layers -----
+
+SimulcastEncoderBitrateAdjuster::SimulcastEncoderBitrateAdjuster(EncoderBitrateAdjusterConfig cfg,
+                                                                 std::vector<DataRate> min_bitrates)
+    : cfg_(cfg), layers_(min_bitrates.size()), adjusted_(min_bitrates.size()) {
+  for (size_t i = 0; i < layers_.size(); ++i) layers_[i].min = min_bitrates[i];
+}
+
+std::vector<DataRate> SimulcastEncoderBitrateAdjuster::AdjustRates(const std::vector<DataRate>& targets,
+                                                                   DataRate bandwidth_allocation,
+                                                                   double framerate_fps, Timestamp now) {
+  using A = EncoderBitrateAdjuster;
+  const size_t n = layers_.size();
+  auto target_of = [&](size_t si) { return si < targets.size() ? targets[si] : DataRate::Zero(); };
+  // A layer has a detector while it has both a positive bitrate and frame rate target.
+  for (size_t si = 0; si < n; ++si) {
+    Layer& l = layers_[si];
+    if (target_of(si).bps() > 0 && framerate_fps > 0) {
+      if (!l.detector) {
+        l.detector.emplace(A::kWindowSizeMs);
+        frames_since_layout_change_ = 0;
+      }
+    } else if (l.detector) {
+      l.detector.reset();
+      frames_since_layout_change_ = 0;
+    }
+    if (cfg_.newfangled_headroom_adjustment) {
+      if (target_of(si).IsZero()) {
+        l.tracker.reset();
+      } else {
+        if (!l.tracker) l.tracker.emplace(A::kMaxDataPointsInUtilizationTrackers, TimeDelta::Millis(A::kWindowSizeMs));
+        l.tracker->OnDataRateChanged(target_of(si), now);  // The unadjusted target.
+      }
+    }
+  }
+  DataRate wanted_overshoot_sum = DataRate::Zero();
+  std::vector<DataRate> wanted(n, DataRate::Zero());
+  DataRate target_sum = DataRate::Zero();
+  for (size_t si = 0; si < n; ++si) {
+    Layer& l = layers_[si];
+    const DataRate target = target_of(si);
+    target_sum += target;
+    double link, media;
+    if (frames_since_layout_change_ < A::kMinFramesSinceLayoutChange) {
+      link = media = A::kDefaultUtilizationFactor;
+    } else if (!l.detector || target.IsZero()) {
+      link = media = 1.0;  // An unused layer: the bitrate passes through.
+    } else {
+      link = l.detector->GetNetworkRateUtilizationFactor(now.ms()).value_or(A::kDefaultUtilizationFactor);
+      media = cfg_.newfangled_headroom_adjustment
+                  ? l.tracker->GetRateUtilizationFactor(now).value_or(A::kDefaultUtilizationFactor)
+                  : l.detector->GetMediaRateUtilizationFactor(now.ms()).value_or(A::kDefaultUtilizationFactor);
+    }
+    if (link < 1.0) {
+      link = 1.0;  // Don't boost the target if the encoder is under-using.
+    } else {
+      link = std::min(link, 2.0);  // Not below 50%: the frame dropper takes over.
+      wanted[si] = WantedOvershoot(link, media, target);
+      wanted_overshoot_sum += wanted[si];
+    }
+    l.link_factor = link;
+    l.media_factor = media;
+  }
+  // The link headroom fills the wanted overshoots, all in the same proportion.
+  DataRate available_headroom = DataRate::Zero();
+  if (cfg_.utilize_bandwidth_headroom) available_headroom = bandwidth_allocation - target_sum;
+  const double granted_overshoot_ratio =
+      wanted_overshoot_sum.IsZero()
+          ? 0.0
+          : std::min(1.0, static_cast<double>(available_headroom.bps()) / static_cast<double>(wanted_overshoot_sum.bps()));
+  for (size_t si = 0; si < n; ++si) {
+    Layer& l = layers_[si];
+    const DataRate target = target_of(si);
+    double utilization_factor = l.link_factor;
+    const double allowed_overshoot = granted_overshoot_ratio * static_cast<double>(wanted[si].bps());
+    if (allowed_overshoot > 0) {
+      // Pretend the target bitrate is higher by the allowed overshoot.
+      utilization_factor *= static_cast<double>(target.bps()) / (allowed_overshoot + static_cast<double>(target.bps()));
+    }
+    const int64_t min_bps = l.min.bps();
+    if (min_bps > 0 && target.bps() > 0 && min_bps < target.bps()) {
+      // The adjuster doesn't push the target below the minimum.
+      utilization_factor = std::min(utilization_factor, static_cast<double>(target.bps()) / static_cast<double>(min_bps));
+    }
+    int64_t adjusted_bps = 0;
+    if (target.bps() > 0) {
+      adjusted_bps = std::min(
+          static_cast<int64_t>(static_cast<uint32_t>(static_cast<double>(target.bps()) / utilization_factor + 0.5)),
+          target.bps());
+      if (adjusted_bps < min_bps) adjusted_bps = min_bps;  // Rounding errors: added to TL0 up to the minimum.
+    }
+    adjusted_[si] = DataRate::BitsPerSec(adjusted_bps);
+    if (adjusted_bps > 0 && l.detector) l.detector->SetTargetRate(adjusted_[si], framerate_fps, now.ms());
+  }
+  return adjusted_;
+}
+
+void SimulcastEncoderBitrateAdjuster::OnEncodedFrame(size_t layer, DataSize size, Timestamp now) {
+  if (layer >= layers_.size()) return;
+  ++frames_since_layout_change_;
+  Layer& l = layers_[layer];
+  if (l.detector) l.detector->OnEncodedFrame(static_cast<size_t>(size.bytes()), now.ms());
+  if (l.tracker) l.tracker->OnDataProduced(size, now);
+}
+
+void SimulcastEncoderBitrateAdjuster::OnFrameDropped(Timestamp now) {
+  for (Layer& l : layers_) {
+    if (l.detector) l.detector->OnEncodedFrame(0, now.ms());
+    if (l.tracker) l.tracker->OnDataProduced(DataSize::Zero(), now);
+  }
+}
+
+void SimulcastEncoderBitrateAdjuster::ExportMetrics(MetricsWriter& w) const {
+  for (size_t i = 0; i < layers_.size(); ++i) {
+    const std::string p = "layer" + std::to_string(i) + "_";
+    w.Gauge(p + "link_utilization_factor", layers_[i].link_factor);
+    w.Gauge(p + "adjusted_kbps", adjusted_[i].kbps());
+  }
 }
 
 }  // namespace sm::cc

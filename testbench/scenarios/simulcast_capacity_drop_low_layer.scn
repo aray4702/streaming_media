@@ -1,0 +1,12 @@
+name simulcast_capacity_drop_low_layer
+describe Simulcast send (C17, #1162): as simulcast_capacity_drop, with the bottom layer measured (a receiver subscribed to 320x180): it rides through the drop
+duration 30s
+simulcast 3
+simulcast_view 0
+at 0s capacity=4000kbps delay=25ms queue=300ms
+at 10s capacity=800kbps
+# libwebrtc on sm_compare seeds 1-20: render 27.9-29.3 fps, longest freeze 414-1802 ms (ours 27.9-29.3, 414-1782; the
+# test bench's own seeds 1-5 reach 2539 ms).
+expect video.render_fps >= 26
+expect video.longest_freeze_ms < 3000
+expect audio.interruptions == 0

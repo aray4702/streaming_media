@@ -17,7 +17,7 @@ One document per algorithm: problem, the issue it solves, design, implementation
 | 1.9 | [TCP packet sockets](1-connectivity/1.9-tcp-sockets.md) | 31 | 0 | 0 | not recorded | not recorded | not recorded | not recorded |
 | 1.10 | [SDP model and parse/write](1-connectivity/1.10-sdp.md) | 80 | 0 | 0 | not recorded | not recorded | not recorded | not recorded |
 | 1.11 | [Offer/answer generation](1-connectivity/1.11-offer-answer.md) | 65 | 0 | 0 | not recorded | not recorded | not recorded | not recorded |
-| 1.12 | [The endpoint (PeerEndpoint)](1-connectivity/1.12-endpoint.md) | 18 | 1 | 0 | not recorded | not recorded | not recorded | not recorded |
+| 1.12 | [The endpoint (PeerEndpoint)](1-connectivity/1.12-endpoint.md) | 21 | 1 | 0 | not recorded | not recorded | not recorded | not recorded |
 
 ## 2. Security
 
@@ -91,6 +91,7 @@ One document per algorithm: problem, the issue it solves, design, implementation
 | 7.4 | [Content hints and screen-content variable frame rate](7-video/7.4-content-policy.md) | 2 | 1 | 2 | not recorded | not recorded | not recorded | not recorded |
 | 7.7 | [Render timing and late-frame dropping](7-video/7.7-frame-scheduler.md) | 2 | 1 | 1 | not recorded | not recorded | not recorded | not recorded |
 | 7.8 | [QP-based quality scaler](7-video/7.8-quality-scaler.md) | 1 | 1 | 1 | not recorded | not recorded | not recorded | not recorded |
+| 7.9 | [Simulcast send](7-video/7.9-simulcast-send.md) | 0 | 0 | 0 | not recorded | not recorded | not recorded | not recorded |
 
 ## 8. Synchronization
 

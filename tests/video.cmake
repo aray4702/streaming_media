@@ -3,6 +3,7 @@ sm_add_test_exe(sm_unit_video LABEL unit DEPS sm::video
     unit/video/bitrate_adjuster_test.cc
     unit/video/frame_cadence_adapter_test.cc
     unit/video/resource_adaptation_processor_test.cc
+    unit/video/simulcast_test.cc
     unit/video/video_test.cc
   SUITES
     BitrateAdjuster
@@ -18,6 +19,10 @@ sm_add_test_exe(sm_unit_video LABEL unit DEPS sm::video
     QualityScaler
     RenderFrames
     ResourceAdaptationProcessor
+    ScreenshareRateAllocation
+    Simulcast
+    SimulcastRateAllocator
+    EncoderStreamFactory
     VideoAdapter
     VideoStreamAdapter
 )

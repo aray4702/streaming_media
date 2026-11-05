@@ -15,6 +15,7 @@
 #include "scenario.h"
 #include "sm/cc/send_side_bwe.h"
 #include "sm/sim/network_link.h"
+#include "sm/video/simulcast.h"
 
 namespace sm::testbench {
 
@@ -245,6 +246,15 @@ int AudioCodecRate(int capture_rate);
 // cc.max_settle_ms and cc.unsettled from rep.timeseries. `demand_kbps` is
 // the media's maximum wire rate (what the call would send on an unlimited link).
 void AddCcMetrics(const Scenario& s, double demand_kbps, Report& rep);
+// Simulcast (C17, issue #1162), shared by both implementations: the VideoEncoderConfig a `simulcast` scenario's
+// encoder gets (H.264, one encoding per layer, the stream maximum `video_max` and the lowest layer's minimum
+// `video_min`, as sm_compare configures libwebrtc's VideoSendStream); the video's maximum rate for AddCcMetrics'
+// demand (`video_max`, or with simulcast the sum of the layers' maximums for `video_size`); and the per-layer
+// metrics simulcast.layer<i>_fps, _kbps, _keyframes and simulcast.total_kbps from each layer encoder's counts.
+video::VideoEncoderConfig SimulcastEncoderConfig(const Scenario& s);
+double VideoDemandKbps(const Scenario& s);
+void AddSimulcastMetrics(const Scenario& s, const std::vector<int64_t>& frames, const std::vector<int64_t>& bytes,
+                         const std::vector<int64_t>& keyframes, Report& rep);
 // The same for one link of a call: `changes` are that link's (a two-way call's down direction runs on the reverse link).
 void AddCcMetrics(const Scenario& s, const std::vector<LinkChange>& changes, double demand_kbps, Report& rep);
 // Also adds cc.target_max_drop_pct and cc.send_over_target_p95_pct.

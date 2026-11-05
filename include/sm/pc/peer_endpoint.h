@@ -72,7 +72,7 @@
 //
 // Differences from libwebrtc, none of them on the wire:
 // - The send side stays as the first offer/answer that sent set it: one audio and one video send stream (the config's
-//   transceivers; C17 adds simulcast). A later change of their direction is signaled but does not start or stop the
+//   transceivers; with simulcast, C17, one video send stream per layer). A later change of their direction is signaled but does not start or stop the
 //   send streams. Extra transceivers send only with `external_media` (the host's packets on their fixed SSRCs).
 // - No tracks or MediaStream objects: a remote track is reported as a RemoteTrack value. When the peer moves a
 //   section that is being received to another SSRC, the track is reported removed and added again (libwebrtc keeps
@@ -161,6 +161,24 @@ struct PeerEndpointConfig {
   // The SSRCs the local description announces (a=ssrc, the FID group), for a host whose sessions send on fixed
   // SSRCs, as an app that munges the SDP before SetLocalDescription. Unset: the generated ones.
   std::optional<uint32_t> audio_ssrc, video_ssrc, video_rtx_ssrc;
+  // Simulcast send (C17, issue #1162): the RIDs of the video sender's encodings, lowest resolution first, as
+  // RTCRtpTransceiverInit.sendEncodings with rids (e.g. {"q", "h", "f"}). With two or more, the offer carries an
+  // a=rid:<rid> send line per encoding and a=simulcast:send <rid>;<rid>;... and no SSRCs (sdp_offer_answer.cc
+  // GetMediaDescriptionOptionsForTransceiver, media_session.cc CreateStreamParamsForNewSenderWithRids), as an SFU
+  // such as LiveKit expects; when the answer is applied the SSRCs are generated per layer, with RTX (BaseChannel::
+  // UpdateLocalStreams_w), and the session gets one video send stream per layer with its RID
+  // (video_simulcast_sends()). An answer without a=simulcast or the RID extension rejects simulcast and only the
+  // first encoding stays active (DisableSimulcastInSender); a layer the answer pauses (~rid) or leaves out is
+  // inactive (UpdateSimulcastLayerStatusInSender). Every later offer and answer (an SFU's re-offer as participants
+  // join, C18) signals the same RIDs, again without SSRCs, and the layers keep their send streams and SSRCs; each
+  // later remote description updates the layers' state the same way. Empty or one RID: no simulcast.
+  std::vector<std::string> video_simulcast_rids;
+};
+
+// One negotiated simulcast encoding of the video sender (RtpEncodingParameters rid and active).
+struct SimulcastEncoding {
+  std::string rid;
+  bool active = true;
 };
 
 // PeerConnectionInterface::SignalingState, for C6's subset.
@@ -252,6 +270,10 @@ class PeerEndpoint {
   // The first remote audio / video track's receive stream (in transceiver order), as in a one-to-one call.
   std::optional<rtp::AudioRecvId> audio_receive() const;
   std::optional<rtp::VideoRecvId> video_receive() const;
+  // Simulcast (PeerEndpointConfig::video_simulcast_rids): the send stream of each layer, lowest first (video_send()
+  // is the first), and each encoding's RID and negotiated state, once an answer is applied. Empty without simulcast.
+  const std::vector<rtp::VideoSendId>& video_simulcast_sends() const { return video_simulcast_sends_; }
+  const std::vector<SimulcastEncoding>& video_simulcast() const { return video_simulcast_; }
 
   // RTCPeerConnection.createDataChannel(), before or after the offer. Null, with `error` set, when data channels are
   // off for this connection (kInvalidState), not built (kUnsupportedOperation), or the config is invalid.
@@ -298,6 +320,7 @@ class PeerEndpoint {
   // The offer/answer completed: transceiver states, the session (created at the first one) and the remote tracks.
   bool ApplyNegotiation(std::string* error);
   void UpdateTransceiverReceive(Transceiver& t, const ContentInfo* answer, const ContentInfo* remote);
+  void UpdateSimulcastLayers(Transceiver& t, const MediaContentDescription& remote);
   void RemoveRemoteTrack(Transceiver& t);
   void UnregisterSink(Transceiver& t);
   void RemoveStoppedTransceivers();
@@ -339,6 +362,8 @@ class PeerEndpoint {
   sync::ExtensionMap extensions_;      // The session's negotiated header extensions.
   std::optional<rtp::AudioSendId> audio_send_;
   std::optional<rtp::VideoSendId> video_send_;
+  std::vector<rtp::VideoSendId> video_simulcast_sends_;
+  std::vector<SimulcastEncoding> video_simulcast_;
   Timestamp last_now_ = Timestamp::MinusInfinity();
   int send_failures_ = 0;
 

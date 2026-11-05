@@ -691,6 +691,22 @@
    "cost": ""
   },
   {
+   "id": "F7.9",
+   "kind": "library",
+   "area": "Video quality and processing",
+   "catalog": "7.9",
+   "title": "Simulcast send",
+   "acceptance": "(1) Ports video/config/simulcast.cc, the simulcast path of encoder_stream_factory.cc, simulcast_rate_allocator.cc and simulcast_utility.cc, and SimulcastEncoderAdapter's behaviour in the send path. (2) Defaults equal libwebrtc's (bitrate tables, 1.2 hysteresis, per-SSRC pacing, PLI keys every layer). (3) Simulcast.*, EncoderStreamFactory.*, SimulcastRateAllocator.*, SimulcastSend.* pass; the simulcast_* scenarios have no behind cell against libwebrtc. (4) No open req:F7.9 item. Part of C17.",
+   "status": "open",
+   "evidence": "See C17 (#1162).",
+   "verification": "",
+   "verified": "",
+   "start": "2026-11-04",
+   "end": "",
+   "depends_on": [],
+   "cost": ""
+  },
+  {
    "id": "F8.1",
    "kind": "library",
    "area": "Synchronization",
@@ -1188,7 +1204,7 @@
     "C6",
     "C16"
    ],
-   "evidence": "",
+   "evidence": "Issue #1162, PR c17/simulcast-send: video/config/simulcast.cc and the simulcast path of encoder_stream_factory.cc (sm/video/simulcast.h), simulcast_rate_allocator.cc and simulcast_utility.cc (sm/video/simulcast_rate_allocator.h), the per-layer EncoderBitrateAdjuster, rtp::SimulcastSendController (VideoStreamEncoder with a SimulcastEncoderAdapter: one encoder per layer, layers paused below 1 kbps and keyed on return, PLI on any layer keys every layer), VideoSendStreamImpl's allocation limits for several streams, RID/repaired RID on the wire, SRs per layer, the pacer's round robin between SSRCs and per-SSRC keyframe flush, a=rid/a=simulcast offer and the SFU's answer in PeerEndpoint; sm_compare runs libwebrtc's simulcast (three SSRCs/RIDs, SimulcastEncoderAdapter) on the four simulcast_* scenarios with 0 gaps on 10 seeds (simulcast_capacity_drop_low_layer 0 on 20). Remaining: CPU adaptation and per-layer frame rate with simulcast, temporal layers, the 3% random-loss freeze difference (on #1162), Chrome sending simulcast to this library (needs C18).",
    "verification": "",
    "start": "2026-11-04",
    "end": "",

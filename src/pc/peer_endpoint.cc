@@ -142,6 +142,11 @@ struct PeerEndpoint::Transceiver {
   std::string track_id;
   std::vector<std::string> stream_ids;
   std::optional<uint32_t> ssrc, rtx_ssrc;
+  // Simulcast send (C17): the RIDs of the sender's encodings still in the simulcast envelope (the config's
+  // video_simulcast_rids; DisableSimulcastInSender and DisableEncodingLayers take encodings out), and whether the
+  // session sends them (an answer was applied with this transceiver's RIDs).
+  std::vector<std::string> send_rids;
+  bool simulcast_negotiated = false;
   // The receiver: the remote track being received, and the decoder the factory made for it.
   std::optional<RemoteTrack> remote;
   std::unique_ptr<rtp::AudioDecoder> decoder;
@@ -191,6 +196,7 @@ PeerEndpoint::PeerEndpoint(PeerEndpointConfig config, Timestamp now)
     t->stream_ids = {config_.stream_id};
     t->ssrc = config_.video_ssrc;
     if (config_.video_ssrc) t->rtx_ssrc = config_.video_rtx_ssrc;
+    if (config_.video_simulcast_rids.size() > 1) t->send_rids = config_.video_simulcast_rids;
     transceivers_.push_back(std::move(t));
   }
 #if SM_ENDPOINT_DATA_CHANNELS
@@ -238,6 +244,21 @@ MediaDescriptionOptions PeerEndpoint::OptionsForTransceiver(const Transceiver& t
   if (stopped || (!RtpTransceiverDirectionHasSend(t.direction) && !t.has_ever_been_used_to_send)) return o;
   if (t.kind == MediaType::AUDIO) {
     o.AddAudioSender(t.track_id, t.stream_ids);
+  } else if (!t.send_rids.empty() && (offer || t.simulcast_negotiated)) {
+    // Simulcast (C17): a send RID per encoding and the simulcast layers, paused where the encoding is inactive; with
+    // RIDs, num_sim_layers is 0 (no SSRCs: the layers' SSRCs are made when the first answer is applied, and every
+    // later description reuses this stream, AddStreamParams). A subsequent offer or answer signals the same RIDs, so
+    // an SFU's re-offer keeps the layers (C18). An answer signals them only once they are negotiated: a remote
+    // offer's simulcast section never takes this transceiver (AssociateTransceiver), so a first answer has none.
+    std::vector<RidDescription> rids;
+    SimulcastLayerList layers;
+    for (const std::string& rid : t.send_rids) {
+      rids.emplace_back(rid, RidDirection::kSend);
+      auto it = std::find_if(video_simulcast_.begin(), video_simulcast_.end(),
+                             [&](const SimulcastEncoding& e) { return e.rid == rid; });
+      layers.AddLayer(SimulcastLayer(rid, /*is_paused=*/it != video_simulcast_.end() && !it->active));
+    }
+    o.AddVideoSender(t.track_id, t.stream_ids, rids, layers, 0);
   } else {
     o.AddVideoSender(t.track_id, t.stream_ids, {}, SimulcastLayerList(), 1);
   }
@@ -709,6 +730,13 @@ bool PeerEndpoint::ApplyNegotiation(std::string* error) {
       }
     }
     if (added) session_->SetExtensions(extensions_);
+    // The simulcast sender's layers after a subsequent offer/answer (an SFU's re-offer, or the answer to our own):
+    // the remote section's state for them (AssociateTransceiver for an existing transceiver).
+    for (auto& t : transceivers_) {
+      if (!t || !t->mid || !t->simulcast_negotiated || t->stopping || t->stopped) continue;
+      const ContentInfo* rc = remote->GetContentByName(*t->mid);
+      if (rc && !rc->rejected && rc->media_description()) UpdateSimulcastLayers(*t, *rc->media_description());
+    }
   }
   for (auto& t : transceivers_) {
     if (!t || !t->mid) continue;
@@ -736,9 +764,11 @@ bool PeerEndpoint::CreateMediaSession(const SessionDescription& answer, std::str
   }
   if (!media_rtp_transport_) return Fail(error, "No transport for the media sections.");
   struct Send {
+    Transceiver* transceiver = nullptr;
     const ContentInfo* content = nullptr;
     const MediaContentDescription* answer = nullptr;
     const StreamParams* stream = nullptr;
+    std::optional<StreamParams> simulcast;  // The RID stream with the SSRCs made for its layers.
   } audio, video;
   for (const auto& t : transceivers_) {
     if (!t || !t->created_by_addtrack || !t->mid) continue;
@@ -747,7 +777,20 @@ bool PeerEndpoint::CreateMediaSession(const SessionDescription& answer, std::str
     const MediaContentDescription* l = local->GetContentDescriptionByName(*t->mid);
     if (s.content || !c || c->rejected || !l || !RtpTransceiverDirectionHasSend(l->direction())) continue;
     const StreamParams* sp = FirstStream(l);
+    if (!sp && t->kind == MediaType::VIDEO && !t->send_rids.empty() && !l->streams().empty() &&
+        l->streams()[0].has_rids()) {
+      // BaseChannel::UpdateLocalStreams_w: a sender signaled with RIDs and no SSRCs (simulcast, C17) gets an SSRC
+      // per layer, and an RTX SSRC for each when RTX is negotiated. Made once: later descriptions keep signaling the
+      // RIDs without SSRCs, and the session keeps these layers (C18 keeps the send side as first negotiated).
+      s.simulcast = l->streams()[0];
+      const Codec* h264 = FindCodec(c->media_description()->codecs(), kH264CodecName);
+      const bool rtx = h264 && FindRtxFor(c->media_description()->codecs(), h264->id);
+      s.simulcast->GenerateSsrcs(static_cast<int>(s.simulcast->rids().size()), rtx, /*generate_fec_fr=*/false,
+                                 [this] { return ssrc_generator_.GenerateId(); });
+      sp = &*s.simulcast;
+    }
     if (!sp) continue;
+    s.transceiver = t.get();
     s.content = c;
     s.answer = c->media_description();
     s.stream = sp;
@@ -787,12 +830,63 @@ bool PeerEndpoint::CreateMediaSession(const SessionDescription& answer, std::str
     const Codec* rtx = FindRtxFor(video.answer->codecs(), h264->id);
     if (rtx) v.rtx_payload_type = static_cast<uint8_t>(rtx->id);
     v.parser = &h264_parser_;
-    v.ssrc = video.stream->first_ssrc();
-    uint32_t fid = 0;
-    v.rtx_ssrc = rtx && video.stream->GetFidSsrc(v.ssrc, &fid) ? std::optional<uint32_t>(fid) : std::nullopt;
-    video_send_ = session_->AddVideoSend(v);
+    if (video.simulcast) {
+      // One send stream per encoding, with its SSRC, RTX SSRC and RID (RtpVideoSender's module per layer); each
+      // encoding's state comes from the remote answer (UpdateSimulcastLayers).
+      std::vector<uint32_t> primaries;
+      video.stream->GetPrimarySsrcs(&primaries);
+      const auto& rids = video.stream->rids();
+      for (size_t i = 0; i < rids.size() && i < primaries.size(); ++i) {
+        SimulcastEncoding enc;
+        enc.rid = rids[i].rid;
+        v.ssrc = primaries[i];
+        uint32_t fid = 0;
+        v.rtx_ssrc = rtx && video.stream->GetFidSsrc(v.ssrc, &fid) ? std::optional<uint32_t>(fid) : std::nullopt;
+        v.rid = enc.rid;
+        video_simulcast_sends_.push_back(session_->AddVideoSend(v));
+        video_simulcast_.push_back(enc);
+      }
+      v.rid.clear();
+      if (!video_simulcast_sends_.empty()) video_send_ = video_simulcast_sends_.front();
+      video.transceiver->simulcast_negotiated = true;
+      const MediaContentDescription* remote_video =
+          remote_description_->description()->GetContentDescriptionByName(video.content->mid());
+      if (remote_video) UpdateSimulcastLayers(*video.transceiver, *remote_video);
+    } else {
+      v.ssrc = video.stream->first_ssrc();
+      uint32_t fid = 0;
+      v.rtx_ssrc = rtx && video.stream->GetFidSsrc(v.ssrc, &fid) ? std::optional<uint32_t>(fid) : std::nullopt;
+      video_send_ = session_->AddVideoSend(v);
+    }
   }
   return true;
+}
+
+// The simulcast sender's encodings from a remote description's section (AssociateTransceiver, sdp_offer_answer.cc):
+// SimulcastIsRejected (the remote section has no a=simulcast or no RID extension, while ours offered simulcast)
+// leaves only the first encoding (DisableSimulcastInSender); otherwise UpdateSimulcastLayerStatusInSender: an encoding
+// the remote's receive layers pause is inactive and one they leave out is taken out of the envelope (DisableEncoding
+// Layers: inactive, and no longer signaled). The send streams themselves stay (video_simulcast_sends()).
+void PeerEndpoint::UpdateSimulcastLayers(Transceiver& t, const MediaContentDescription& remote) {
+  bool rid_negotiated = false;
+  for (const RtpExtension& e : remote.rtp_header_extensions()) rid_negotiated |= e.uri == RtpExtension::kRidUri;
+  if (!remote.HasSimulcast() || !rid_negotiated) {
+    for (size_t i = 1; i < video_simulcast_.size(); ++i) video_simulcast_[i].active = false;
+    if (t.send_rids.size() > 1) t.send_rids.resize(1);
+    return;
+  }
+  const std::vector<SimulcastLayer> layers = remote.simulcast_description().receive_layers().GetAllLayers();
+  for (SimulcastEncoding& enc : video_simulcast_) {
+    auto rid = std::find(t.send_rids.begin(), t.send_rids.end(), enc.rid);
+    if (rid == t.send_rids.end()) continue;  // Disabled earlier: stays out.
+    auto it = std::find_if(layers.begin(), layers.end(), [&](const SimulcastLayer& l) { return l.rid == enc.rid; });
+    if (it == layers.end()) {
+      enc.active = false;
+      t.send_rids.erase(rid);
+      continue;
+    }
+    enc.active = !it->is_paused;
+  }
 }
 
 // One associated transceiver after the offer/answer completed. Its channel (BaseChannel) registers the section's

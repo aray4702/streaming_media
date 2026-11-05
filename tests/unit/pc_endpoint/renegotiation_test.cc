@@ -514,3 +514,153 @@ SM_TEST(PcRenegotiation, ReceiveRemoteTracksOffRejectsSectionsWithoutATransceive
   SM_EXPECT_TRUE(lines[2].rfind("m=video 0 ", 0) == 0);
   SM_EXPECT_EQ(tracks, 1);
 }
+
+// Simulcast send (C17) through an SFU's re-offers (C18), as a LiveKit publisher: the client offers three layers by RID
+// (no SSRCs), the SFU takes them (a=simulcast:recv, as LiveKit's SFU answers; this library's answerer doesn't receive
+// simulcast, so the test adds it to the SFU's descriptions), and the client sends each layer on its own SSRC. Another
+// participant joins: the SFU re-offers with that participant's sendonly sections. The client's answer signals the
+// same RIDs and simulcast layers, again without SSRCs; its three send streams keep their RIDs and SSRCs and keep
+// reaching the SFU, and the new participant's video is received on its own stream.
+namespace {
+std::string WithSimulcastRecv(std::string sdp) {
+  const std::string anchor = "a=mid:1\r\n";
+  const size_t at = sdp.find(anchor);
+  if (at == std::string::npos) return sdp;
+  sdp.insert(at + anchor.size(), "a=rid:q recv\r\na=rid:h recv\r\na=rid:f recv\r\na=simulcast:recv q;h;f\r\n");
+  return sdp;
+}
+
+// The m= section of `sdp` with a=mid:<mid>.
+std::string SectionOfMid(const std::string& sdp, const std::string& mid) {
+  const size_t at = sdp.find("a=mid:" + mid + "\r\n");
+  if (at == std::string::npos) return "";
+  const size_t begin = sdp.rfind("m=", at);
+  const size_t end = sdp.find("\r\nm=", at);
+  return sdp.substr(begin, end == std::string::npos ? std::string::npos : end + 2 - begin);
+}
+
+uint32_t SsrcOf(std::span<const uint8_t> rtp) {
+  return rtp.size() < 12 ? 0 : (uint32_t{rtp[8]} << 24) | (uint32_t{rtp[9]} << 16) | (uint32_t{rtp[10]} << 8) | rtp[11];
+}
+}  // namespace
+
+SM_TEST(PcRenegotiation, SfuReofferKeepsTheSimulcastLayersAndAddsARemoteTrack) {
+  EndpointWorld w;
+  std::map<uint32_t, int> at_sfu;  // The client's RTP packets the SFU got, by SSRC.
+  PeerEndpoint* sfu = w.AddEndpoint("sfu", [&](PeerEndpointConfig& c) {
+    SfuConfig(c, [&](std::span<const uint8_t> p, bool rtcp, Timestamp) {
+      if (!rtcp) ++at_sfu[SsrcOf(p)];
+    });
+  });
+  Decoders decoders;
+  PeerEndpoint* client = w.AddEndpoint("client", [&](PeerEndpointConfig& c) {
+    c.audio_decoder_factory = decoders.Factory();
+    c.enable_data_channels = false;
+    c.video_simulcast_rids = {"q", "h", "f"};
+  });
+  std::map<std::string, RemoteTrack> tracks;
+  client->SetOnTrack([&](const RemoteTrack& t) { tracks[t.mid] = t; });
+  EndpointWorld::Link* link = w.Connect(client, sfu);
+  link->munge = [](int to, SdpType, std::string sdp) { return to == 0 ? WithSimulcastRecv(std::move(sdp)) : sdp; };
+
+  SM_ASSERT_TRUE(link->Offer(0, w.now));
+  SM_ASSERT_TRUE(w.RunUntil([&] { return client->IsConnected() && sfu->IsConnected(); }, TimeDelta::Seconds(10)));
+  SM_ASSERT_TRUE(link->ok);
+  SM_EXPECT_TRUE(SdpHas(link->last_offer, "a=simulcast:send q;h;f"));
+  rtp::Session* s = client->session();
+  SM_ASSERT_TRUE(s != nullptr);
+  SM_ASSERT_EQ(client->video_simulcast_sends().size(), 3u);
+  struct Layer {
+    int index;
+    std::string rid;
+    uint32_t ssrc;
+    std::optional<uint32_t> rtx_ssrc;
+  };
+  std::vector<Layer> layers;
+  for (const rtp::VideoSendId id : client->video_simulcast_sends()) {
+    const auto& c = s->video_sender(id).config();
+    layers.push_back({id.index, c.rid, c.ssrc, c.rtx_ssrc});
+  }
+  for (const SimulcastEncoding& e : client->video_simulcast()) SM_EXPECT_TRUE(e.active);
+
+  // Participant 2 joins: the SFU re-offers; the client answers.
+  AddParticipant(sfu, 2);
+  SM_ASSERT_TRUE(link->Offer(1, w.now));
+  w.Run(TimeDelta::Millis(500));
+  SM_ASSERT_TRUE(link->ok);
+  SM_EXPECT_TRUE(client->signaling_state() == SignalingState::kStable);
+  SM_EXPECT_EQ(MediaLines(link->last_answer).size(), 4u);
+  const std::string video = SectionOfMid(link->last_answer, "1");
+  for (const char* line : {"a=rid:q send", "a=rid:h send", "a=rid:f send", "a=simulcast:send q;h;f"}) {
+    SM_EXPECT_TRUE(SdpHas(video, line));
+  }
+  SM_EXPECT_TRUE(video.find("a=ssrc:") == std::string::npos);
+  SM_ASSERT_TRUE(client->session() == s);
+  SM_ASSERT_EQ(client->video_simulcast_sends().size(), 3u);
+  for (size_t i = 0; i < 3; ++i) {
+    const rtp::VideoSendId id = client->video_simulcast_sends()[i];
+    const auto& c = s->video_sender(id).config();
+    SM_EXPECT_EQ(id.index, layers[i].index);
+    SM_EXPECT_EQ(c.rid, layers[i].rid);
+    SM_EXPECT_EQ(c.ssrc, layers[i].ssrc);
+    SM_EXPECT_TRUE(c.rtx_ssrc == layers[i].rtx_ssrc);
+    SM_EXPECT_TRUE(client->video_simulcast()[i].active);
+  }
+  SM_ASSERT_TRUE(tracks.count("3") == 1 && tracks["3"].video.has_value());
+  SM_EXPECT_EQ(tracks["3"].ssrc, 0x201u);
+  SM_EXPECT_TRUE(s->HasVideoReceive(*tracks["3"].video));
+
+  // Media: participant 2's session sends H.264 as the SFU's section 3; the client sends a frame on every layer.
+  const MediaContentDescription* p2_video = sfu->local_description()->description()->GetContentDescriptionByName("3");
+  SM_ASSERT_TRUE(p2_video != nullptr);
+  uint8_t h264_pt = 0, rtx_pt = 0;
+  for (const Codec& c : p2_video->codecs()) {
+    if (c.name == kH264CodecName && h264_pt == 0) h264_pt = static_cast<uint8_t>(c.id);
+  }
+  for (const Codec& c : p2_video->codecs()) {
+    std::string apt;
+    if (c.name == kRtxCodecName && c.GetParam(kCodecParamAssociatedPayloadType, &apt) && apt == std::to_string(h264_pt))
+      rtx_pt = static_cast<uint8_t>(c.id);
+  }
+  SM_ASSERT_TRUE(h264_pt != 0 && rtx_pt != 0);
+  rtp::SessionConfig pc;
+  pc.local_ssrc = 0x201;
+  pc.cname = "p2";
+  for (const RtpExtension& e : p2_video->rtp_header_extensions()) {
+    if (e.uri != RtpExtension::kTransportSequenceNumberUri) pc.extensions.Register(static_cast<uint8_t>(e.id), e.uri);
+  }
+  pc.mid_video = "3";
+  rtp::Session p2(pc);
+  rtp::VideoStreamConfig pv;
+  pv.ssrc = 0x201;
+  pv.rtx_ssrc = 0x202;
+  pv.payload_type = h264_pt;
+  pv.rtx_payload_type = rtx_pt;
+  const rtp::VideoSendId p2_send = p2.AddVideoSend(pv);
+  at_sfu.clear();
+  int frames = 0, received = 0;
+  Timestamp next = w.now;
+  w.SetHook(
+      [&](Timestamp now) {
+        if (now < next) return;
+        const bool key = frames % 30 == 0;
+        const std::vector<uint8_t> frame = rtp::MakeFakeH264Frame(key, key ? 4000 : 1000);
+        p2.SendVideo(p2_send, {static_cast<uint32_t>(3000 * frames), frame, key}, now);
+        p2.Process(now);
+        for (rtp::OutgoingPacket& o : p2.TakeOutgoing()) {
+          sfu->SendMediaPacket(o.bytes, o.kind == rtp::OutgoingKind::kRtcp, now);
+        }
+        for (const rtp::VideoSendId id : client->video_simulcast_sends()) {
+          s->SendVideo(id, {static_cast<uint32_t>(3000 * frames), frame, key}, now);
+        }
+        client->FlushOutgoing(now);
+        received += static_cast<int>(s->TakeVideoFrames(*tracks["3"].video).size());
+        ++frames;
+        next = now + TimeDelta::Millis(33);
+      },
+      [&] { return next; });
+  w.Run(TimeDelta::Seconds(2));
+  SM_EXPECT_TRUE(link->ok);
+  SM_EXPECT_GT(received, frames - 10);
+  for (const Layer& l : layers) SM_EXPECT_GT(at_sfu[l.ssrc], 20);
+}

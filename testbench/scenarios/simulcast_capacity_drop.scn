@@ -1,0 +1,11 @@
+name simulcast_capacity_drop
+describe Simulcast send (C17, #1162): a 4 Mbps link drops to 800 kbps at 10 s; the top layer is switched off (SimulcastRateAllocator), the lower two keep going; the top layer is measured
+duration 30s
+simulcast 3
+at 0s capacity=4000kbps delay=25ms queue=300ms
+at 10s capacity=800kbps
+# The top layer stops at the drop and the 1370 kbps it needs back (150 + 500 + 1.2 x 600) never returns: about a
+# third of the call; the bottom layer runs throughout.
+expect simulcast.layer2_fps < 15
+expect simulcast.layer0_fps >= 28
+expect audio.interruptions == 0
