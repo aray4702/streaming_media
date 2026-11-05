@@ -23,4 +23,11 @@ out/native/apps/ai_server/sm_ai_server --signaling=ws://HOST:8080/ws --metrics=c
   `conv.response_delay_ms` and `conv.barge_in_stop_ms` as the server sees them, and the user's speech concealed.
 - **Test:** `e2e.AiServer` calls it with a native endpoint through an in-test stub of the signaling protocol and
   through `apps/signaling/server.py` (skipped without python3).
-- **Group calls (LiveKit, C19 #1164):** not yet. The server answers one-to-one `ai-` rooms only. Joining a LiveKit room as a participant (C20) can reuse the native LiveKit client in `apps/call` (`CallClientConfig::livekit`, `livekit_proto.h`; [docs/deploy/livekit.md](../../docs/deploy/livekit.md)), once C18 lets it receive several streams.
+- **Group calls (LiveKit, C20 #1172):** `--livekit=ws[s]://HOST:PORT|auto --token=http[s]://HOST:PORT/lk-token
+  --room=R [--identity=ai-server]` joins the LiveKit room R as a participant instead of answering `ai-` rooms
+  (`ai_livekit.h`), through the native LiveKit client of `apps/call`. Every participant's audio is decoded on its own,
+  and the turn detector hears the active speaker's (LiveKit's speaker updates, else a local meter). While the AI speaks
+  or nobody does, it keeps listening to the last speaker. Replies are the same conversation as a one-to-one call
+  (`AiConversation`, shared with `AiCall`). It prints a status line once a second (its metrics, `listening_to`,
+  `listened` and the client's per-participant stats) and leaves on SIGINT/SIGTERM or `--max-seconds`. Tested by
+  `interop.WebApp.group_all` ([docs/deploy/livekit.md](../../docs/deploy/livekit.md)).

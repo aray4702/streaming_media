@@ -2,14 +2,19 @@
 //
 //   sm_ai_server [--signaling=ws://HOST:PORT/ws] [--turn=http://HOST:PORT/turn|none] [--ip=A.B.C.D]... [--relay]
 //                [--metrics=FILE] [--reply-seconds=S] [--first-chunk-ms=MS] [--max-seconds=S] [--quiet]
+//   sm_ai_server --livekit=ws[s]://HOST:PORT|auto --token=http[s]://HOST:PORT/lk-token --room=R [--identity=ID]
+//                [same options]
 //
-// Runs until SIGINT or SIGTERM (or --max-seconds), then logs the open calls' metrics.
+// Runs until SIGINT or SIGTERM (or --max-seconds), then logs the open calls' metrics. With --livekit (C20, #1172) it
+// joins the LiveKit room R as a participant instead (ai_livekit.h), answers the active speaker's turns, prints its
+// status as a JSON line once a second, and leaves when stopped or when the room ends.
 #include <chrono>
 #include <csignal>
 #include <cstdio>
 #include <cstdlib>
 #include <string>
 
+#include "ai_livekit.h"
 #include "ai_server.h"
 
 namespace {
@@ -28,6 +33,8 @@ int main(int argc, char** argv) {
   sm::apps::AiServerConfig config;
   config.verbose = true;
   double reply_seconds = 3, max_seconds = 0;
+  sm::apps::AiLiveKitConfig livekit;
+  bool use_livekit = false;
   for (int i = 1; i < argc; ++i) {
     const std::string a = argv[i];
     auto value = [&](const char* prefix) -> const char* {
@@ -54,6 +61,15 @@ int main(int argc, char** argv) {
         return 2;
       }
       config.interfaces.push_back(*ip);
+    } else if ((v = value("--livekit="))) {
+      use_livekit = true;
+      livekit.livekit_url = std::string(v) == "auto" ? "" : v;
+    } else if ((v = value("--token="))) {
+      livekit.token_url = v;
+    } else if ((v = value("--room="))) {
+      livekit.room = v;
+    } else if ((v = value("--identity="))) {
+      livekit.identity = v;
     } else if (a == "--relay") {
       config.relay_only = true;
     } else if (a == "--quiet") {
@@ -61,7 +77,9 @@ int main(int argc, char** argv) {
     } else {
       std::fprintf(stderr,
                    "usage: sm_ai_server [--signaling=ws[s]://HOST:PORT/ws] [--turn=URL|none] [--ip=A.B.C.D]... [--relay] "
-                   "[--metrics=FILE] [--reply-seconds=S] [--first-chunk-ms=MS] [--max-seconds=S] [--quiet]\n");
+                   "[--metrics=FILE] [--reply-seconds=S] [--first-chunk-ms=MS] [--max-seconds=S] [--quiet]\n"
+                   "       sm_ai_server --livekit=ws[s]://HOST:PORT|auto --token=http[s]://HOST:PORT/lk-token --room=R "
+                   "[--identity=ID] [same options]\n");
       return a == "--help" ? 0 : 2;
     }
   }
@@ -71,6 +89,32 @@ int main(int argc, char** argv) {
   std::signal(SIGINT, OnSignal);
   std::signal(SIGTERM, OnSignal);
   std::signal(SIGPIPE, SIG_IGN);
+  if (use_livekit) {
+    if (livekit.token_url.empty() || livekit.room.empty()) {
+      std::fprintf(stderr, "--livekit needs --token=URL and --room=R\n");
+      return 2;
+    }
+    sm::apps::AiLiveKitParticipant ai(config, livekit);
+    const sm::Timestamp start = Now();
+    if (!ai.Start(start)) {
+      std::fprintf(stderr, "cannot join LiveKit room %s: %s\n", livekit.room.c_str(), ai.error().c_str());
+      return 1;
+    }
+    sm::Timestamp next_status = start;
+    while (!g_stop && !ai.ended() && (max_seconds <= 0 || (Now() - start).seconds() < max_seconds)) {
+      const sm::Timestamp now = Now();
+      const sm::Timestamp next = ai.Step(now);
+      if (now >= next_status) {
+        std::printf("%s\n", ai.StatusJson().c_str());
+        std::fflush(stdout);
+        next_status = now + sm::TimeDelta::Seconds(1);
+      }
+      ai.Wait(now, next - now);
+    }
+    ai.Shutdown(Now());
+    std::printf("%s\n", ai.StatusJson().c_str());
+    return 0;
+  }
   sm::apps::AiServer server(config);
   const sm::Timestamp start = Now();
   if (!server.Start(start)) {
