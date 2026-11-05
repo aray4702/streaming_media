@@ -84,9 +84,10 @@ The library:
 
 | App | What it is |
 |---|---|
-| iOS app (SmCall, `apps/ios`) | SwiftUI calling app, verified on a real iPhone: calls the AI server or a web user by room code; GPU video at the received frame rate; iOS voice processing, as libwebrtc's iOS client |
-| Web app (`apps/web`) | One page on the browser's WebRTC (Chrome), plus the signaling service (`apps/signaling`) |
-| AI server (`apps/ai_server`) | Answers `ai-` rooms with the library, a turn detector and a reply source; caller-side results in [real-network calls](docs/results/real-network-calls.md) |
+| iOS app (SmCall, `apps/ios`) | SwiftUI calling app, verified on a real iPhone: calls the AI server or a web user by room code; GPU video at the received frame rate; iOS voice processing, as libwebrtc's iOS client; a Group mode with a grid of up to 6 through LiveKit |
+| Web app (`apps/web`) | One page on the browser's WebRTC (Chrome), plus the signaling service (`apps/signaling`); a Group mode (`?group=1`) with a grid of up to 6 through LiveKit |
+| AI server (`apps/ai_server`) | Answers `ai-` rooms with the library, a turn detector and a reply source; caller-side results in [real-network calls](docs/results/real-network-calls.md); joins a LiveKit room as a participant (`--livekit`) |
+| LiveKit SFU (Lightsail) | Group calls of up to 6: simulcast from each sender, the SFU picks a layer per receiver; receivers mix audio with libwebrtc's `AudioMixerImpl`. Real 6-way call: [real-group-call](docs/results/real-group-call.md) |
 
 
 The native build passes 603 of 603 ctest tests on macOS arm64 (main with #1156, 2026-11-04; `interop.Coturn` skips without a local coturn), and the iOS simulator build passes its 238 unit tests (Xcode 27.2, the CI job's flags). The older full runs on WebAssembly (Node), ASan+UBSan and `-fno-exceptions -fno-rtti` cover sections 3-8 only ([details](docs/results/README.md)). Android and embedded Linux ARM are cross-built in CI.
@@ -245,25 +246,19 @@ docs/                                                    research, design, algor
 
 ## Next steps and open questions
 
-**Where it stands (2026-11-04):**
-- **Library:** it covers sections 1-10. Against libwebrtc M157 it is 0 behind and 69 ahead ([Benchmarks](#benchmarks)).
-- **Apps:** the iOS app, the web app and the AI server run on real networks through the Lightsail host ([Status](#status)).
-- **Requirements:** 96 of 103 are done (`tools/requirements.json`); open are C13 (Android) and C16-C21 (group calls).
+**Where it stands (2026-11-05):**
+- **Library:** it covers sections 1-10, plus simulcast send, multi-stream receive with renegotiation, and the receive-side audio mixer. Against libwebrtc M157 it is 0 behind and 69 ahead ([Benchmarks](#benchmarks)).
+- **Apps:** the iOS app, the web app and the AI server run on real networks through the Lightsail host, for 1:1 calls and for group calls of up to 6 through LiveKit ([Status](#status)).
+- **Requirements:** 104 of 105 are done (`tools/requirements.json`); only C13 (Android) is open.
 
-**Next: group video calls of up to 6** ([#1160](https://github.com/aray4702/streaming_media/issues/1160), C16-C21), through a LiveKit SFU:
-
-- **C16:** record the topology (SFU; the mesh of 3-4 dropped).
-- **C17:** simulcast send, as libwebrtc.
-- **C18:** multi-stream receive.
-- **C19:** LiveKit deployed next to coturn, with a signaling client for the native apps.
-- **C20:** a grid of up to 6 in the web and iOS apps.
-- **C21:** group-call test bench scenarios and a real 6-way call.
+**Done: group video calls of up to 6** ([#1160](https://github.com/aray4702/streaming_media/issues/1160), C16-C21, 2026-11-05): SFU topology (mesh dropped), simulcast send, multi-stream receive, LiveKit on Lightsail, web and iOS grids with the AI as a participant, a simulated SFU in the test bench and a real 6-way call.
 
 **Later, for the Owner to choose:**
 
 - **A real AI model** behind `AiReplySource` (speech in, speech out); its generation time adds directly to the response delay.
 - **Protecting the Lightsail server's `/turn` endpoint:** a shared app key, credentials only inside a joined call, or user sign-in.
 - **Android (C13)**, unplanned.
+- **Group calls, follow-ups:** a real group call from well-connected clients (the 2026-11-04 run used one MacBook on home Wi-Fi, so it measured the link, not the SFU); the AI server subscribing to audio only, so LiveKit can pause video layers no one watches; per-participant freeze and jitter-buffer stats in the native client.
 
 **Known open issues:** none. Recently fixed: ICE-TCP host candidates ([#1151](https://github.com/aray4702/streaming_media/issues/1151)), remote mDNS candidates ([#1152](https://github.com/aray4702/streaming_media/issues/1152)), bitrate recovery after the link improves ([#14](https://github.com/aray4702/streaming_media/issues/14)), test bench memory on long calls ([#633](https://github.com/aray4702/streaming_media/issues/633)).
 
