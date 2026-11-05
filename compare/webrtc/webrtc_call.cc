@@ -1288,6 +1288,8 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
   // the sync rows carry the relative delay it computes (issue #895).
   w::StreamSynchronization::Measurements sync_audio_m, sync_video_m;
 
+  // Simulcast (issue #1173): the send stream's encoder config, for the layers the scenario pauses and resumes.
+  w::VideoEncoderConfig sc_encoder_config;
   run_on(sender_q.get(), [&] {
     if (s.audio) {
       w::AudioSendStream::Config c(&send_transport);
@@ -1362,6 +1364,7 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
           ec.simulcast_layers[i].min_bitrate_bps = sc.simulcast_layers[i].min_bitrate_bps;
         }
         ec.max_bitrate_bps = sc.max_bitrate_bps;
+        sc_encoder_config = ec.Copy();
       }
       video_send = send_call->CreateVideoSendStream(std::move(c), std::move(ec));
       // A camera: MAINTAIN_FRAMERATE when the quality scaler is on (issue #84),
@@ -1461,6 +1464,7 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
   if (s.audio) speech = sim::SpeechLike(kAudioRate, s.duration.seconds() + 1, s.seed + 7, true);
   const int64_t end_ms = s.duration.ms();
   int64_t next_frame_ms = 0;
+  size_t next_sc_active = 0;  // The next of the scenario's simulcast_pause / simulcast_resume (issue #1173).
   double cross_debt = 0;
   bool stopping = false;
   int64_t last_bwe_target_bps = -1;  // Last target written to rep.bwe_trace (issue #149).
@@ -1490,6 +1494,16 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
       uint32_t mic = 0;
       send_audio_state->audio_transport()->RecordedDataIsAvailable(pcm, kAudioBlock, 2, 1, kAudioRate, 0, 0, 0, false,
                                                                     mic);
+    }
+    // Simulcast (issue #1173): the SFU pauses or resumes a layer. SetRemoteDescription's
+    // UpdateSimulcastLayerStatusInSender sets the encoding's active state, and WebRtcVideoSendStream::SetRtpParameters
+    // reconfigures the encoder with it (ReconfigureEncoder -> VideoSendStream::ReconfigureVideoEncoder).
+    while (sc_layers && video_send && next_sc_active < s.simulcast_active.size() &&
+           s.simulcast_active[next_sc_active].at.ms() <= t) {
+      const testbench::Scenario::SimulcastActive& a = s.simulcast_active[next_sc_active++];
+      if (static_cast<size_t>(a.layer) >= sc_encoder_config.simulcast_layers.size()) continue;
+      sc_encoder_config.simulcast_layers[static_cast<size_t>(a.layer)].active = a.active;
+      sender_q->PostTask([&, cfg = sc_encoder_config.Copy()]() mutable { video_send->ReconfigureVideoEncoder(std::move(cfg)); });
     }
     if (s.video && t >= next_frame_ms) {
       ++model.frames_captured;

@@ -426,6 +426,15 @@ class Session : public MetricsSource {
   // temporal layers FecControllerDefault sizes the FEC for. Until the first
   // call it assumes 704x576 and one layer.
   void SetVideoEncodingData(VideoSendId id, int width, int height, int num_temporal_layers = 1);
+  // A simulcast layer's encoding state (RtpEncodingParameters::active, issue #1173): pc::PeerEndpoint sets it
+  // from the remote description (an SFU's a=simulcast with a paused ~rid, or a layer it leaves out), as
+  // WebRtcVideoSendStream::SetRtpParameters gets it, and rtp::SimulcastSendController reads it and reconfigures
+  // the encoder (VideoStreamEncoder::ConfigureEncoder): an inactive layer is not encoded and its rate goes to the
+  // active ones; a reactivated layer starts with a keyframe. The session itself keeps sending on the stream (RTCP,
+  // retransmissions), as libwebrtc's RTP module per layer stays active (RtpVideoSender::SetActiveModulesLocked;
+  // only the video-layers-allocation extension, not negotiated by default, stops it). Active by default.
+  void SetVideoSendActive(VideoSendId id, bool active);
+  bool video_send_active(VideoSendId id) const;
   // Drops the audio stream's packets that have not left the pacer yet, as
   // ChannelSend::StopSend does (PacingController::RemovePacketsForSsrc on the
   // stream's SSRC, channel_send.cc:633): for an AI sender whose reply the user
@@ -543,6 +552,7 @@ class Session : public MetricsSource {
     std::unique_ptr<loss::FecControllerDefault> fec;
     RateTracker sent_frame_rate{100, 10};
     bool nack = false;  // Video: VideoStreamConfig::nack, for the RTX reservation (SendVideo).
+    bool active = true;  // Video: SetVideoSendActive (RtpEncodingParameters::active).
     // Audio send-ahead (#762): frames handed over early, oldest first, and the byte budget they are sent within.
     struct HeldAudio {
       std::vector<uint8_t> data;

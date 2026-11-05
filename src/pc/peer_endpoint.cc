@@ -868,6 +868,16 @@ bool PeerEndpoint::CreateMediaSession(const SessionDescription& answer, std::str
 // the remote's receive layers pause is inactive and one they leave out is taken out of the envelope (DisableEncoding
 // Layers: inactive, and no longer signaled). The send streams themselves stay (video_simulcast_sends()).
 void PeerEndpoint::UpdateSimulcastLayers(Transceiver& t, const MediaContentDescription& remote) {
+  UpdateSimulcastEncodings(t, remote);
+  // The sender's SetParametersInternal with the encodings' new state reaches the send stream (WebRtcVideoSendStream::
+  // SetRtpParameters): the session holds each layer's state for rtp::SimulcastSendController (issue #1173).
+  if (!session_) return;
+  for (size_t i = 0; i < video_simulcast_.size() && i < video_simulcast_sends_.size(); ++i) {
+    session_->SetVideoSendActive(video_simulcast_sends_[i], video_simulcast_[i].active);
+  }
+}
+
+void PeerEndpoint::UpdateSimulcastEncodings(Transceiver& t, const MediaContentDescription& remote) {
   bool rid_negotiated = false;
   for (const RtpExtension& e : remote.rtp_header_extensions()) rid_negotiated |= e.uri == RtpExtension::kRidUri;
   if (!remote.HasSimulcast() || !rid_negotiated) {

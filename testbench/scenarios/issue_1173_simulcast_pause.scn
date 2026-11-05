@@ -1,0 +1,19 @@
+name issue_1173_simulcast_pause
+describe Simulcast send, issue 1173: the SFU pauses the top layer at 10 s (a=simulcast:recv q;h;~f, as LiveKit does for a layer no subscriber watches) and resumes it at 20 s, on a 4 Mbps link; the paused layer is not encoded or sent and its rate goes to the middle layer, which is measured; the top layer comes back with a keyframe
+duration 30s
+simulcast 3
+simulcast_view 1
+at 0s capacity=4000kbps delay=25ms queue=300ms
+simulcast_pause 2 at 10s
+simulcast_resume 2 at 20s
+# The top layer is not encoded for the 10 s it is paused (20 fps over the call, not 30) and starts again with a
+# keyframe (2: the first frame and the resume); the middle layer, the top active one meanwhile, takes its rate up to
+# its 700 kbps maximum (about 560 kbps over the call, 500 without the pause).
+expect simulcast.layer2_fps < 22
+expect simulcast.layer2_fps > 18
+expect simulcast.layer2_keyframes >= 2
+expect simulcast.layer1_kbps > 530
+expect video.freeze_count == 0
+expect audio.interruptions == 0
+expect simulcast.layer0_fps >= 29
+expect simulcast.layer1_fps >= 29
