@@ -27,8 +27,17 @@
   vendor/livekit-client/, loaded from this server). The token comes from GET /lk-token (this page's host); the LiveKit
   URL is lk=<url>, else the one /lk-token returns, else this page's origin (nginx routes /rtc to LiveKit). The camera
   and microphone are published with simulcast (the SDK's default layers), video in codec=<h264|vp8|...> (default
-  h264, which every client here decodes); relay=1 sets iceTransportPolicy 'relay'. Every remote participant gets a
-  tile (C20 builds the full grid); report=1 posts the received audio and video per participant.
+  h264, which every client here decodes); relay=1 sets iceTransportPolicy 'relay'. The call is a grid of up to 6
+  tiles (C20): this page's camera first ("You"), then one tile per remote participant from the moment it joins, each
+  with its video (its initials when the camera is off), a mic-off badge, a green border while LiveKit counts it among
+  the active speakers (the server's audio levels), a level bar and a stats line (audio kbps, loss, jitter, video size,
+  fps, codec); joins and leaves are logged under the grid. Mute, Video (the camera) and Hang up; n/6 in the room.
+  report=1 posts report.group: per remote participant the received audio and video, its audio level, speaking, mic
+  and camera state and stats; this page's own state; the active speakers, every speaker seen, who joined and left
+  since this page joined and the room's count. For the tests:
+    mic=0       join with the microphone published but muted (Mute unmutes it);
+    cam=0       join with the camera off (Video starts it);
+    leave=<s>   leave the room (as Hang up does) s seconds after joining.
 -->
 <html>
 <head>
@@ -39,8 +48,29 @@
   body { font: 14px system-ui, sans-serif; margin: 1em; }
   video { width: 320px; background: #222; margin: 2px; }
   #stats { white-space: pre; font: 12px monospace; }
-  .tile { display: inline-block; position: relative; vertical-align: top; }
-  .tile span { position: absolute; left: 6px; top: 4px; color: #fff; font-size: 12px; text-shadow: 0 0 2px #000; }
+  /* Group mode (C20): 1 column for 1 tile, 2 for 2-4, 3 for 5-6 (2 on a narrow screen). */
+  #grid { display: grid; gap: 6px; margin: 6px 0; max-width: 1040px; grid-template-columns: minmax(0, 1fr); }
+  #grid[data-cols="1"] { max-width: 720px; }
+  #grid[data-cols="2"] { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  #grid[data-cols="3"] { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  @media (max-width: 700px) { #grid[data-cols="3"] { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  .tile { position: relative; aspect-ratio: 16 / 9; background: #222; border: 3px solid transparent;
+          border-radius: 6px; overflow: hidden; }
+  .tile.speaking { border-color: #22c55e; box-shadow: 0 0 0 2px #22c55e; }
+  .tile video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; margin: 0; }
+  .tile.local video { transform: scaleX(-1); }
+  .tile.camoff video { visibility: hidden; }
+  .tile .avatar { position: absolute; inset: 0; display: none; align-items: center; justify-content: center;
+                  background: #2b2d38; color: #e5e7eb; font-size: 40px; font-weight: 600; }
+  .tile.camoff .avatar { display: flex; }
+  .tile .name { position: absolute; left: 6px; top: 4px; color: #fff; font-size: 12px; text-shadow: 0 0 2px #000; }
+  .tile .micoff { display: none; margin-left: 4px; padding: 0 4px; border-radius: 3px; background: #dc2626; }
+  .tile.muted .micoff { display: inline; }
+  .tile .level { position: absolute; left: 0; bottom: 0; height: 4px; width: 0; background: #22c55e;
+                 transition: width 0.2s; }
+  .tile .info { position: absolute; left: 6px; right: 6px; bottom: 7px; color: #eee; font: 11px monospace;
+                line-height: 1.3; white-space: pre; overflow: hidden; text-shadow: 0 0 2px #000, 0 0 2px #000; }
+  #events { white-space: pre; font: 12px monospace; color: #555; max-height: 8.5em; overflow-y: auto; }
 </style>
 <script src="vendor/livekit-client/livekit-client.umd.js"></script>
 </head>
@@ -52,10 +82,14 @@
   <button id="group">Group</button>
   <button id="ai">Call the AI</button>
   <button id="mute" disabled>Mute</button>
+  <button id="video" hidden>Stop video</button>
   <button id="hangup" disabled>Hang up</button>
+  <span id="count"></span>
   <span id="state">idle</span>
 </div>
 <div><video id="local" autoplay muted playsinline></video><span id="remotes"></span></div>
+<div id="grid" hidden></div>
+<div id="events"></div>
 <div id="stats"></div>
 <script>
 'use strict';
@@ -171,10 +205,68 @@ async function join(code) {
   $('mute').disabled = $('hangup').disabled = false;
 }
 
-// --- Group calls through the LiveKit SFU (C19) -----------------------------------------------------------------------
+// --- Group calls through the LiveKit SFU (C19, C20) ------------------------------------------------------------------
 // One LiveKit Room: the SDK runs the signaling (protobuf over WebSocket) and its two peer connections (publisher and
-// subscriber). Each remote participant gets a tile with its video and audio.
-let group = null;  // {room, tiles: Map identity -> {div, video, audio, tracks: Map sid -> track}}
+// subscriber). The grid holds this page's tile first, then one per remote participant from ParticipantConnected (before
+// its tracks arrive) to ParticipantDisconnected. A tile shows the video, or the initials when there is none or the
+// camera is muted; the mic-off badge; the active-speaker border (LiveKit's speaker updates, from the server's audio
+// levels) and level bar (participant.audioLevel); and a stats line from getStats once a second (tick).
+const GROUP_MAX = 6;  // The LiveKit server's room.max_participants (docs/deploy/livekit.md).
+let group = null;  // {room, connected, local: tile, tiles: Map identity -> tile (remote participants),
+                   //  joined: [identity], left: [identity], speakersSeen: Set, leaveTimer}
+                   // tile: {participant, div, video, videoTrack, audio, level, info, tracks: Map sid -> track, prev}
+
+function initials(identity) {
+  return identity.split(/[^A-Za-z0-9]+/).filter(Boolean).slice(0, 2).map(w => w[0].toUpperCase()).join('') || '?';
+}
+
+function makeTile(participant, local) {  // this page's identity is known before the room connects
+  const identity = local ? myId : participant.identity;
+  const div = document.createElement('div'); div.className = local ? 'tile local' : 'tile';
+  const video = document.createElement('video'); video.autoplay = true; video.playsInline = true; video.muted = true;
+  video.addEventListener('resize', () => renderGroup());  // the first frame (or a new size)
+  const avatar = document.createElement('div'); avatar.className = 'avatar'; avatar.textContent = initials(identity);
+  const name = document.createElement('span'); name.className = 'name';
+  const micoff = document.createElement('span'); micoff.className = 'micoff'; micoff.textContent = 'mic off';
+  name.append(local ? `You (${identity})` : identity, micoff);
+  const level = document.createElement('div'); level.className = 'level';
+  const info = document.createElement('div'); info.className = 'info';
+  div.append(video, avatar, name, info, level);
+  $('grid').appendChild(div);
+  return {participant, div, video, videoTrack: null, audio: null, level, info, tracks: new Map(), prev: null};
+}
+
+function micMuted(p) {
+  const pub = p.getTrackPublication(window.LivekitClient.Track.Source.Microphone);
+  return !pub || pub.isMuted;
+}
+
+function cameraOff(p) {
+  const pub = p.getTrackPublication(window.LivekitClient.Track.Source.Camera);
+  return !pub || pub.isMuted;
+}
+
+function logEvent(text) {
+  const el = $('events'), lines = el.textContent ? el.textContent.split('\n') : [];
+  lines.push(new Date().toTimeString().slice(0, 8) + ' ' + text);
+  el.textContent = lines.slice(-50).join('\n');
+  el.scrollTop = el.scrollHeight;
+}
+
+// The tiles' state from the participants (on every room event and once a second).
+function renderGroup() {
+  if (!group) return;
+  const all = [group.local, ...group.tiles.values()];
+  $('grid').dataset.cols = all.length <= 1 ? 1 : all.length <= 4 ? 2 : 3;
+  for (const t of all) {
+    const p = t.participant;
+    t.div.classList.toggle('speaking', !!p.isSpeaking);
+    t.div.classList.toggle('muted', micMuted(p));
+    t.div.classList.toggle('camoff', !t.videoTrack || cameraOff(p) || !t.video.videoWidth);  // no frame yet: initials
+    t.level.style.width = Math.round(100 * Math.min(1, p.audioLevel || 0)) + '%';
+  }
+  $('count').textContent = `${group.room.remoteParticipants.size + 1}/${GROUP_MAX}`;
+}
 
 async function joinGroup(code) {
   if (ws || group || !code) return;
@@ -190,70 +282,188 @@ async function joinGroup(code) {
     adaptiveStream: true, dynacast: true,
     publishDefaults: {simulcast: true, videoCodec: params.get('codec') || 'h264'},
   });
-  group = {room: lkRoom, tiles: new Map()};
+  const G = group = {room: lkRoom, connected: false, tiles: new Map(), joined: [], left: [], speakersSeen: new Set(),
+                     leaveTimer: null};
+  $('events').textContent = '';
+  $('local').hidden = true; $('grid').hidden = false;
+  G.local = makeTile(lkRoom.localParticipant, true);
   const tile = participant => {
-    let g = group.tiles.get(participant.identity);
-    if (!g) {
-      const div = document.createElement('div'); div.className = 'tile';
-      const video = document.createElement('video'); video.autoplay = true; video.playsInline = true;
-      const label = document.createElement('span'); label.textContent = participant.identity;
-      div.append(video, label); $('remotes').appendChild(div);
-      g = {div, video, audio: null, tracks: new Map()};
-      group.tiles.set(participant.identity, g);
-    }
+    let g = G.tiles.get(participant.identity);
+    if (!g) { g = makeTile(participant, false); G.tiles.set(participant.identity, g); }
+    g.participant = participant;
     return g;
   };
-  lkRoom.on(LK.RoomEvent.ParticipantConnected, p => tile(p))
+  const live = () => group === G;  // Events after Hang up (the SDK's own teardown) change nothing.
+  const render = () => { if (live()) renderGroup(); };
+  lkRoom.on(LK.RoomEvent.ParticipantConnected, p => {
+      if (!live()) return;
+      tile(p);
+      if (G.connected) { G.joined.push(p.identity); logEvent(p.identity + ' joined'); }
+      renderGroup();
+    })
     .on(LK.RoomEvent.TrackSubscribed, (track, pub, p) => {
+      if (!live()) return;
       const g = tile(p);
       g.tracks.set(pub.trackSid, track);
-      if (track.kind === 'video') track.attach(g.video);
+      if (track.kind === 'video') { track.attach(g.video); g.videoTrack = track; }
       else { g.audio = track.attach(); g.div.appendChild(g.audio); }
+      renderGroup();
     })
     .on(LK.RoomEvent.TrackUnsubscribed, (track, pub, p) => {
-      const g = group && group.tiles.get(p.identity);
       track.detach();
-      if (g) g.tracks.delete(pub.trackSid);
+      const g = live() && G.tiles.get(p.identity);
+      if (!g) return;
+      g.tracks.delete(pub.trackSid);
+      if (g.videoTrack === track) g.videoTrack = null;
+      if (g.audio && track.kind === 'audio') { g.audio.remove(); g.audio = null; }
+      renderGroup();
     })
     .on(LK.RoomEvent.ParticipantDisconnected, p => {
-      const g = group && group.tiles.get(p.identity);
-      if (g) { g.div.remove(); group.tiles.delete(p.identity); }
+      const g = live() && G.tiles.get(p.identity);
+      if (!g) return;
+      g.div.remove(); G.tiles.delete(p.identity);
+      G.left.push(p.identity); logEvent(p.identity + ' left');
+      renderGroup();
     })
-    .on(LK.RoomEvent.ConnectionStateChanged, s => setState('group: ' + s))
-    .on(LK.RoomEvent.Disconnected, () => setState('disconnected'));
+    .on(LK.RoomEvent.LocalTrackPublished, pub => {
+      if (!live() || pub.source !== LK.Track.Source.Camera || !pub.track) return;
+      pub.track.attach(G.local.video); G.local.videoTrack = pub.track;
+      renderGroup();
+    })
+    .on(LK.RoomEvent.LocalTrackUnpublished, pub => {
+      if (!live() || !pub.track || pub.track !== G.local.videoTrack) return;
+      pub.track.detach(G.local.video); G.local.videoTrack = null;
+      renderGroup();
+    })
+    .on(LK.RoomEvent.ActiveSpeakersChanged, speakers => {
+      if (!live()) return;
+      for (const p of speakers) G.speakersSeen.add(p.identity);
+      renderGroup();
+    })
+    .on(LK.RoomEvent.TrackMuted, render).on(LK.RoomEvent.TrackUnmuted, render)
+    .on(LK.RoomEvent.TrackPublished, render).on(LK.RoomEvent.TrackUnpublished, render)
+    .on(LK.RoomEvent.ConnectionStateChanged, s => { if (live()) setState('group: ' + s); })
+    .on(LK.RoomEvent.Disconnected, () => { if (live()) setState('disconnected'); });
   const rtcConfig = params.get('relay') === '1' ? {iceTransportPolicy: 'relay'} : undefined;
-  await lkRoom.connect(url, t.token, rtcConfig ? {rtcConfig} : {});
+  try {
+    await lkRoom.connect(url, t.token, rtcConfig ? {rtcConfig} : {});
+  } catch (e) {
+    // A full room (room.max_participants): the server closes the signal WebSocket at once ("room has exceeded its max
+    // participants" in its log) and the SDK only reports a WebSocket error; its follow-up check (/rtc/validate) found
+    // the server up and the token good, or the message would say so. So that error, here, means the room refused
+    // this join, and a full room is the likely reason.
+    const msg = String((e && e.message) || e);
+    closeGroup();
+    room = null;
+    const full = /full|max.?participants|exceeded|websocket error during connection establishment/i.test(msg);
+    setState('error: ' + (full ? `the room refused the join, likely full (${GROUP_MAX}/${GROUP_MAX}): ` : '') + msg);
+    return;
+  }
+  G.connected = true;
   for (const p of lkRoom.remoteParticipants.values()) tile(p);
-  await lkRoom.localParticipant.enableCameraAndMicrophone();
-  const cam = lkRoom.localParticipant.getTrackPublication(LK.Track.Source.Camera);
-  if (cam && cam.track) $('local').srcObject = new MediaStream([cam.track.mediaStreamTrack]);
-  $('mute').disabled = $('hangup').disabled = false;
+  logEvent(`you (${myId}) joined ${code}: ${lkRoom.remoteParticipants.size + 1}/${GROUP_MAX}`);
+  renderGroup();
+  // mic=0: the microphone is published muted (Mute unmutes it); cam=0: no camera until Video.
+  const lp = lkRoom.localParticipant, micOn = params.get('mic') !== '0', camOn = params.get('cam') !== '0';
+  if (micOn && camOn) {
+    await lp.enableCameraAndMicrophone();
+  } else {
+    if (camOn) await lp.setCameraEnabled(true);
+    if (micOn) await lp.setMicrophoneEnabled(true);
+    else { const mic = await LK.createLocalAudioTrack(); await mic.mute(); await lp.publishTrack(mic); }
+  }
+  if (!live()) return;
+  $('mute').textContent = micOn ? 'Mute' : 'Unmute';
+  $('video').textContent = camOn ? 'Stop video' : 'Start video';
+  $('mute').disabled = $('hangup').disabled = false; $('video').hidden = false;
+  renderGroup();
+  if (params.get('leave')) G.leaveTimer = setTimeout(() => { if (live()) hangup(); }, 1000 * +params.get('leave'));
 }
 
-// Per remote participant: audio bytes and decoded video frames from its tracks' receivers; and what this page sends
-// (the camera's simulcast encodings and codec).
+function closeGroup() {
+  if (!group) return;
+  const G = group; group = null;
+  clearTimeout(G.leaveTimer);
+  G.room.disconnect();
+  for (const g of [G.local, ...G.tiles.values()]) g.div.remove();
+  $('grid').hidden = true; $('local').hidden = false; $('video').hidden = true; $('count').textContent = '';
+  $('mute').textContent = 'Mute';
+  if (G.connected) logEvent('you left');
+}
+
+// One track's getStats, added into s: received (a remote participant's tracks) or sent (this page's).
+function addTrackStats(s, rep) {
+  const byId = {}; rep.forEach(r => { byId[r.id] = r; });
+  rep.forEach(r => {
+    if (r.type === 'inbound-rtp' && r.kind === 'audio') {
+      s.audioBytesIn += r.bytesReceived || 0; s.audioPacketsLost += r.packetsLost || 0;
+      s.audioPacketsReceived += r.packetsReceived || 0; s.audioJitterMs = Math.round((r.jitter || 0) * 10000) / 10;
+    } else if (r.type === 'inbound-rtp' && r.kind === 'video') {
+      s.videoFrames += r.framesDecoded || 0; s.videoWidth = r.frameWidth || s.videoWidth;
+      s.videoHeight = r.frameHeight || s.videoHeight; s.videoFps = r.framesPerSecond || 0;
+      const c = byId[r.codecId]; if (c) s.videoCodec = c.mimeType;
+    } else if (r.type === 'outbound-rtp' && r.kind === 'audio') {
+      s.audioBytesOut += r.bytesSent || 0;
+    } else if (r.type === 'outbound-rtp' && r.kind === 'video') {
+      // Simulcast: one row per layer; the line shows the largest one sent.
+      s.videoBytesOut += r.bytesSent || 0;
+      if ((r.frameWidth || 0) >= s.videoWidth) {
+        s.videoWidth = r.frameWidth || 0; s.videoHeight = r.frameHeight || 0; s.videoFps = r.framesPerSecond || 0;
+      }
+      const c = byId[r.codecId]; if (c) s.videoCodec = c.mimeType;
+    }
+  });
+}
+
+function kbps(prev, bytes, now) {  // since the last second's report
+  return prev ? Math.max(0, Math.round((bytes - prev.bytes) * 8 / Math.max(1, now - prev.t))) : 0;
+}
+
+function videoText(s) {
+  if (!s.videoWidth) return 'none';
+  return `${s.videoWidth}x${s.videoHeight} ${Math.round(s.videoFps)} fps ${(s.videoCodec || '').replace('video/', '')}`;
+}
+
+// Per remote participant: audio bytes and decoded video frames from its tracks' receivers, its audio level, speaking,
+// mic and camera state, and stats; what this page sends (the camera's simulcast encodings and codec) and its own
+// state; the active speakers (and every one seen), who joined and left after this page joined, and the room's count.
+// Each tile's stats line is written from the same numbers.
 async function groupReport() {
   const out = {participants: {}, sending: {}};
-  if (!group) return out;
-  for (const [identity, g] of group.tiles) {
-    const s = {audioBytesIn: 0, videoFrames: 0, videoWidth: 0, videoCodec: ''};
+  const G = group;
+  if (!G) return out;
+  const now = Date.now();
+  for (const [identity, g] of G.tiles) {
+    const p = g.participant;
+    const s = {audioBytesIn: 0, videoFrames: 0, videoWidth: 0, videoCodec: '', videoHeight: 0, videoFps: 0,
+               audioKbps: 0, audioPacketsReceived: 0, audioPacketsLost: 0, audioJitterMs: 0,
+               audioLevel: Math.round(1000 * (p.audioLevel || 0)) / 1000, isSpeaking: !!p.isSpeaking,
+               micMuted: micMuted(p), cameraOff: cameraOff(p)};
     for (const track of g.tracks.values()) {
       const rep = await track.getRTCStatsReport().catch(() => null);
-      if (!rep) continue;
-      const byId = {}; rep.forEach(r => { byId[r.id] = r; });
-      rep.forEach(r => {
-        if (r.type !== 'inbound-rtp') return;
-        if (r.kind === 'audio') s.audioBytesIn += r.bytesReceived || 0;
-        if (r.kind === 'video') {
-          s.videoFrames += r.framesDecoded || 0; s.videoWidth = r.frameWidth || s.videoWidth;
-          const c = byId[r.codecId]; if (c) s.videoCodec = c.mimeType;
-        }
-      });
+      if (rep) addTrackStats(s, rep);
     }
+    s.audioKbps = kbps(g.prev, s.audioBytesIn, now);
+    g.prev = {t: now, bytes: s.audioBytesIn};
+    const total = s.audioPacketsReceived + s.audioPacketsLost;
+    const loss = total ? (100 * s.audioPacketsLost / total).toFixed(1) : '0.0';
+    g.info.textContent = `audio ${s.micMuted ? 'muted' : s.audioKbps + ' kbps'}, loss ${loss}%, ` +
+        `jitter ${s.audioJitterMs} ms\nvideo ${videoText(s)}`;
     out.participants[identity] = s;
   }
-  const LK = window.LivekitClient;
-  const cam = group.room.localParticipant.getTrackPublication(LK.Track.Source.Camera);
+  const LK = window.LivekitClient, lp = G.room.localParticipant;
+  const mine = {audioBytesOut: 0, videoBytesOut: 0, videoWidth: 0, videoHeight: 0, videoFps: 0, videoCodec: ''};
+  for (const source of [LK.Track.Source.Microphone, LK.Track.Source.Camera]) {
+    const pub = lp.getTrackPublication(source);
+    const rep = pub && pub.track && await pub.track.getRTCStatsReport().catch(() => null);
+    if (rep) addTrackStats(mine, rep);
+  }
+  const prev = G.local.prev || {};
+  const audioKbps = kbps(prev.audio, mine.audioBytesOut, now), videoKbps = kbps(prev.video, mine.videoBytesOut, now);
+  G.local.prev = {audio: {t: now, bytes: mine.audioBytesOut}, video: {t: now, bytes: mine.videoBytesOut}};
+  G.local.info.textContent = `sending audio ${micMuted(lp) ? 'muted' : audioKbps + ' kbps'}\n` +
+      (cameraOff(lp) ? 'camera off' : `video ${videoText(mine)}, ${videoKbps} kbps`);
+  const cam = lp.getTrackPublication(LK.Track.Source.Camera);
   const sender = cam && cam.track && cam.track.sender;
   if (sender) {
     const p = sender.getParameters();
@@ -261,12 +471,21 @@ async function groupReport() {
                                                           maxBitrate: e.maxBitrate || 0}));
     out.sending.codec = (p.codecs && p.codecs[0] && p.codecs[0].mimeType) || '';
   }
-  out.connection = group.room.state;
+  out.connection = G.room.state;
+  out.identity = lp.identity || myId;
+  out.micMuted = micMuted(lp);
+  out.cameraOff = cameraOff(lp);
+  out.activeSpeakers = G.room.activeSpeakers.map(p => p.identity);
+  for (const id of out.activeSpeakers) G.speakersSeen.add(id);
+  out.speakersSeen = [...G.speakersSeen];
+  out.joined = [...G.joined];
+  out.left = [...G.left];
+  out.count = G.connected ? G.room.remoteParticipants.size + 1 : 0;
   return out;
 }
 
 function hangup() {
-  if (group) { group.room.disconnect(); for (const g of group.tiles.values()) g.div.remove(); group = null; }
+  closeGroup();
   for (const peer of [...calls.keys()]) { send({type: 'bye', to: peer}); drop(peer); }
   if (ws) { ws.close(); ws = null; }
   if (stream) { for (const t of stream.getTracks()) t.stop(); stream = null; }
@@ -280,13 +499,20 @@ $('ai').onclick = () => { $('room').value = 'ai-' + Math.random().toString(36).s
 $('mute').onclick = () => {
   if (group) {
     const lp = group.room.localParticipant, on = !lp.isMicrophoneEnabled;
-    lp.setMicrophoneEnabled(on).then(() => { $('mute').textContent = on ? 'Mute' : 'Unmute'; });
+    lp.setMicrophoneEnabled(on).then(() => { $('mute').textContent = on ? 'Mute' : 'Unmute'; renderGroup(); })
+      .catch(e => setState('error: ' + e));
     return;
   }
   const audio = stream && stream.getAudioTracks()[0];
   if (audio) { audio.enabled = !audio.enabled; $('mute').textContent = audio.enabled ? 'Mute' : 'Unmute'; }
 };
 $('hangup').onclick = hangup;
+$('video').onclick = () => {  // Group mode: the camera.
+  if (!group) return;
+  const lp = group.room.localParticipant, on = !lp.isCameraEnabled;
+  lp.setCameraEnabled(on).then(() => { $('video').textContent = on ? 'Stop video' : 'Start video'; renderGroup(); })
+    .catch(e => setState('error: ' + e));
+};
 
 // --- The scripted user (converse=1) ---------------------------------------------------------------------------------
 // Speech-like audio (sim::SpeechLike's recipe: a gliding 90-240 Hz pitch with 20 harmonics, formants near 500 and
@@ -554,6 +780,7 @@ async function tick() {
     }
     const enc = report.group.sending.encodings || [];
     lines.push(`sending: ${report.group.sending.codec || '-'}, ${enc.length} simulcast encodings ${enc.map(e => e.rid).join(' ')}`);
+    renderGroup();
   }
   $('stats').textContent = lines.join('\n');
   if (params.get('report') === '1' && room) {
