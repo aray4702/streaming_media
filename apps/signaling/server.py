@@ -74,8 +74,8 @@ def livekit_token(api_key, api_secret, room, identity, now=None, ttl=LK_TTL, sub
 def livekit_token_response(api_key, api_secret, url, query, now=None):
     """GET /lk-token: (status, body). 400 for a missing or malformed room or identity, 503 without a key pair.
     `subscribe=0` asks for a publish-only grant (canSubscribe false): LiveKit then makes the publisher connection the
-    primary one and offers no subscriber connection, which a client that only publishes needs (the native client
-    until C18)."""
+    primary one and offers no subscriber connection, which a client that only publishes wants (sm_call_smoke
+    --publish-only); every app subscribes by default (C20)."""
     room, identity = query.get('room', [''])[0], query.get('identity', [''])[0]
     subscribe = query.get('subscribe', ['1'])[0] != '0'
     if not LK_NAME.fullmatch(room) or not LK_NAME.fullmatch(identity):

@@ -18,13 +18,27 @@ rates, audio loss/jitter/concealment, video frames, DTLS and SRTP ciphers, and t
   (`pc::PeerEndpoint` over `apps/net` OS sockets, ICE with STUN/TURN, DTLS-SRTP, the RTP session's congestion control),
   Opus audio through the library's capture chain (HPF, AEC3, NS), and VideoToolbox H.264.
 
-## Group calls (LiveKit, C19)
+## Group calls (LiveKit, C19, C20)
 
-The controller also joins LiveKit rooms (`CallClientConfig::livekit`; see `apps/call/call_client.h` and
-[docs/deploy/livekit.md](../../docs/deploy/livekit.md)). It speaks LiveKit's protobuf signaling over WebSocket, takes
-its token from the signaling service's `/lk-token`, and publishes the microphone and camera. The app's screen has no
-Group button yet; C20 adds it with the grid. Receiving a group waits for C18 (multi-stream receive): until then the
-controller joins publish-only. `sm_call_smoke --livekit=...` exercises it from the command line.
+**Group** joins the room code's LiveKit room ([docs/deploy/livekit.md](../../docs/deploy/livekit.md)). The bridge
+GETs `/lk-token` (no secret in the app), opens LiveKit's `/rtc` WebSocket with binary frames, and the controller
+(`CallClientConfig::livekit`, `apps/call/call_client.h`) publishes the microphone and camera and receives every
+participant. The screen shows a grid of up to 6:
+- the local preview first, then one tile per participant in the order they joined. Each tile has its own Metal view
+  (`videoViewForParticipant`, the same renderer as the 1:1 view);
+- the participant's initials when its camera is off;
+- its name, a muted-microphone badge and an audio level bar;
+- a green frame while it is an active speaker (LiveKit's speaker updates);
+- its receive stats.
+
+Join and leave update the grid, and Mute and Video are announced to the room. The call-result line at hang-up has
+each participant's stats (`livekit_group`) and each tile's frames drawn (`app_tiles_drawn`). It also goes to
+`Documents/call-results.jsonl`, because the log cuts long lines.
+
+`apps/ios/simulator_group.sh <simulator UDID>` is the group's simulator run. It starts a local LiveKit server
+(`SM_LIVEKIT_SERVER`), the signaling service and a Chrome page in Group mode. Then `sm_call_smoke`, built for the
+simulator, and the app (`-SMAutoGroup <room>`) join the page's room. Each must receive the page's audio and video,
+the app must draw the page's tile, and the page must receive the app's audio.
 
 ## Build (unsigned)
 
