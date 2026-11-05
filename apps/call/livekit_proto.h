@@ -25,6 +25,7 @@ class PbWriter {
   void Bool(int field, bool v) { Varint(field, v ? 1 : 0); }
   void Bytes(int field, std::string_view v);  // string/bytes; empty is not written.
   void Message(int field, const PbWriter& m);  // A sub-message; written even when empty (it sets a oneof).
+  void Float(int field, float v);  // fixed32; 0 is not written.
   const std::string& data() const { return data_; }
 
  private:
@@ -41,8 +42,10 @@ class PbReader {
   int field() const { return field_; }
   uint64_t varint() const { return varint_; }  // Wire type 0.
   std::string_view bytes() const { return bytes_; }  // Wire type 2.
+  float fixed32_float() const;  // Wire type 5 as a float.
   bool is_varint() const { return wire_ == 0; }
   bool is_bytes() const { return wire_ == 2; }
+  bool is_fixed32() const { return wire_ == 5; }
   bool ok() const { return ok_; }
 
  private:
@@ -51,6 +54,7 @@ class PbReader {
   size_t pos_ = 0;
   int field_ = 0, wire_ = -1;
   uint64_t varint_ = 0;
+  uint32_t fixed32_ = 0;
   std::string_view bytes_;
   bool ok_ = true;
 };
@@ -136,6 +140,14 @@ struct Pong {
   int64_t last_ping_timestamp = 0, timestamp = 0;
 };
 
+// SpeakerInfo (livekit_models.proto): a participant's audio level (0 to 1) and whether it is an active speaker. The
+// server sends only the changes (SpeakersChanged), from the RFC 6464 audio levels its publishers send.
+struct SpeakerInfo {
+  std::string sid;  // The participant's sid.
+  float level = 0;
+  bool active = false;
+};
+
 struct TrackPublishedResponse {
   std::string cid;
   TrackInfo track;
@@ -149,6 +161,10 @@ std::string EncodeAddTrack(const AddTrackRequest& a);    // field 4
 std::string EncodeMute(const std::string& sid, bool muted);  // field 5
 std::string EncodeLeave(const LeaveRequest& l);          // field 8
 std::string EncodePing(int64_t timestamp_ms, int64_t rtt_ms);  // field 16, ping_req (Ping)
+// field 7: UpdateTrackSettings for subscribed tracks: paused (disabled) or the size to receive, from which the server
+// picks the simulcast layer (as the SDKs' adaptive stream does for a tile of that size).
+std::string EncodeUpdateTrackSettings(const std::vector<std::string>& track_sids, bool disabled, uint32_t width,
+                                      uint32_t height);
 
 // SignalResponse.
 struct SignalResponse {
@@ -162,6 +178,7 @@ struct SignalResponse {
     kTrackPublished = 6,
     kLeave = 8,
     kMute = 9,
+    kSpeakersChanged = 10,
     kRefreshToken = 16,
     kTrackUnpublished = 17,
     kPong = 18,
@@ -176,7 +193,9 @@ struct SignalResponse {
   std::vector<ParticipantInfo> participants;  // kUpdate
   TrackPublishedResponse track_published;
   LeaveRequest leave;
-  std::string text;  // kRefreshToken: the token; kTrackUnpublished: the track sid
+  std::vector<SpeakerInfo> speakers;  // kSpeakersChanged
+  bool muted = false;  // kMute: the server mutes (or unmutes) our track `text`
+  std::string text;  // kRefreshToken: the token; kTrackUnpublished, kMute: the track sid
   Pong pong;  // kPong (timestamp only), kPongResp
 };
 SignalResponse DecodeSignalResponse(std::string_view data);
@@ -191,6 +210,11 @@ struct SignalRequestForTest {
   AddTrackRequest add_track;
   LeaveRequest leave;
   int64_t ping_timestamp = 0, ping_rtt = 0;
+  std::string mute_sid;  // field 5
+  bool mute = false;
+  std::vector<std::string> settings_sids;  // field 7
+  bool settings_disabled = false;
+  uint32_t settings_width = 0, settings_height = 0;
 };
 std::optional<SignalRequestForTest> DecodeSignalRequestForTest(std::string_view data);
 

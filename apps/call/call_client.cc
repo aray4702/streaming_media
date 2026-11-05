@@ -179,8 +179,7 @@ class CallClient::Video {
   Timestamp next_frame = Timestamp::MinusInfinity();
 #if SM_CALL_VIDEO
   video::VideoToolboxH264Encoder encoder;
-  video::VideoToolboxH264Decoder decoder;
-  bool encoder_ready = false, decoder_ready = false;
+  bool encoder_ready = false;
   DataRate rate = DataRate::Zero();
   Timestamp rate_time = Timestamp::MinusInfinity();
 #endif
@@ -234,37 +233,95 @@ class CallClient::Video {
 #endif
   }
 
-  void Receive(pc::PeerEndpoint& ep, Timestamp now) {
-    rtp::Session* s = ep.session();
-    if (!ep.video_receive()) return;
-    for (rtp::ReceivedVideoFrame& f : s->TakeVideoFrames(*ep.video_receive())) {
-      ++received;
+  // One remote video track (by MID): its decoder (call thread only) and, under `mu`, its participant, counters and
+  // latest frame. A 1:1 call has one; a group one per participant with video (C20).
+  struct RemoteTrack {
+    std::string identity;
+    std::optional<video::I420Frame> frame;
+    uint64_t received = 0, decoded = 0, rendered = 0;
+    int w = 0, h = 0;
+    uint64_t decoded_last_second = 0;
+    double fps = 0;
 #if SM_CALL_VIDEO
-      if (f.bitstream.empty()) continue;
-      if (!decoder_ready) {
-        video::DecoderSettings settings;
-        settings.codec_type = video::DecoderCodecType::kH264;
-        decoder_ready = decoder.Configure(settings);
-      }
-      video::I420Frame out;
-      if (decoder.Decode(f.bitstream, now, out) != video::DecoderStatus::kOk) {
-        s->OnDecodeFailure(*ep.video_receive(), now);  // A keyframe request.
-        continue;
-      }
-      ++decoded;
-      if (!f.render) continue;
-      ++rendered;
-      // The renderer shows the frame turned by the rotation it arrived with (RTCMTLRenderer's rotation).
-      if (f.rotation != video::Rotation::k0) out = video::ApplyOrientation(out, video::VideoOrientation{f.rotation});
-      std::lock_guard<std::mutex> lock(mu);
-      recv_rotation = f.rotation;
-      recv_w = out.width;
-      recv_h = out.height;
-      remote = std::move(out);
-#else
-      (void)f;
-      (void)now;
+    video::VideoToolboxH264Decoder decoder;
+    bool decoder_ready = false;
 #endif
+  };
+  std::map<std::string, std::unique_ptr<RemoteTrack>> tracks;  // By MID; the map changes on the call thread, under mu.
+  std::string first_mid;  // The first remote video track's: TakeRemoteVideo's.
+
+  // Every remote video track of `ep`: decoded, turned upright and kept as its latest frame. `identity` names a track's
+  // participant (empty in a 1:1 call).
+  void Receive(pc::PeerEndpoint& ep, Timestamp now, const std::function<std::string(const pc::RemoteTrack&)>& identity) {
+    rtp::Session* s = ep.session();
+    std::vector<std::string> live;
+    for (const pc::RemoteTrack& t : ep.remote_tracks()) {
+      if (!t.video) continue;
+      live.push_back(t.mid);
+      RemoteTrack* track;
+      {
+        std::lock_guard<std::mutex> lock(mu);
+        auto& slot = tracks[t.mid];
+        if (!slot) slot = std::make_unique<RemoteTrack>();
+        track = slot.get();
+        if (identity) track->identity = identity(t);
+        if (first_mid.empty()) first_mid = t.mid;
+      }
+      for (rtp::ReceivedVideoFrame& f : s->TakeVideoFrames(*t.video)) {
+        {
+          std::lock_guard<std::mutex> lock(mu);
+          ++received;
+          ++track->received;
+        }
+#if SM_CALL_VIDEO
+        if (f.bitstream.empty()) continue;
+        if (!track->decoder_ready) {
+          video::DecoderSettings settings;
+          settings.codec_type = video::DecoderCodecType::kH264;
+          track->decoder_ready = track->decoder.Configure(settings);
+        }
+        video::I420Frame out;
+        if (track->decoder.Decode(f.bitstream, now, out) != video::DecoderStatus::kOk) {
+          s->OnDecodeFailure(*t.video, now);  // A keyframe request.
+          continue;
+        }
+        std::lock_guard<std::mutex> lock(mu);
+        ++decoded;
+        ++track->decoded;
+        if (!f.render) continue;
+        ++rendered;
+        ++track->rendered;
+        // The renderer shows the frame turned by the rotation it arrived with (RTCMTLRenderer's rotation).
+        if (f.rotation != video::Rotation::k0) out = video::ApplyOrientation(out, video::VideoOrientation{f.rotation});
+        track->w = out.width;
+        track->h = out.height;
+        if (t.mid == first_mid) {
+          recv_rotation = f.rotation;
+          recv_w = out.width;
+          recv_h = out.height;
+          remote = out;
+        }
+        track->frame = std::move(out);
+#else
+        (void)f;
+        (void)now;
+#endif
+      }
+    }
+    std::lock_guard<std::mutex> lock(mu);
+    for (auto it = tracks.begin(); it != tracks.end();) {
+      if (std::find(live.begin(), live.end(), it->first) == live.end()) it = tracks.erase(it);
+      else ++it;
+    }
+    if (!tracks.count(first_mid)) first_mid = tracks.empty() ? std::string() : tracks.begin()->first;
+  }
+
+  // Once a second: each track's decoded frame rate.
+  void UpdateRates() {
+    std::lock_guard<std::mutex> lock(mu);
+    for (auto& [mid, t] : tracks) {
+      t->fps = static_cast<double>(t->decoded - t->decoded_last_second);
+      t->decoded_last_second = t->decoded;
     }
   }
 };
@@ -272,6 +329,10 @@ class CallClient::Video {
 // --- LiveKit's session (C19) -----------------------------------------------------------------------------------------
 
 struct CallClient::LiveKit {
+  struct Meter {  // The local meter on a participant's played-out audio.
+    double level = 0;
+    Timestamp last_loud = Timestamp::MinusInfinity();
+  };
   bool joined = false;
   std::string room, sid, identity;
   std::string audio_cid, video_cid;
@@ -284,6 +345,19 @@ struct CallClient::LiveKit {
   std::map<std::string, livekit::ParticipantInfo> others;  // identity -> info
   std::vector<std::string> pending_sub_candidates, pending_pub_candidates;
   std::string subscriber = "none";  // The subscriber connection's state, for the stats.
+  bool subscriber_connected = false;
+  // C20: the participants in the order they joined, who joined and left after us, the speakers (participant sid ->
+  // its latest active SpeakerInfo; SpeakersChanged sends changes only), the local meters, the identities that have
+  // been active speakers, the mute states announced, and the video tracks whose size was asked for.
+  std::vector<std::string> order, joined_after, left;
+  bool got_speakers = false;
+  std::map<std::string, livekit::SpeakerInfo> speakers;
+  std::map<std::string, Meter> meters;
+  std::vector<std::string> speakers_seen;
+  std::optional<bool> audio_mute_sent, video_mute_sent;
+  std::vector<std::string> settings_sent;
+  std::map<std::string, GroupParticipant> stats;  // identity -> the last second's receive stats
+  Timestamp next_refresh = Timestamp::MinusInfinity();
 };
 
 // --- CallStats -------------------------------------------------------------------------------------------------------
@@ -315,9 +389,42 @@ std::string CallStats::Text() const {
   if (livekit_participants >= 0) {
     out += "\nlivekit: " + livekit_room + "  others " + std::to_string(livekit_participants) + "  published " +
            std::to_string(livekit_published) + "  subscriber " + livekit_subscriber;
+    out += "\nspeaker: " + (livekit_active_speaker.empty() ? std::string("-") : livekit_active_speaker);
+    for (const GroupParticipant& p : livekit_group) {
+      char line[256];
+      std::snprintf(line, sizeof line, "\n%s%s: audio %llu pkts lost %lld jitter %.0f ms%s  video %dx%d %.0f fps%s",
+                    p.speaking ? "* " : "", p.identity.c_str(), static_cast<unsigned long long>(p.audio_packets_received),
+                    static_cast<long long>(p.audio_packets_lost), p.audio_jitter_ms, p.audio_muted ? " (muted)" : "",
+                    p.video_width, p.video_height, p.video_fps, p.video_muted ? " (off)" : "");
+      out += line;
+    }
   }
   return out;
 }
+
+std::string GroupParticipant::ToJson() const {
+  char b[640];
+  std::snprintf(b, sizeof b,
+                ",\"has_audio\":%s,\"has_video\":%s,\"audio_muted\":%s,\"video_muted\":%s,\"audio_level\":%.3f,"
+                "\"speaking\":%s,\"audio_packets_received\":%llu,\"audio_packets_lost\":%lld,\"audio_jitter_ms\":%.1f,"
+                "\"audio_concealed_pct\":%.2f,\"audio_played_s\":%.2f,\"video_frames_received\":%llu,"
+                "\"video_frames_decoded\":%llu,\"video_width\":%d,\"video_height\":%d,\"video_fps\":%.1f}",
+                has_audio ? "true" : "false", has_video ? "true" : "false", audio_muted ? "true" : "false",
+                video_muted ? "true" : "false", audio_level, speaking ? "true" : "false",
+                static_cast<unsigned long long>(audio_packets_received), static_cast<long long>(audio_packets_lost),
+                audio_jitter_ms, audio_concealed_pct, audio_played_s,
+                static_cast<unsigned long long>(video_frames_received),
+                static_cast<unsigned long long>(video_frames_decoded), video_width, video_height, video_fps);
+  return "{\"identity\":" + net::JsonEscape(identity) + ",\"sid\":" + net::JsonEscape(sid) + b;
+}
+
+namespace {
+std::string JsonStrings(const std::vector<std::string>& v) {
+  std::string out = "[";
+  for (size_t i = 0; i < v.size(); ++i) out += (i ? "," : "") + net::JsonEscape(v[i]);
+  return out + "]";
+}
+}  // namespace
 
 std::string CallStats::ToJson() const {
   char buf[1024];
@@ -351,8 +458,18 @@ std::string CallStats::LiveKitJson() const {
   char b[160];
   std::snprintf(b, sizeof b, ",\"livekit_participants\":%d,\"livekit_published\":%d,\"livekit_signal_rtt_ms\":%.0f",
                 livekit_participants, livekit_published, livekit_signal_rtt_ms);
+  std::string group = "[";
+  for (size_t i = 0; i < livekit_group.size(); ++i) group += (i ? "," : "") + livekit_group[i].ToJson();
+  group += "]";
+  char level[48];
+  std::snprintf(level, sizeof level, ",\"livekit_local_level\":%.3f", livekit_local_level);
   return b + std::string(",\"livekit_room\":") + net::JsonEscape(livekit_room) +
-         ",\"livekit_subscriber\":" + net::JsonEscape(livekit_subscriber);
+         ",\"livekit_subscriber\":" + net::JsonEscape(livekit_subscriber) +
+         ",\"livekit_identity\":" + net::JsonEscape(livekit_identity) +
+         ",\"livekit_active_speaker\":" + net::JsonEscape(livekit_active_speaker) + level +
+         ",\"livekit_speakers_seen\":" + JsonStrings(livekit_speakers_seen) +
+         ",\"livekit_joined\":" + JsonStrings(livekit_joined) + ",\"livekit_left\":" + JsonStrings(livekit_left) +
+         ",\"livekit_group\":" + group;
 }
 
 // --- CallClient ------------------------------------------------------------------------------------------------------
@@ -525,12 +642,21 @@ void CallClient::MakeSubscriber(Timestamp now) {
   c.allocator = sub_allocator_.get();
   c.certificate_name = "sm-call";
   c.transport.async_dns_resolver_factory = &resolver_;
-  c.audio = true;
-  c.video = true;
-  c.enable_data_channels = true;  // The server's offer carries LiveKit's data channels (_reliable, _lossy).
-  c.audio_decoder = decoder_.get();
+  // Receive only: no AddTrack transceivers; every section the server offers gets a recvonly transceiver of its own
+  // (C18's AssociateTransceiver), with an Opus decoder per audio track.
+  c.audio = false;
+  c.video = false;
+  c.receive_remote_tracks = true;
+  // The server's offer carries LiveKit's data channels (_reliable, _lossy). Built without SM_WITH_DATACHANNEL (the
+  // iOS presets) the section is rejected, which LiveKit accepts: its signaling carries what the client needs.
+  c.enable_data_channels = true;
+  c.audio_decoder_factory = [](const std::string&) -> std::unique_ptr<rtp::AudioDecoder> {
+    return std::make_unique<testbench::OpusAudioDecoder>(kRate);
+  };
   c.stream_id = "sm-" + config_.peer_id + "-sub";
   sub_ = std::make_unique<pc::PeerEndpoint>(std::move(c), now);
+  sub_->SetOnTrack([this](const pc::RemoteTrack& t) { OnRemoteTrack(t, true); });
+  sub_->SetOnRemoveTrack([this](const pc::RemoteTrack& t) { OnRemoteTrack(t, false); });
   sub_->SetOnIceCandidate([this](std::unique_ptr<pc::IceCandidate> cand) {
     livekit::TrickleRequest t;
     t.candidate_init = CandidateInitJson(*cand);
@@ -586,9 +712,8 @@ void CallClient::LiveKitSubscriberOffer(const std::string& sdp, uint32_t id, Tim
   std::string error;
   auto desc = pc::SdpDeserialize(pc::SdpType::kOffer, sdp, &perr);
   if (!desc || !sub_->SetRemoteDescription(std::move(desc), now, &error)) {
-    // A renegotiation (another participant's tracks) or several remote streams: C18's multi-stream receive. The
-    // publisher path goes on; this end receives what the first offer brought.
-    lk_->subscriber = "offer " + std::to_string(id) + " not applied (needs C18): " + (desc ? error : perr.description);
+    // The publisher path goes on; this end keeps receiving what the earlier offers brought.
+    lk_->subscriber = "offer " + std::to_string(id) + " not applied: " + (desc ? error : perr.description);
     Log("subscriber: " + lk_->subscriber);
     return;
   }
@@ -623,7 +748,10 @@ void CallClient::OnLiveKit(const std::string& bytes, Timestamp now) {
       lk_->room = r.join.room_name;
       lk_->sid = r.join.participant.sid;
       lk_->identity = r.join.participant.identity;
-      for (const auto& p : r.join.other_participants) lk_->others[p.identity] = p;
+      for (const auto& p : r.join.other_participants) {
+        lk_->others[p.identity] = p;
+        lk_->order.push_back(p.identity);
+      }
       // The server's ICE servers (on the host: coturn, with a REST credential) next to /turn's.
       for (const auto& s : r.join.ice_servers) {
         std::string urls;
@@ -671,13 +799,34 @@ void CallClient::OnLiveKit(const std::string& bytes, Timestamp now) {
       for (const auto& p : r.participants) {
         if (p.identity == lk_->identity) continue;
         if (p.state == livekit::ParticipantInfo::State::kDisconnected) {
-          if (lk_->others.erase(p.identity)) Log("participant left: " + p.identity);
+          if (lk_->others.erase(p.identity)) {
+            Log("participant left: " + p.identity);
+            lk_->left.push_back(p.identity);
+            lk_->order.erase(std::remove(lk_->order.begin(), lk_->order.end(), p.identity), lk_->order.end());
+            lk_->meters.erase(p.identity);
+            lk_->speakers.erase(p.sid);
+          }
         } else {
-          if (!lk_->others.count(p.identity)) Log("participant joined: " + p.identity);
+          if (!lk_->others.count(p.identity)) {
+            Log("participant joined: " + p.identity);
+            lk_->joined_after.push_back(p.identity);
+            lk_->order.push_back(p.identity);
+          }
           lk_->others[p.identity] = p;
         }
       }
+      RefreshGroup(now);
       break;
+    case Kind::kSpeakersChanged:
+      LiveKitSpeakers(r.speakers);
+      RefreshGroup(now);
+      break;
+    case Kind::kMute: {  // The server (an admin) mutes or unmutes one of our tracks.
+      const auto audio = lk_->published.find(lk_->audio_cid), video = lk_->published.find(lk_->video_cid);
+      if (audio != lk_->published.end() && audio->second == r.text) muted_ = r.muted;
+      if (video != lk_->published.end() && video->second == r.text) video_enabled_ = !r.muted;
+      break;
+    }
     case Kind::kLeave:
       End("LiveKit server leave (reason " + std::to_string(r.leave.reason) + ")", now);
       break;
@@ -693,6 +842,162 @@ void CallClient::OnLiveKit(const std::string& bytes, Timestamp now) {
     default:
       break;  // Speakers, connection quality, stream state, refreshed token: nothing to do yet (C20).
   }
+}
+
+// --- A group: participants, tracks, speakers (C20) --------------------------------------------------------------------
+
+std::string CallClient::TrackIdentity(const std::string& track_id, const std::vector<std::string>& stream_ids) const {
+  if (!lk_) return "";
+  // LiveKit's msid: the stream id is "<participant sid>|<track sid>" and the track id the track sid.
+  std::string participant_sid;
+  if (!stream_ids.empty()) participant_sid = stream_ids.front().substr(0, stream_ids.front().find('|'));
+  for (const auto& [identity, p] : lk_->others) {
+    if (!participant_sid.empty() && p.sid == participant_sid) return identity;
+    for (const livekit::TrackInfo& t : p.tracks) {
+      if (t.sid == track_id) return identity;
+    }
+  }
+  return "";
+}
+
+void CallClient::OnRemoteTrack(const pc::RemoteTrack& t, bool added) {
+  const std::string who = TrackIdentity(t.track_id, t.stream_ids);
+  Log(std::string(added ? "receiving " : "stopped receiving ") + (t.kind == pc::MediaType::VIDEO ? "video" : "audio") +
+      " " + t.track_id + " (mid " + t.mid + ") of " + (who.empty() ? "?" : who));
+  // The size we show it at: the server forwards the simulcast layer that fits (UpdateTrackSettings).
+  if (added && t.kind == pc::MediaType::VIDEO && config_.livekit_receive_width > 0 &&
+      std::find(lk_->settings_sent.begin(), lk_->settings_sent.end(), t.track_id) == lk_->settings_sent.end()) {
+    lk_->settings_sent.push_back(t.track_id);
+    SendSignal(livekit::EncodeUpdateTrackSettings({t.track_id}, false,
+                                                  static_cast<uint32_t>(config_.livekit_receive_width),
+                                                  static_cast<uint32_t>(config_.livekit_receive_height)));
+  }
+}
+
+void CallClient::LiveKitSpeakers(const std::vector<livekit::SpeakerInfo>& speakers) {
+  lk_->got_speakers = true;
+  for (const livekit::SpeakerInfo& s : speakers) {
+    if (s.active) lk_->speakers[s.sid] = s;
+    else lk_->speakers.erase(s.sid);
+  }
+}
+
+void CallClient::LiveKitAnnounceMute() {
+  // MuteTrackRequest for our microphone (muted) and camera (video off), so the others show it (TrackInfo.muted).
+  auto announce = [this](const std::string& cid, bool muted, std::optional<bool>* sent) {
+    const auto it = lk_->published.find(cid);
+    if (cid.empty() || it == lk_->published.end() || (*sent && **sent == muted)) return;
+    SendSignal(livekit::EncodeMute(it->second, muted));
+    *sent = muted;
+  };
+  announce(lk_->audio_cid, muted_, &lk_->audio_mute_sent);
+  announce(lk_->video_cid, !video_enabled_, &lk_->video_mute_sent);
+}
+
+void CallClient::RefreshGroup(Timestamp now) {
+  if (!lk_) return;
+  const pc::PeerEndpoint* rx = sub_.get();
+  const std::vector<pc::RemoteTrack> tracks = rx ? rx->remote_tracks() : std::vector<pc::RemoteTrack>{};
+  constexpr TimeDelta kHangover = TimeDelta::Millis(500);  // The local meter's: speaking until 500 ms quiet.
+  std::vector<GroupParticipant> group;
+  std::string active;
+  double loudest = -1;
+  auto consider = [&](const std::string& identity, double level, bool speaking) {
+    if (!speaking) return;
+    if (level > loudest) {
+      loudest = level;
+      active = identity;
+    }
+    if (std::find(lk_->speakers_seen.begin(), lk_->speakers_seen.end(), identity) == lk_->speakers_seen.end()) {
+      lk_->speakers_seen.push_back(identity);
+    }
+  };
+  for (const std::string& identity : lk_->order) {
+    const auto it = lk_->others.find(identity);
+    if (it == lk_->others.end()) continue;
+    const livekit::ParticipantInfo& info = it->second;
+    GroupParticipant p;
+    if (const auto st = lk_->stats.find(identity); st != lk_->stats.end()) p = st->second;
+    p.identity = identity;
+    p.name = info.name;
+    p.sid = info.sid;
+    p.audio_muted = p.video_muted = true;
+    for (const livekit::TrackInfo& t : info.tracks) {
+      if (t.type == livekit::TrackType::kAudio) p.audio_muted = p.audio_muted && t.muted;
+      if (t.type == livekit::TrackType::kVideo) p.video_muted = p.video_muted && t.muted;
+    }
+    p.has_audio = p.has_video = false;
+    for (const pc::RemoteTrack& t : tracks) {
+      if (TrackIdentity(t.track_id, t.stream_ids) != identity) continue;
+      (t.kind == pc::MediaType::VIDEO ? p.has_video : p.has_audio) = true;
+    }
+    const LiveKit::Meter meter = lk_->meters.count(identity) ? lk_->meters[identity] : LiveKit::Meter{};
+    if (lk_->got_speakers) {
+      const auto s = lk_->speakers.find(info.sid);
+      p.speaking = s != lk_->speakers.end();
+      p.audio_level = p.speaking ? s->second.level : 0;
+    } else {
+      p.speaking = now - meter.last_loud < kHangover;
+      p.audio_level = meter.level;
+    }
+    consider(identity, p.audio_level, p.speaking);
+    group.push_back(std::move(p));
+  }
+  // This participant: LiveKit's word on our sid, else our own processed microphone.
+  if (lk_->got_speakers) {
+    const auto s = lk_->speakers.find(lk_->sid);
+    if (s != lk_->speakers.end()) consider(lk_->identity, s->second.level, true);
+  } else {
+    if (!muted_ && capture_level_ > 0.01) lk_->meters[lk_->identity].last_loud = now;
+    consider(lk_->identity, capture_level_, now - lk_->meters[lk_->identity].last_loud < kHangover);
+  }
+  std::lock_guard<std::mutex> lock(group_mu_);
+  group_ = std::move(group);
+  active_speaker_ = active;
+}
+
+void CallClient::MixGroupAudio(std::span<float> pcm, Timestamp now) {
+  std::fill(pcm.begin(), pcm.end(), 0.f);
+  if (!sub_ || !sub_->session()) return;
+  std::array<float, k10ms> x{};
+  for (const pc::RemoteTrack& t : sub_->remote_tracks()) {
+    if (!t.audio) continue;
+    x.fill(0.f);
+    const timing::AudioOperation op = sub_->session()->GetAudio(*t.audio, x, now);
+    const std::string identity = TrackIdentity(t.track_id, t.stream_ids);
+    double energy = 0;
+    for (float v : x) energy += static_cast<double>(v) * v;
+    const double rms = std::sqrt(energy / k10ms);
+    LiveKit::Meter& m = lk_->meters[identity];
+    m.level = std::max(rms, m.level * 0.9);  // Fast attack, about 100 ms decay.
+    if (rms > 0.01) m.last_loud = now;       // -40 dBFS, as sm_call_smoke's "audio playing".
+    if (remote_audio_sink_ && !identity.empty()) {
+      remote_audio_sink_(identity, x, op == timing::AudioOperation::kExpand, now);
+    }
+    for (size_t i = 0; i < pcm.size() && i < k10ms; ++i) pcm[i] += x[i];
+  }
+  for (float& v : pcm) v = std::clamp(v, -1.f, 1.f);
+}
+
+std::vector<GroupParticipant> CallClient::participants() const {
+  std::lock_guard<std::mutex> lock(group_mu_);
+  return group_;
+}
+
+std::string CallClient::active_speaker() const {
+  std::lock_guard<std::mutex> lock(group_mu_);
+  return active_speaker_;
+}
+
+bool CallClient::TakeParticipantVideo(const std::string& identity, video::I420Frame* out) {
+  std::lock_guard<std::mutex> lock(video_->mu);
+  for (auto& [mid, t] : video_->tracks) {
+    if (t->identity != identity || !t->frame) continue;
+    *out = std::move(*t->frame);
+    t->frame.reset();
+    return true;
+  }
+  return false;
 }
 
 void CallClient::OnSignal(const std::string& text, Timestamp now) {
@@ -753,10 +1058,23 @@ void CallClient::AddCandidate(std::map<std::string, std::string>& m, Timestamp n
 Timestamp CallClient::Step(Timestamp now) {
   if (state_ == CallState::kEnded || !ep_) return now + TimeDelta::Millis(10);
   ep_->Process(now);
-  if (sub_) sub_->Process(now);
+  if (sub_) {
+    sub_->Process(now);
+    if (!lk_->subscriber_connected && sub_->IsConnected()) {
+      lk_->subscriber_connected = true;
+      Log("subscriber connected in " + std::to_string(static_cast<int>((now - start_).ms_f())) + " ms");
+    }
+  }
   if (lk_ && now >= lk_->next_ping) {  // LiveKit's keepalive: ping_req every ping_interval.
     SendSignal(livekit::EncodePing(now.us() / 1000, lk_->rtt_ms < 0 ? 0 : static_cast<int64_t>(lk_->rtt_ms)));
     lk_->next_ping = now + lk_->ping_interval;
+  }
+  if (lk_ && lk_->joined) {
+    LiveKitAnnounceMute();
+    if (now >= lk_->next_refresh) {  // The grid's speaker state, ten times a second.
+      RefreshGroup(now);
+      lk_->next_refresh = now + TimeDelta::Millis(100);
+    }
   }
   if (state_ != CallState::kConnected && ep_->IsConnected() && ep_->session()) {
     state_ = CallState::kConnected;
@@ -773,7 +1091,13 @@ Timestamp CallClient::Step(Timestamp now) {
     }
     Audio(now);
     if (video_enabled_) video_->Send(*ep_, config_.video_fps, now);
-    if (pc::PeerEndpoint* rx = receiver(); rx && rx->session()) video_->Receive(*rx, now);
+    if (pc::PeerEndpoint* rx = receiver(); rx && rx->session()) {
+      if (lk_) {
+        video_->Receive(*rx, now, [this](const pc::RemoteTrack& t) { return TrackIdentity(t.track_id, t.stream_ids); });
+      } else {
+        video_->Receive(*rx, now, nullptr);
+      }
+    }
     ep_->FlushOutgoing(now);
     if (sub_ && sub_->session()) sub_->FlushOutgoing(now);
     if (now >= next_stats_) {
@@ -800,7 +1124,9 @@ void CallClient::Audio(Timestamp now) {
       if (playout_ring_.size() >= kPlayoutTarget) break;
     }
     std::array<float, k10ms> pcm{};
-    if (pc::PeerEndpoint* rx = receiver(); rx && rx->session() && rx->audio_receive()) {
+    if (lk_) {
+      MixGroupAudio(pcm, now);  // Every participant's audio (C20).
+    } else if (pc::PeerEndpoint* rx = receiver(); rx && rx->session() && rx->audio_receive()) {
       rx->session()->GetAudio(*rx->audio_receive(), pcm, now);
     }
     if (apm_) apm_->Render(pcm);
@@ -902,14 +1228,49 @@ void CallClient::UpdateStats(Timestamp now) {
     if (sub_ && sub_->session()) sub_->session()->GetStats(now, &rx_report);
     rr = &rx_report;
   }
+  // In a group, the call's audio figures are the most-played stream's (packets: all streams'); each participant's are
+  // in livekit_group.
+  std::map<std::string, std::string> mid_identity;
+  if (lk_ && sub_) {
+    for (const pc::RemoteTrack& t : sub_->remote_tracks()) mid_identity[t.mid] = TrackIdentity(t.track_id, t.stream_ids);
+    lk_->stats.clear();
+  }
   for (const auto& in : rr->inbound) {
     if (in.video) continue;
     c.audio_packets_received += in.packets_received;
     c.audio_packets_lost += in.packets_lost;
-    c.audio_jitter_ms = in.jitter_ms;
-    c.audio_played_s = static_cast<double>(in.total_samples_received - std::min(in.concealed_samples, in.total_samples_received)) / kRate;
-    if (in.total_samples_received > 0) c.audio_concealed_pct = 100.0 * in.concealed_samples / in.total_samples_received;
-    if (in.jitter_buffer_emitted_count > 0) c.jitter_buffer_ms = in.jitter_buffer_delay_ms / in.jitter_buffer_emitted_count;
+    const double played =
+        static_cast<double>(in.total_samples_received - std::min(in.concealed_samples, in.total_samples_received)) / kRate;
+    const double concealed = in.total_samples_received > 0 ? 100.0 * in.concealed_samples / in.total_samples_received : 0;
+    if (played >= c.audio_played_s) {
+      c.audio_played_s = played;
+      c.audio_jitter_ms = in.jitter_ms;
+      c.audio_concealed_pct = concealed;
+      if (in.jitter_buffer_emitted_count > 0) c.jitter_buffer_ms = in.jitter_buffer_delay_ms / in.jitter_buffer_emitted_count;
+    }
+    if (lk_) {
+      const auto who = mid_identity.find(in.mid);
+      if (who == mid_identity.end() || who->second.empty()) continue;
+      GroupParticipant& p = lk_->stats[who->second];
+      p.audio_packets_received += in.packets_received;
+      p.audio_packets_lost += in.packets_lost;
+      p.audio_jitter_ms = in.jitter_ms;
+      p.audio_concealed_pct = concealed;
+      p.audio_played_s += played;
+    }
+  }
+  if (lk_) {
+    video_->UpdateRates();
+    std::lock_guard<std::mutex> lock(video_->mu);
+    for (const auto& [mid, t] : video_->tracks) {
+      if (t->identity.empty()) continue;
+      GroupParticipant& p = lk_->stats[t->identity];
+      p.video_frames_received += t->received;
+      p.video_frames_decoded += t->decoded;
+      p.video_width = t->w;
+      p.video_height = t->h;
+      p.video_fps += t->fps;
+    }
   }
   if (!r.ice_transports.empty()) {
     const auto& t = r.ice_transports.front();
@@ -966,8 +1327,21 @@ void CallClient::UpdateStats(Timestamp now) {
     c.livekit_room = lk_->room;
     c.livekit_participants = static_cast<int>(lk_->others.size());
     c.livekit_published = static_cast<int>(lk_->published.size());
-    c.livekit_subscriber = lk_->subscriber;
+    c.livekit_subscriber = lk_->subscriber + (lk_->subscriber_connected ? ", connected" : "");
     c.livekit_signal_rtt_ms = lk_->rtt_ms;
+    RefreshGroup(now);
+    c.livekit_group = participants();
+    c.livekit_active_speaker = active_speaker();
+    c.livekit_identity = lk_->identity;
+    c.livekit_speakers_seen = lk_->speakers_seen;
+    c.livekit_joined = lk_->joined_after;
+    c.livekit_left = lk_->left;
+    if (lk_->got_speakers) {
+      const auto me = lk_->speakers.find(lk_->sid);
+      c.livekit_local_level = me == lk_->speakers.end() ? 0 : me->second.level;
+    } else {
+      c.livekit_local_level = capture_level_;
+    }
   }
   std::lock_guard<std::mutex> lock(stats_mu_);
   stats_ = std::move(c);

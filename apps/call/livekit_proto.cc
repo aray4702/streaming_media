@@ -4,6 +4,7 @@
 
 #include <cctype>
 #include <cstdio>
+#include <cstring>
 
 namespace sm::apps::livekit {
 
@@ -38,6 +39,20 @@ void PbWriter::Message(int field, const PbWriter& m) {
   data_.append(m.data_);
 }
 
+void PbWriter::Float(int field, float v) {
+  if (v == 0) return;
+  uint32_t bits;
+  std::memcpy(&bits, &v, 4);
+  Tag(field, 5);
+  for (int i = 0; i < 4; ++i) data_.push_back(static_cast<char>((bits >> (8 * i)) & 0xff));  // Little-endian.
+}
+
+float PbReader::fixed32_float() const {
+  float f;
+  std::memcpy(&f, &fixed32_, 4);
+  return f;
+}
+
 bool PbReader::ReadVarint(uint64_t* v) {
   *v = 0;
   for (int shift = 0; shift < 64; shift += 7) {
@@ -70,8 +85,10 @@ bool PbReader::Next() {
       pos_ += n;
       return true;
     }
-    case 5:  // fixed32
+    case 5:  // fixed32, little-endian
       if (data_.size() - pos_ < 4) return ok_ = false;
+      fixed32_ = 0;
+      for (int i = 0; i < 4; ++i) fixed32_ |= static_cast<uint32_t>(static_cast<uint8_t>(data_[pos_ + i])) << (8 * i);
       pos_ += 4;
       return true;
     default:  // Groups (3, 4) are not used by proto3.
@@ -261,6 +278,25 @@ JoinResponse ReadJoin(std::string_view data) {
   return j;
 }
 
+SpeakerInfo ReadSpeaker(std::string_view data) {
+  SpeakerInfo s;
+  PbReader r(data);
+  while (r.Next()) {
+    if (r.field() == 1 && r.is_bytes()) s.sid = Str(r.bytes());
+    else if (r.field() == 2 && r.is_fixed32()) s.level = r.fixed32_float();
+    else if (r.field() == 3 && r.is_varint()) s.active = r.varint() != 0;
+  }
+  return s;
+}
+
+PbWriter SpeakerMsg(const SpeakerInfo& s) {
+  PbWriter w;
+  w.Bytes(1, s.sid);
+  w.Float(2, s.level);
+  w.Bool(3, s.active);
+  return w;
+}
+
 std::string Request(int field, const PbWriter& m) {
   PbWriter w;
   w.Message(field, m);
@@ -304,6 +340,16 @@ std::string EncodeMute(const std::string& sid, bool muted) {
 
 std::string EncodeLeave(const LeaveRequest& l) { return Request(8, LeaveMsg(l)); }
 
+std::string EncodeUpdateTrackSettings(const std::vector<std::string>& track_sids, bool disabled, uint32_t width,
+                                      uint32_t height) {
+  PbWriter w;
+  for (const std::string& sid : track_sids) w.Bytes(1, sid);
+  w.Bool(3, disabled);
+  w.Varint(5, width);
+  w.Varint(6, height);
+  return Request(7, w);
+}
+
 std::string EncodePing(int64_t timestamp_ms, int64_t rtt_ms) {
   PbWriter w;
   w.Varint(1, static_cast<uint64_t>(timestamp_ms));
@@ -341,7 +387,24 @@ SignalResponse DecodeSignalResponse(std::string_view data) {
         break;
       }
       case 8: out.kind = SignalResponse::Kind::kLeave; out.leave = ReadLeave(b); break;
-      case 9: out.kind = SignalResponse::Kind::kMute; break;
+      case 9: {  // MuteTrackRequest: the server mutes one of our tracks.
+        out.kind = SignalResponse::Kind::kMute;
+        PbReader m(b);
+        while (m.Next()) {
+          if (m.field() == 1 && m.is_bytes()) out.text = Str(m.bytes());
+          else if (m.field() == 2 && m.is_varint()) out.muted = m.varint() != 0;
+        }
+        break;
+      }
+      case 10: {
+        out.kind = SignalResponse::Kind::kSpeakersChanged;
+        out.speakers.clear();
+        PbReader u(b);
+        while (u.Next()) {
+          if (u.field() == 1 && u.is_bytes()) out.speakers.push_back(ReadSpeaker(u.bytes()));
+        }
+        break;
+      }
       case 16: out.kind = SignalResponse::Kind::kRefreshToken; out.text = Str(b); break;
       case 17: {
         out.kind = SignalResponse::Kind::kTrackUnpublished;
@@ -407,6 +470,16 @@ std::string EncodeSignalResponseForTest(const SignalResponse& r) {
       m.Message(2, TrackInfoMsg(r.track_published.track));
       return Request(6, m);
     case SignalResponse::Kind::kLeave: return Request(8, LeaveMsg(r.leave));
+    case SignalResponse::Kind::kMute:
+      m.Bytes(1, r.text);
+      m.Bool(2, r.muted);
+      return Request(9, m);
+    case SignalResponse::Kind::kSpeakersChanged:
+      for (const auto& sp : r.speakers) m.Message(1, SpeakerMsg(sp));
+      return Request(10, m);
+    case SignalResponse::Kind::kTrackUnpublished:
+      m.Bytes(1, r.text);
+      return Request(17, m);
     case SignalResponse::Kind::kPongResp:
       m.Varint(1, static_cast<uint64_t>(r.pong.last_ping_timestamp));
       m.Varint(2, static_cast<uint64_t>(r.pong.timestamp));
@@ -449,6 +522,24 @@ std::optional<SignalRequestForTest> DecodeSignalRequestForTest(std::string_view 
             case 13: out.add_track.disable_red = a.varint() != 0; break;
             default: break;
           }
+        }
+        break;
+      }
+      case 5: {
+        PbReader m(r.bytes());
+        while (m.Next()) {
+          if (m.field() == 1 && m.is_bytes()) out.mute_sid = Str(m.bytes());
+          else if (m.field() == 2 && m.is_varint()) out.mute = m.varint() != 0;
+        }
+        break;
+      }
+      case 7: {
+        PbReader m(r.bytes());
+        while (m.Next()) {
+          if (m.field() == 1 && m.is_bytes()) out.settings_sids.push_back(Str(m.bytes()));
+          else if (m.field() == 3 && m.is_varint()) out.settings_disabled = m.varint() != 0;
+          else if (m.field() == 5 && m.is_varint()) out.settings_width = static_cast<uint32_t>(m.varint());
+          else if (m.field() == 6 && m.is_varint()) out.settings_height = static_cast<uint32_t>(m.varint());
         }
         break;
       }

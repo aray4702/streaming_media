@@ -461,6 +461,16 @@ ParseResult ParseScenario(const std::string& text) {
       const int v = need(2) ? std::atoi(tok[1].c_str()) : -2;
       if (!need(2) || v < 0 || v > 2) return fail("usage: simulcast_view 0|1|2");
       s.simulcast_view = v;
+    } else if (key == "simulcast_pause" || key == "simulcast_resume") {
+      Scenario::SimulcastActive a;
+      a.active = key == "simulcast_resume";
+      a.layer = need(4) ? std::atoi(tok[1].c_str()) : -1;
+      if (!need(4) || tok[1].size() != 1 || a.layer < 0 || a.layer > 2 || tok[2] != "at" || !ParseTime(tok[3], &a.at)) {
+        return fail("usage: " + key + " 0|1|2 at <time>");
+      }
+      s.simulcast_active.push_back(a);
+      std::stable_sort(s.simulcast_active.begin(), s.simulcast_active.end(),
+                       [](const Scenario::SimulcastActive& x, const Scenario::SimulcastActive& y) { return x.at < y.at; });
     } else if (key == "host_rtt_inf") {
       TimeDelta t;
       if (!need(2) || !ParseTime(tok[1], &t)) return fail("usage: host_rtt_inf <time>");
@@ -637,6 +647,10 @@ std::string FormatScenario(const Scenario& s) {
   if (s.keyframe_interval != d.keyframe_interval) o += "keyframe_interval " + FormatTime(s.keyframe_interval) + "\n";
   if (s.simulcast != d.simulcast) o += "simulcast " + std::to_string(s.simulcast) + "\n";
   if (s.simulcast_view != d.simulcast_view) o += "simulcast_view " + std::to_string(s.simulcast_view) + "\n";
+  for (const Scenario::SimulcastActive& a : s.simulcast_active) {
+    o += std::string(a.active ? "simulcast_resume " : "simulcast_pause ") + std::to_string(a.layer) + " at " +
+         FormatTime(a.at) + "\n";
+  }
   if (s.bitrate_adjuster != d.bitrate_adjuster) o += std::string("bitrate_adjuster ") + (s.bitrate_adjuster ? "on" : "off") + "\n";
   if (s.rate_utilization_tracker != d.rate_utilization_tracker)
     o += std::string("rate_utilization_tracker ") + (s.rate_utilization_tracker ? "on" : "off") + "\n";
@@ -691,6 +705,9 @@ std::string UnsupportedReason(const Scenario& s) {
   if (!s.two_way && s.down_audio_nack) return "down_audio_nack needs call two-way: it sets the AI-to-user direction";
   if (s.ai_send_ahead_adaptive && s.ai_send_ahead <= TimeDelta::Zero()) return "ai_send_ahead adaptive needs a lead above 0";
   if (!s.two_way && !s.turns.empty()) return "turn and barge-in need call two-way";
+  for (const Scenario::SimulcastActive& a : s.simulcast_active) {
+    if (a.layer >= s.simulcast) return "simulcast_pause and simulcast_resume need simulcast with that layer";
+  }
   if (!s.two_way && s.ai_source) return "ai_source needs call two-way: it is the AI endpoint's source";
   if (s.ai_source && s.ai_source->frame != TimeDelta::Millis(20)) return "ai_source: frame must be 20ms, the bench's audio frame";
   if (s.ai_send_ahead > TimeDelta::Zero() && !s.ai_source) return "ai_send_ahead needs ai_source: it sends the source's frames early";

@@ -1758,7 +1758,8 @@ ALGORITHMS = [
          e2e=[], bench=[],
          scenario="A 720p camera sent as three layers (320x180, 640x360, 1280x720) on a 4 Mbps link that drops to "
                   "800 kbps, rises from 1 Mbps, or stays clean (`simulcast_*` scenarios); the receiver takes every "
-                  "layer as an SFU does and one layer is measured (`simulcast_view`).",
+                  "layer as an SFU does and one layer is measured (`simulcast_view`). The SFU pauses the top layer "
+                  "for 10 s and resumes it (`issue_1173_simulcast_pause`).",
          notes="C17 (issue #1162; Owner decision #1160: group calls through a LiveKit SFU). See the "
                "[libwebrtc parity inventory](../../design/libwebrtc-parity.md#1024-simulcast-send-c17-1162) for the "
                "differences from libwebrtc. `video/config/simulcast.cc` and the simulcast path of "
@@ -1768,7 +1769,13 @@ ALGORITHMS = [
                "to the top layer), `rtp::SimulcastSendController` runs VideoStreamEncoder with a "
                "SimulcastEncoderAdapter (one encoder per layer, a paused layer below 1 kbps, a keyframe on every layer "
                "when one comes back, PLI on any layer keys every layer), the session sends each layer on its SSRC "
-               "with its RID (repaired RID on RTX) and SRs, and the endpoint offers a=rid/a=simulcast.",
+               "with its RID (repaired RID on RTX) and SRs, and the endpoint offers a=rid/a=simulcast. A layer the SFU "
+               "pauses (a=simulcast:recv with ~rid) or leaves out is inactive (`RtpEncodingParameters::active`, #1173): "
+               "the endpoint puts the state on the session (`Session::SetVideoSendActive`), and the controller "
+               "reconfigures the encoder as `WebRtcVideoSendStream::SetRtpParameters` -> `VideoStreamEncoder::"
+               "ReconfigureEncoder` does: the inactive layer is not encoded, the allocator gives its rate to the active "
+               "ones and the limits count only them; `RequiresEncoderReset` re-initializes the encoder only when a "
+               "layer comes back, which keys every layer.",
          verification="Unit tests port `simulcast_unittest.cc`, the applicable `encoder_stream_factory_unittest.cc` "
                       "cases and `simulcast_rate_allocator_unittest.cc`; `SimulcastSend.*` checks RID/RRID on the wire, "
                       "the allocation limits (720p: min 30, max 3400, pad-up 1370 kbps) and the adapter rules; "
@@ -1777,7 +1784,13 @@ ALGORITHMS = [
                       "model: the four `simulcast_*` scenarios have no gap on 10 seeds (and "
                       "`simulcast_capacity_drop_low_layer` none on 20). Two fixes it needed beyond the port: the "
                       "pacer's round robin between SSRCs and its per-SSRC keyframe flush (`PrioritizedPacketQueue`), "
-                      "and SRs per layer (without them layers 1-2 had no RTT and resent more)."),
+                      "and SRs per layer (without them layers 1-2 had no RTT and resent more). #1173: "
+                      "`SimulcastSend.InactiveLayer*`, `ReactivatedLayer*`, `SessionActiveState*` and "
+                      "`RequiresEncoderReset*` check the pause (no frame or packet on the layer, its rate to the "
+                      "others, the 900 kbps limit) and the resume with a keyframe; "
+                      "`PcRenegotiation.SfuReofferPausesAndResumesASimulcastLayer` an SFU's re-offers pausing and "
+                      "resuming the top layer; `issue_1173_simulcast_pause` runs it against libwebrtc's "
+                      "`ReconfigureVideoEncoder` with the layer inactive in `sm_compare`."),
     # ------------------------------------------------------------------ 8
     dict(id="8.1", slug="rtp-to-ntp", title="RTP -> NTP mapping",
          problems=["Lip-sync (A/V sync) -> RTCP Sender Reports map the RTP timestamp to NTP wallclock"],

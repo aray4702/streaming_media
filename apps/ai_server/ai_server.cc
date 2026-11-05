@@ -126,6 +126,119 @@ void ParseTurnResponse(const std::string& json, p2p::ServerAddresses* stun, std:
 }
 
 // One call: its signaling WebSocket, endpoint and audio.
+// --- AiConversation ---------------------------------------------------------------------------------------------------
+
+AiConversation::AiConversation(const AiServerConfig& config, AiCallMetrics* metrics,
+                               std::function<void(const std::string&)> log)
+    : metrics_(metrics),
+      log_(std::move(log)),
+      detector_(config.turn_detector),
+      source_(config.ai_source),
+      reply_(config.reply_factory ? config.reply_factory() : std::make_unique<ScriptedReplySource>()) {
+  detector_config_ok_ = config.turn_detector.sample_rate_hz == kRate;
+}
+
+AiConversation::~AiConversation() {
+  if (generating_.valid()) generating_.wait();  // The worker uses reply_.
+}
+
+// The reply source runs on a worker thread (#1126): a model's time no longer holds up the 20 ms slots.
+void AiConversation::StartGeneration(std::vector<float> user_audio, Timestamp at, Timestamp last_speech) {
+  gen_at_ = at;
+  gen_last_speech_ = last_speech;
+  generating_ = std::async(std::launch::async, [src = reply_.get(), audio = std::move(user_audio), at] {
+    return src->OnUserTurn(audio, at);
+  });
+}
+
+// A reply that is ready starts at the first slot not yet sent.
+void AiConversation::CollectReply(Timestamp now, Timestamp next_slot) {
+  if (!generating_.valid() || generating_.wait_for(std::chrono::seconds(0)) != std::future_status::ready) return;
+  std::vector<float> reply = generating_.get();
+  metrics_->reply_generation_ms.push_back((now - gen_at_).ms_f());
+  if (barge_in_deferred_) {
+    barge_in_deferred_ = false;
+    reply_->OnBargeIn(barge_in_at_);
+  }
+  if (next_turn_) {  // The user ended another turn meanwhile: its reply replaces this one.
+    PendingTurn t = std::move(*next_turn_);
+    next_turn_.reset();
+    StartGeneration(std::move(t.audio), t.at, t.last_speech);
+    return;
+  }
+  if (reply.empty()) return;
+  reply_audio_ = std::move(reply);
+  held_.clear();
+  source_.StartTurn(next_slot, TimeDelta::Micros(static_cast<int64_t>(reply_audio_.size()) * 1'000'000 / kRate));
+  ++metrics_->replies;
+  turn_end_speech_ = gen_last_speech_;
+  awaiting_first_frame_ = true;
+  log_("end of turn, replying");
+}
+
+std::span<const float> AiConversation::Slot(Timestamp slot, Timestamp now) {
+  for (const auto& f : source_.Poll(slot)) held_.push_back(f);
+  if (held_.empty()) return {};
+  const testbench::AiFrame f = held_.front();
+  held_.pop_front();
+  const size_t begin = static_cast<size_t>(f.media_offset.us() * kRate / 1'000'000);
+  std::span<const float> pcm;
+  if (begin < reply_audio_.size()) {
+    pcm = std::span<const float>(reply_audio_).subspan(begin, std::min(k20ms, reply_audio_.size() - begin));
+  }
+  if (awaiting_first_frame_) {
+    awaiting_first_frame_ = false;
+    metrics_->response_delay_ms.push_back((now - turn_end_speech_).ms_f());
+  }
+  ++metrics_->reply_frames_sent;
+  return pcm;
+}
+
+void AiConversation::OnPlayout(std::span<const float> pcm, timing::AudioOperation op, Timestamp at) {
+  if (op != timing::AudioOperation::kSilence) ++metrics_->audio_packets_received;
+  if (!detector_config_ok_) return;
+  const bool speaking = source_.active();
+  const auto ev = detector_.Process(pcm, at, speaking);
+  if (detector_.in_utterance()) {
+    metrics_->user_speech_ms += 10;
+    if (op == timing::AudioOperation::kExpand) metrics_->user_speech_lost_ms += 10;
+    if (user_audio_.size() + pcm.size() <= kMaxUserAudio) user_audio_.insert(user_audio_.end(), pcm.begin(), pcm.end());
+  }
+  if (!ev) return;
+  switch (ev->type) {
+    case testbench::TurnEventType::kSpeechStart:
+      user_audio_.clear();
+      break;
+    case testbench::TurnEventType::kBargeIn:
+      if (source_.active()) {
+        source_.Cancel(at);
+        held_.clear();
+        awaiting_first_frame_ = false;
+        ++metrics_->barge_ins;
+        metrics_->barge_in_stop_ms.push_back((ev->at - ev->speech_start).ms_f());
+        if (generating_.valid()) {  // Never call the source while OnUserTurn runs.
+          barge_in_deferred_ = true;
+          barge_in_at_ = at;
+        } else {
+          reply_->OnBargeIn(at);
+        }
+        log_("barge-in, reply cut");
+      }
+      break;
+    case testbench::TurnEventType::kEndOfTurn: {
+      ++metrics_->user_turns;
+      if (generating_.valid()) {
+        next_turn_ = PendingTurn{std::move(user_audio_), at, ev->last_speech};
+      } else {
+        StartGeneration(std::move(user_audio_), at, ev->last_speech);
+      }
+      user_audio_.clear();
+      break;
+    }
+  }
+}
+
+
 class AiCall {
  public:
   AiCall(AiServer& server, std::string room, int id, Timestamp now)
@@ -133,12 +246,9 @@ class AiCall {
         self_("ai-server-" + std::to_string(id)),
         decoder_(kRate),
         encoder_(server.config().opus_bitrate_bps, true),
-        detector_(server.config().turn_detector),
-        source_(server.config().ai_source),
+        conversation_(server.config(), &metrics_, [this](const std::string& line) { server_.Log("call " + this->room() + ": " + line); }),
         start_(now) {
     metrics_.room = std::move(room);
-    reply_ = server.config().reply_factory ? server.config().reply_factory() : std::make_unique<ScriptedReplySource>();
-    detector_config_ok_ = server.config().turn_detector.sample_rate_hz == kRate;
     ws_.Connect(server.signaling_);
     ws_.Send("{\"type\":\"join\",\"room\":" + net::JsonEscape(metrics_.room) + ",\"peer\":" + net::JsonEscape(self_) + "}");
   }
@@ -294,34 +404,17 @@ class AiCall {
       std::vector<float> pcm(k10ms);
       timing::AudioOperation op = timing::AudioOperation::kSilence;
       if (ep_->audio_receive()) op = s->GetAudio(*ep_->audio_receive(), pcm, now);
-      OnPlayout(pcm, op, next_pull_);
+      conversation_.OnPlayout(pcm, op, next_pull_);
       next_pull_ += TimeDelta::Millis(10);
     }
-    CollectReply(now);
+    conversation_.CollectReply(now, next_send_);
     // Send 20 ms per slot: the reply's frame due by the slot (not by `now`), or silence. Exactly one frame per slot
     // keeps the RTP timestamps on the send clock (#1126): polling by `now` after a late wake-up took the next slot's
     // frame too, then sent silence in that slot, cutting a hole in the reply and moving the timestamps 20 ms ahead
     // for the rest of the call. A loop that wakes late catches up slot by slot, as libwebrtc's audio thread does.
     while (now >= next_send_) {
       metrics_.send_late_max_ms = std::max(metrics_.send_late_max_ms, (now - next_send_).ms_f());
-      for (const auto& f : source_.Poll(next_send_)) held_.push_back(f);
-      if (held_.empty()) {
-        SendFrame({}, now);
-      } else {
-        const testbench::AiFrame f = held_.front();
-        held_.pop_front();
-        const size_t begin = static_cast<size_t>(f.media_offset.us() * kRate / 1'000'000);
-        std::span<const float> pcm;
-        if (begin < reply_audio_.size()) {
-          pcm = std::span<const float>(reply_audio_).subspan(begin, std::min(k20ms, reply_audio_.size() - begin));
-        }
-        if (awaiting_first_frame_) {
-          awaiting_first_frame_ = false;
-          metrics_.response_delay_ms.push_back((now - turn_end_speech_).ms_f());
-        }
-        ++metrics_.reply_frames_sent;
-        SendFrame(pcm, now);
-      }
+      SendFrame(conversation_.Slot(next_send_, now), now);
       ++slots_;
       metrics_.rtp_ahead_max_ms = std::max(metrics_.rtp_ahead_max_ms, 20.0 * static_cast<double>(frames_out_ - slots_));
       next_send_ += TimeDelta::Millis(20);
@@ -329,39 +422,6 @@ class AiCall {
     ep_->FlushOutgoing(now);
   }
 
-  // The reply source runs on a worker thread (#1126): a model's time no longer holds up the 20 ms slots.
-  void StartGeneration(std::vector<float> user_audio, Timestamp at, Timestamp last_speech) {
-    gen_at_ = at;
-    gen_last_speech_ = last_speech;
-    generating_ = std::async(std::launch::async, [src = reply_.get(), audio = std::move(user_audio), at] {
-      return src->OnUserTurn(audio, at);
-    });
-  }
-
-  // A reply that is ready starts at the first slot not yet sent.
-  void CollectReply(Timestamp now) {
-    if (!generating_.valid() || generating_.wait_for(std::chrono::seconds(0)) != std::future_status::ready) return;
-    std::vector<float> reply = generating_.get();
-    metrics_.reply_generation_ms.push_back((now - gen_at_).ms_f());
-    if (barge_in_deferred_) {
-      barge_in_deferred_ = false;
-      reply_->OnBargeIn(barge_in_at_);
-    }
-    if (next_turn_) {  // The user ended another turn meanwhile: its reply replaces this one.
-      PendingTurn t = std::move(*next_turn_);
-      next_turn_.reset();
-      StartGeneration(std::move(t.audio), t.at, t.last_speech);
-      return;
-    }
-    if (reply.empty()) return;
-    reply_audio_ = std::move(reply);
-    held_.clear();
-    source_.StartTurn(next_send_, TimeDelta::Micros(static_cast<int64_t>(reply_audio_.size()) * 1'000'000 / kRate));
-    ++metrics_.replies;
-    turn_end_speech_ = gen_last_speech_;
-    awaiting_first_frame_ = true;
-    server_.Log("call " + room() + ": end of turn, replying");
-  }
 
   void SendFrame(std::span<const float> pcm, Timestamp now) {
     int16_t in[k20ms] = {};
@@ -376,50 +436,6 @@ class AiCall {
     ++frames_out_;
   }
 
-  void OnPlayout(std::span<const float> pcm, timing::AudioOperation op, Timestamp at) {
-    if (op != timing::AudioOperation::kSilence) ++metrics_.audio_packets_received;
-    if (!detector_config_ok_) return;
-    const bool speaking = source_.active();
-    const auto ev = detector_.Process(pcm, at, speaking);
-    if (detector_.in_utterance()) {
-      metrics_.user_speech_ms += 10;
-      if (op == timing::AudioOperation::kExpand) metrics_.user_speech_lost_ms += 10;
-      if (user_audio_.size() + pcm.size() <= kMaxUserAudio) user_audio_.insert(user_audio_.end(), pcm.begin(), pcm.end());
-    }
-    if (!ev) return;
-    switch (ev->type) {
-      case testbench::TurnEventType::kSpeechStart:
-        user_audio_.clear();
-        break;
-      case testbench::TurnEventType::kBargeIn:
-        if (source_.active()) {
-          source_.Cancel(at);
-          held_.clear();
-          awaiting_first_frame_ = false;
-          ++metrics_.barge_ins;
-          metrics_.barge_in_stop_ms.push_back((ev->at - ev->speech_start).ms_f());
-          if (generating_.valid()) {  // Never call the source while OnUserTurn runs.
-            barge_in_deferred_ = true;
-            barge_in_at_ = at;
-          } else {
-            reply_->OnBargeIn(at);
-          }
-          server_.Log("call " + room() + ": barge-in, reply cut");
-        }
-        break;
-      case testbench::TurnEventType::kEndOfTurn: {
-        ++metrics_.user_turns;
-        if (generating_.valid()) {
-          next_turn_ = PendingTurn{std::move(user_audio_), at, ev->last_speech};
-        } else {
-          StartGeneration(std::move(user_audio_), at, ev->last_speech);
-        }
-        user_audio_.clear();
-        break;
-      }
-    }
-  }
-
   AiServer& server_;
   std::string self_;
   net::WebSocketClient ws_;
@@ -428,36 +444,16 @@ class AiCall {
   testbench::OpusAudioDecoder decoder_;
   testbench::OpusSendEncoder encoder_;
   std::unique_ptr<pc::PeerEndpoint> ep_;
-  testbench::TurnDetector detector_;
-  bool detector_config_ok_ = true;
-  testbench::AiMediaSource source_;
-  std::unique_ptr<AiReplySource> reply_;
-  // The reply being generated (declared after reply_, so it is waited for before the source goes away).
-  struct PendingTurn {
-    std::vector<float> audio;
-    Timestamp at;
-    Timestamp last_speech;
-  };
-  std::future<std::vector<float>> generating_;
-  Timestamp gen_at_ = Timestamp::Micros(0);
-  Timestamp gen_last_speech_ = Timestamp::Micros(0);
-  std::optional<PendingTurn> next_turn_;
-  bool barge_in_deferred_ = false;
-  Timestamp barge_in_at_ = Timestamp::Micros(0);
-  std::deque<testbench::AiFrame> held_;  // Frames due but not yet sent (one per slot).
+  AiCallMetrics metrics_;
+  AiConversation conversation_;
   int64_t slots_ = 0;
   int64_t frames_out_ = 0;
-  std::vector<float> reply_audio_;
-  std::vector<float> user_audio_;
   std::vector<std::map<std::string, std::string>> pending_candidates_;
   Timestamp start_;
   Timestamp next_pull_ = Timestamp::PlusInfinity();
   Timestamp next_send_ = Timestamp::PlusInfinity();
-  Timestamp turn_end_speech_ = Timestamp::Micros(0);
-  bool awaiting_first_frame_ = false;
   uint32_t rtp_ts_ = 0;
   bool done_ = false;
-  AiCallMetrics metrics_;
 };
 
 AiServer::AiServer(AiServerConfig config) : config_(std::move(config)) {}

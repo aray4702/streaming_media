@@ -1350,7 +1350,18 @@ and the keyframe flush of the keyframe's own SSRC and RTX SSRC (`HasKeyframePack
 `DisableSimulcastInSender`, `UpdateSimulcastLayerStatusInSender`). With renegotiation (10.23), every later offer and
 answer signals the same RIDs without SSRCs (`AddStreamParams` reuses the sender's stream), so an SFU's re-offer as
 participants join keeps the layers, their SSRCs and send streams, and each later remote description updates the
-layers' state as libwebrtc's `AssociateTransceiver` does for an existing transceiver.
+layers' state as libwebrtc's `AssociateTransceiver` does for an existing transceiver. That state reaches the encoder
+(#1173): the endpoint sets each layer's `RtpEncodingParameters::active` on the session
+(`Session::SetVideoSendActive`), and `rtp::SimulcastSendController` reconfigures as
+`WebRtcVideoSendStream::SetRtpParameters` -> `VideoStreamEncoder::ConfigureEncoder` / `ReconfigureEncoder` does
+(`CreateVideoEncoderConfig` copies `active` into `simulcast_layers`): the inactive stream gets no rate from
+`SimulcastRateAllocator` and is not encoded, the active ones share its rate, `VideoSendStreamImpl`'s limits count only
+the active streams (720p with the top layer paused: max 900 kbps), and `RequiresEncoderReset` re-initializes the
+encoder only when a stream comes back (every layer's next frame a keyframe), not when one goes. The RTP modules stay
+active, as `RtpVideoSender` keeps them without the video-layers-allocation extension (not negotiated by default).
+`issue_1173_simulcast_pause` (the SFU pauses the top layer from 10 to 20 s; `sm_compare` reconfigures libwebrtc's
+`VideoSendStream` with the layer inactive) has no gap: top layer 19.9 fps and 2 keyframes on both, middle layer 557 kbps
+on both.
 
 `sm_compare` runs libwebrtc's `VideoSendStream` with three SSRCs, RTX SSRCs and RIDs and its own
 `SimulcastEncoderAdapter` over the shared encoder model (one per layer, drawing from one generator in layer order, as
@@ -1365,6 +1376,8 @@ seeds, and none on 20 for `simulcast_capacity_drop_low_layer`. Differences:
 | Per-layer frame rate | `FramerateController` for a layer whose `max_framerate` is below the input's | Not ported | Remaining work; every layer runs at the input rate by default |
 | Temporal layers, `scale_resolution_down_to`, scalability modes | Supported | Not ported (one temporal layer per layer, H.264) | Remaining work |
 | Several video streams' FEC | One `FecControllerDefault` for the stream | One per layer | Off beside NACK for H.264 (`ShouldDisableRedAndUlpfec`) |
+| Every encoding inactive | `VideoSendStreamImpl` stops the stream (out of the allocator, no padding) | Nothing is encoded; the stream stays in the allocator with its last limits | Remaining work (#1173); an SFU pauses the layers no one watches, not usually all of them |
+| Quality scaling with one active layer | `is_quality_scaling_allowed` when `NumActiveStreams == 1` (the SFU paused the others) | Stays off for simulcast | Remaining work (#1173) |
 | Random loss (`3%`, 100 ms RTT, top layer measured) | longest freeze 181 ms, count 1.3 (10 seeds) | 312 ms, 2.0 | Open on #1162; no such scenario is in the suite until it is found |
 
 ## Open questions for the Owner
