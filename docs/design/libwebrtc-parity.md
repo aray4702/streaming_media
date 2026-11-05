@@ -1352,7 +1352,7 @@ seeds, and none on 20 for `simulcast_capacity_drop_low_layer`. Differences:
 | Several video streams' FEC | One `FecControllerDefault` for the stream | One per layer | Off beside NACK for H.264 (`ShouldDisableRedAndUlpfec`) |
 | Every encoding inactive | `VideoSendStreamImpl` stops the stream (out of the allocator, no padding) | Nothing is encoded; the stream stays in the allocator with its last limits | Remaining work (#1173); an SFU pauses the layers no one watches, not usually all of them |
 | Quality scaling with one active layer | `is_quality_scaling_allowed` when `NumActiveStreams == 1` (the SFU paused the others) | Stays off for simulcast | Remaining work (#1173) |
-| Random loss (`3%`, 100 ms RTT, top layer measured) | longest freeze 181 ms, count 1.3 (10 seeds) | 312 ms, 2.0 | Open on #1162; no such scenario is in the suite until it is found |
+| Random loss (`3%`, 100 ms RTT, top layer measured; `issue_1171_simulcast_random_loss`) | longest freeze 234 ms, 1.9 freezes (200 seeds; 181 ms, 1.3 on seeds 1-10) | 235 ms, 1.7 (312 ms, 2.0 on seeds 1-10 before #1171) | Not a gap (#1171): ten seeds do not settle these freezes (a packet whose retransmissions are lost too); every 20- and 40-seed window of 200 is level, so the scenario runs 40 seeds (`compare_seeds 40`). The padding stream on the way: `PacketRouter::SendPacket`'s `last_send_module_` (pad on the layer that last sent media) is ported, padding 2.2 -> 1.7 kbps against 1.7 |
 
 ## Open questions for the Owner
 
