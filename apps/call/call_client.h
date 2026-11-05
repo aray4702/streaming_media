@@ -40,14 +40,22 @@
 //     the a=msid track ids), then, once both are published (TrackPublishedResponse), our offer; the server's answer
 //     and its trickled candidates (target PUBLISHER) complete it. The JoinResponse's ICE servers (the host's coturn)
 //     are added to /turn's. Pings (ping_req) every ping_interval keep the session.
-//   - the subscriber (`sub_`): the server offers it (data channels, then the subscribed tracks) and we answer
-//     (target SUBSCRIBER); its audio and video are what plays and renders. The endpoint takes one offer with at
-//     most one audio and one video section; the server's renegotiations (each participant who joins or publishes
-//     later) and several remote streams need C18 (multi-stream receive, #1160), and so does LiveKit's first
-//     subscriber offer when it carries only data channels (the endpoint needs an audio or video section). Until
-//     then `livekit_subscribe` is off by default: the client asks /lk-token for a publish-only grant (subscribe=0,
-//     no canSubscribe) and joins with auto_subscribe=0, so LiveKit makes the publisher connection the primary one
-//     and opens no subscriber connection.
+//   - the subscriber (`sub_`, C20 #1172): the server offers it and we answer (target SUBSCRIBER). Its first offer
+//     carries only LiveKit's data channels; each participant who joins or publishes later brings a re-offer with its
+//     tracks (and one who leaves, a re-offer that makes them inactive), which C18's renegotiation applies on the one
+//     connection: every audio and video section is received on a recvonly transceiver of its own (OnTrack /
+//     OnRemoveTrack). A track is mapped to its participant by its msid (LiveKit's stream id "PA_<sid>|TR_<sid>", the
+//     track id the track sid) and the participants' TrackInfo from the JoinResponse and ParticipantUpdates.
+//   Media of a group: each remote audio track decodes with its own Opus decoder (the endpoint's decoder factory), and
+//   the played-out audio is the sum of every remote stream's 10 ms (up to 5; libwebrtc's AudioMixerImpl and its
+//   limiter are not in compare/webrtc/reference, so this is a plain saturating mix); each remote video track decodes
+//   with its own VideoToolbox decoder, and its latest frame is kept per participant (TakeParticipantVideo). Video
+//   subscriptions ask for `livekit_receive_width` x `livekit_receive_height` (UpdateTrackSettings), from which the
+//   server picks a simulcast layer, as the SDKs' adaptive stream does for a tile of that size.
+//   Active speaker: LiveKit's SpeakersChanged (from the RFC 6464 audio levels the publishers send; ours are written
+//   by the RTP sender) gives each participant's level and whether it is active; before the first update, a local
+//   meter on each participant's played-out audio (-40 dBFS, 500 ms hangover) stands in. Mute and video off are
+//   announced with MuteTrackRequest (so the others show them), and a mute from the server is applied.
 //   Hangup sends a LeaveRequest. A server leave ends the call.
 //
 // Threads: the call runs on the host's call thread (Start, OnSignal, Step, Wait, Hangup, SetTurnResponse). The device
@@ -68,6 +76,7 @@
 #include <string>
 #include <vector>
 
+#include "livekit_proto.h"
 #include "os_dns_resolver.h"
 #include "os_sockets.h"
 #include "sm/core/units.h"
@@ -77,6 +86,7 @@
 
 namespace sm::pc {
 class PeerEndpoint;
+struct RemoteTrack;
 }
 namespace sm::p2p {
 class StaticNetworkManager;
@@ -121,10 +131,29 @@ struct CallClientConfig {
   bool verbose = false;          // Log to stderr.
   // LiveKit (C19, above): the signaling is LiveKit's (binary protobuf messages), not the service's JSON.
   bool livekit = false;
-  // Subscribe to the room's tracks (the join's auto_subscribe). Off: publish only (until C18, above).
-  bool livekit_subscribe = false;
+  // Subscribe to the room's tracks (the join's auto_subscribe and the token's canSubscribe). Off: publish only.
+  bool livekit_subscribe = true;
   bool livekit_publish_video = true;  // Publish a camera track (else the microphone only).
   int livekit_video_width = 640, livekit_video_height = 360;  // The camera size announced in AddTrackRequest.
+  // The size each remote video is shown at (UpdateTrackSettings; 0: no settings sent, the server's default layer).
+  int livekit_receive_width = 640, livekit_receive_height = 360;
+};
+
+// A remote participant of a LiveKit room (C20, #1172), for the grid: who it is, what it publishes, its speaker state
+// and its receive stats (refreshed once a second; the speaker state ten times a second).
+struct GroupParticipant {
+  std::string identity, name, sid;
+  bool has_audio = false, has_video = false;      // A track of that kind is being received.
+  bool audio_muted = true, video_muted = true;    // Not published, or published muted (TrackInfo.muted).
+  double audio_level = 0;                         // 0 to 1: LiveKit's speaker level, else the local meter's.
+  bool speaking = false;                          // An active speaker.
+  uint64_t audio_packets_received = 0;
+  int64_t audio_packets_lost = 0;
+  double audio_jitter_ms = 0, audio_concealed_pct = 0, audio_played_s = 0;
+  uint64_t video_frames_received = 0, video_frames_decoded = 0;
+  int video_width = 0, video_height = 0;
+  double video_fps = 0;  // Decoded, over the last second.
+  std::string ToJson() const;
 };
 
 // The capture chain of libwebrtc's iOS client (#1124): WebRtcVoiceEngine::ApplyOptions under WEBRTC_IOS sets
@@ -168,6 +197,12 @@ struct CallStats {
   int livekit_published = 0;
   std::string livekit_subscriber;
   double livekit_signal_rtt_ms = -1;  // ping_req / pong_resp
+  // C20: the remote participants, the loudest active speaker (our own identity when it is us; empty: nobody), every
+  // identity that has been an active speaker, and who joined and left since we joined.
+  std::vector<GroupParticipant> livekit_group;
+  std::string livekit_identity, livekit_active_speaker;
+  double livekit_local_level = 0;
+  std::vector<std::string> livekit_speakers_seen, livekit_joined, livekit_left;
   std::string Text() const;  // Multi-line, for the UI.
   std::string ToJson() const;
 
@@ -204,8 +239,19 @@ class CallClient {
   size_t PullPlayout(std::span<int16_t> out);
   // A camera frame and the clockwise turn that shows it upright (CapturedFrame::rotation), sent in CVO.
   void PushCameraFrame(video::I420Frame frame, video::Rotation rotation = video::Rotation::k0);
-  // The latest rendered remote frame since the last call, if any, already turned upright.
+  // The latest rendered remote frame since the last call, if any, already turned upright. In a group: the first
+  // remote video track's.
   bool TakeRemoteVideo(video::I420Frame* out);
+  // A group (C20): the latest frame of `identity`'s video since the last call, if any, turned upright.
+  bool TakeParticipantVideo(const std::string& identity, video::I420Frame* out);
+  // A group: the remote participants (in the order they joined) and the active speaker, as in stats() but fresher.
+  std::vector<GroupParticipant> participants() const;
+  std::string active_speaker() const;
+  // A group, before Start: each remote participant's 10 ms of played-out audio (48 kHz, [-1, 1]) before the mix, on
+  // the call thread, with the jitter buffer's operation (the AI server listens to the active speaker, #1172).
+  using RemoteAudioSink =
+      std::function<void(const std::string& identity, std::span<const float> pcm, bool concealed, Timestamp at)>;
+  void SetRemoteAudioSink(RemoteAudioSink sink) { remote_audio_sink_ = std::move(sink); }
   void SetMuted(bool muted) { muted_ = muted; }
   void SetVideoEnabled(bool on) { video_enabled_ = on; }
   bool muted() const { return muted_; }
@@ -235,6 +281,14 @@ class CallClient {
   void LiveKitSubscriberOffer(const std::string& sdp, uint32_t id, Timestamp now);
   void LiveKitTrickle(const std::string& candidate_init, bool subscriber, Timestamp now);
   void MakeSubscriber(Timestamp now);
+  void LiveKitSpeakers(const std::vector<livekit::SpeakerInfo>& speakers);
+  void LiveKitAnnounceMute();
+  void OnRemoteTrack(const pc::RemoteTrack& t, bool added);
+  // The identity of a remote track's participant; empty while unknown.
+  std::string TrackIdentity(const std::string& track_id, const std::vector<std::string>& stream_ids) const;
+  void RefreshGroup(Timestamp now);
+  // A group's playout: every remote audio track's 10 ms, mixed, into `pcm`.
+  void MixGroupAudio(std::span<float> pcm, Timestamp now);
   // The endpoint whose audio plays and whose video renders: the subscriber with LiveKit, else the one call.
   pc::PeerEndpoint* receiver() const;
 
@@ -256,6 +310,10 @@ class CallClient {
   std::unique_ptr<p2p::BasicPortAllocator> sub_allocator_;
   std::unique_ptr<pc::PeerEndpoint> sub_;
   std::unique_ptr<LiveKit> lk_;
+  RemoteAudioSink remote_audio_sink_;
+  mutable std::mutex group_mu_;
+  std::vector<GroupParticipant> group_;  // participants(), under group_mu_.
+  std::string active_speaker_;            // Under group_mu_.
   std::string remote_;
   std::vector<std::map<std::string, std::string>> pending_candidates_;
   std::atomic<CallState> state_{CallState::kIdle};

@@ -241,9 +241,9 @@ int main(int argc, char** argv) {
       "[--ip=A.B.C.D] [--relay] [--turns=N] [--barge] [--no-talk] [--no-apm] [--ios-audio|--aec3] [--video] "
       "[--label=TEXT]\n"
       "       sm_call_smoke --livekit=ws[s]://HOST:PORT|auto [--token=http[s]://HOST:PORT/lk-token] [--peer=ID] "
-      "[--subscribe] [same options]\n";
+      "[--publish-only] [same options]\n";
   std::string livekit, token_url, peer;
-  bool subscribe = false;
+  bool subscribe = true;
   for (int i = 1; i < argc; ++i) {
     const std::string a = argv[i];
     auto val = [&](const char* k) { return a.rfind(k, 0) == 0 ? a.substr(std::strlen(k)) : std::string(); };
@@ -251,7 +251,8 @@ int main(int argc, char** argv) {
     else if (!val("--livekit=").empty()) livekit = val("--livekit=");
     else if (!val("--token=").empty()) token_url = val("--token=");
     else if (!val("--peer=").empty()) peer = val("--peer=");
-    else if (a == "--subscribe") subscribe = true;
+    else if (a == "--subscribe") subscribe = true;  // The default since C20.
+    else if (a == "--publish-only") subscribe = false;
     else if (!val("--room=").empty()) room = val("--room=");
     else if (!val("--seconds=").empty()) seconds = std::atof(val("--seconds=").c_str());
     else if (!val("--turn=").empty()) turn = val("--turn=");
