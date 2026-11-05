@@ -2330,7 +2330,8 @@ MILESTONE3 = [
         "Requirement C1. Each backend reports the DTLS versions it supports and a handshake agrees on the highest "
         "both have (BoringSSL 1.3, mbedTLS 1.2). Not built for wasm (`SM_WITH_TLS` is off there).",
         "`unit.Tls*` and `unit.Tls*.mbedtls` (the second set when `SM_TLS_CROSS_TEST` is on) pass; the cross test agrees "
-        "on DTLS 1.2. PRs #992-#994, #1016, #1018."),
+        "on DTLS 1.2. PRs #992-#994, #1016, #1018.",
+        bench=["security/Digest_Sha256_1200B", "security/Hmac_Sha1_100B", "security/CryptoRandom_16B", "security/Identity_EcdsaAndFingerprint", "security/Fingerprint_Sha256"]),
     _m3("2.2", "dtls-transport", "DTLS transport",
         "A secure channel over unreliable ICE packets -> DTLS handshake, role from SDP `a=setup`, the peer's certificate checked against the SDP fingerprint",
         ["tls/dtls_transport.h", "p2p/dtls_transport.h", "p2p/dtls_utils.h"],
@@ -2342,7 +2343,8 @@ MILESTONE3 = [
         "Requirements C1 and C5. `p2p::DtlsTransport` sits over an ICE transport; `tls::DtlsTransport` is the "
         "backend's record layer.",
         "`dtls_transport_unittest.cc`'s cases on both backends; `fuzz.dtls_record` (both backends) and `fuzz.dtls_transport` "
-        "replay their corpora (C10). PRs #994, #1018."),
+        "replay their corpora (C10). PRs #994, #1018.",
+        bench=["security/Dtls_Handshake", "security/Dtls_Record_1000B"]),
     _m3("2.3", "dtls-srtp", "DTLS-SRTP key export",
         "Keying media from the same handshake -> RFC 5764 key export split by DTLS role",
         ["pc/dtls_srtp_transport.h"],
@@ -2352,7 +2354,8 @@ MILESTONE3 = [
         "`pc/dtls_srtp_transport.{h,cc}`, `rtc_base/openssl_stream_adapter.cc` (`ExportSrtpKeyingMaterial`)",
         ["10.7"],
         "Requirement C5.",
-        "The cases of `dtls_srtp_transport_unittest.cc` pass plus a media path over the emulated link. PR #1038."),
+        "The cases of `dtls_srtp_transport_unittest.cc` pass plus a media path over the emulated link. PR #1038.",
+        bench=["security/DtlsSrtp_ExportKeys"]),
     _m3("2.4", "srtp", "SRTP and SRTCP (libsrtp)",
         "Protecting media from eavesdropping and replay -> AES-CM-128-HMAC-SHA1-80 and AES-GCM with replay protection",
         ["tls/srtp_session.h", "pc/srtp_transport.h", "pc/rtp_transport.h"],
@@ -2362,7 +2365,8 @@ MILESTONE3 = [
         "`pc/srtp_session.{h,cc}`, `pc/srtp_transport.{h,cc}`, `pc/rtp_transport.{h,cc}`, `pc/rtp_utils.{h,cc}`",
         ["10.7"],
         "Requirement C5. The test bench keeps unencrypted media.",
-        "`srtp_transport_unittest.cc` and `rtp_transport_unittest.cc` cases pass. PRs #1011, #1038."),
+        "`srtp_transport_unittest.cc` and `rtp_transport_unittest.cc` cases pass. PRs #1011, #1038.",
+        bench=["security/Srtp_RtpRoundTrip_1200B_AesCmSha1_80", "security/Srtp_RtpRoundTrip_1200B_AeadAes128Gcm", "security/Srtcp_RoundTrip_ReceiverReport"]),
     _m3("2.5", "tls-client-socket", "TLS client socket over TCP",
         "TURN on port 443 and other TLS-wrapped streams -> a TLS client over a TCP packet socket",
         ["tls/tls_stream.h", "p2p/ssl_adapter.h", "p2p/ssl_adapter_tls.h"],
@@ -2372,7 +2376,8 @@ MILESTONE3 = [
         "`rtc_base/{ssl_adapter,openssl_adapter,ssl_stream_adapter}.{h,cc}`",
         ["10.13"],
         "Requirement C4 part 3, on both backends.",
-        "`ssl_adapter_test.cc` and `tls_stream_test.cc`; TURN over TLS (1.8) and `P2pIceCompareTls` use it. PR #1046."),
+        "`ssl_adapter_test.cc` and `tls_stream_test.cc`; TURN over TLS (1.8) and `P2pIceCompareTls` use it. PR #1046.",
+        bench=["security/Tls_Handshake", "security/Tls_Record_1200B"]),
 
     # ------------------------------------------------------------------ 9.6-9.9
     _m3("9.6", "dcsctp-packet", "dcSCTP packet layer",
@@ -2403,6 +2408,7 @@ MILESTONE3 = [
         "libwebrtc's packet tests are ported as the `Dcsctp*ChunkTest`, `*ParameterTest`, `*CauseTest`, `SctpPacketTest`, `Crc32Test`, "
         "`TlvDataTest`, `BoundedByteReader/WriterTest` and `SequenceNumbersTest` suites (`sm_unit_dcsctp`). "
         "`fuzz.dcsctp_packet` replays the SCTP packet fuzz corpus. PR #1042.",
+        bench=["dc/SctpPacket_BuildParse_Sack_Data1000B"],
         group="9d"),
     _m3("9.7", "dcsctp-socket", "dcSCTP socket",
         "An SCTP association in user space -> `DcSctpSocket` with its send and receive queues, congestion control, timers and stream reset",
@@ -2424,6 +2430,7 @@ MILESTONE3 = [
         "libwebrtc's socket, rx, tx and timer test cases are ported (`sm_unit_dcsctp_socket`: `DcSctpSocketTest`, "
         "`RetransmissionQueueTest`, `ReassemblyQueueTest`, `RRSendQueueTest`, `StreamResetHandlerTest`, ...). Fuzz target "
         "`dcsctp_socket` from 10 starting states (`fuzz.dcsctp_socket`). PR #1067.",
+        bench=["dc/Socket_Message1000B", "dc/Socket_Connect"],
         group="9d"),
     _m3("9.8", "sctp-over-dtls", "SCTP over DTLS",
         "Carrying SCTP on the call's secure transport -> `DcSctpTransport` on a DTLS transport (RFC 8261)",
@@ -2435,6 +2442,7 @@ MILESTONE3 = [
         ["10.17"],
         "Requirement C7 part 3. Needs `SM_WITH_TLS` as well as `SM_WITH_DATACHANNEL`.",
         "`dcsctp_transport_test.cc` passes (`unit.SctpDcSctpTransport`, `unit.SctpOverDtls`). PR #1082.",
+        bench=["dc/SctpOverDtls_Message1000B"],
         group="9d"),
     _m3("9.9", "data-channel-api", "DCEP and the data channel API",
         "Application messages between browsers and servers -> DATA_CHANNEL_OPEN/ACK, reliable and partially reliable channels, in-band and negotiated",
@@ -2449,6 +2457,7 @@ MILESTONE3 = [
         "`sctp_utils_test.cc`, `data_channel_test.cc` (cases of `sctp_data_channel_unittest.cc` and the DCEP bytes), and the "
         "data channels in `PcPeerEndpoint` (three channels beside audio and video on one BUNDLE transport). A message each way "
         "with headless Chrome in `tests/interop/browser`. PRs #1086, #1097.",
+        bench=["dc/DataChannel_OpenSendClose", "dc/DataChannel_Message1000B"],
         group="9d"),
 
     # ------------------------------------------------------------------ 10
@@ -2462,7 +2471,8 @@ MILESTONE3 = [
         ["10.1"],
         "Requirement C8. Beyond libwebrtc by design; parity 10.1 lists the histograms libwebrtc records that we do not.",
         "`unit.Observability`, `Metrics`, `Histogram`, `EventLog` and `Logging` pass in the default build; the off build is "
-        "checked in 10.3. PR #1012 (#988)."),
+        "checked in 10.3. PR #1012 (#988).",
+        bench=["obs/Log_BelowRuntimeSeverity", "obs/Event_NoSink", "obs/Event_EventLog", "obs/Histogram_Add", "obs/MetricsRegistry_ExportJson"]),
     _m3("10.2", "connection-stats", "ICE and DTLS connection stats",
         "Seeing what a call is doing -> `getStats`-style transport, candidate-pair, candidate and certificate stats",
         ["pc/connection_stats.h"],
@@ -2473,7 +2483,8 @@ MILESTONE3 = [
         ["10.9"],
         "Requirement C8. Names follow M157's `rtcstats_objects.h`: 59 of its 65 fields are kept; the rest are "
         "deprecated or unused here. Behind `SM_ENABLE_STATS`; off, the call returns not supported.",
-        "`unit.PcConnectionStats` passes on both TLS backends. PR #1078 (#1059)."),
+        "`unit.PcConnectionStats` passes on both TLS backends. PR #1078 (#1059).",
+        bench=["obs/ConnectionStats_Collect"]),
     _m3("10.3", "observability-off", "The observability-off check",
         "Observability must never change what a call does -> an all-off build produces the same media results, bit for bit",
         [],
@@ -2486,7 +2497,8 @@ MILESTONE3 = [
         "Requirement C8. The `events` counts and the `--library` metrics exist only in the default build and are not compared.",
         "Passes on main since PR #1065 (the script's own run on every `testbench/scenarios/*.scn`). `tools/check_observability_off.py` "
         "is run by CI's test bench job.",
-        extra_files=["tools/check_observability_off.py"]),
+        extra_files=["tools/check_observability_off.py"],
+        bench=["obs/NackTracker_EventsOff", "obs/NackTracker_EventsOn"]),
     _m3("10.4", "fuzzing", "Fuzzing of the network parsers",
         "A parser that reads network input is an attack surface -> a libFuzzer target for each, with a seed corpus replayed in every CI run",
         [],
@@ -2498,6 +2510,10 @@ MILESTONE3 = [
         ["10.1"],
         "Requirement C10. 15 targets, listed with their libwebrtc counterparts in `fuzz/README.md`.",
         "Local fuzzing runs found no crash (STUN: 811k executions in 90 s). The libFuzzer build itself (`SM_BUILD_FUZZERS=ON`) is not built in CI, as accepted for C2. PRs #1013 (#989), #1019 and #1022 (STUN), #1042, #1068 (#1058), #1067, #1073.",
-        extra_files=["fuzz/README.md", "fuzz/CMakeLists.txt"]),
+        extra_files=["fuzz/README.md", "fuzz/CMakeLists.txt", "fuzz/targets.cmake"],
+        bench=["obs/Fuzz_" + t for t in (
+            "rtp_packet", "rtcp", "transport_feedback", "h264_depacketizer", "packet_buffer", "red", "ulpfec",
+            "stun", "turn", "tcp_framing", "dtls_record", "dtls_transport", "sdp_parser", "dcsctp_packet",
+            "dcsctp_socket")]),
 ]
 ALGORITHMS += MILESTONE3
