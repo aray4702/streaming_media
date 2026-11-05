@@ -37,7 +37,8 @@
   since this page joined and the room's count. For the tests:
     mic=0       join with the microphone published but muted (Mute unmutes it);
     cam=0       join with the camera off (Video starts it);
-    leave=<s>   leave the room (as Hang up does) s seconds after joining.
+    leave=<s>   leave the room (as Hang up does) s seconds after joining;
+    dtx=0       publish the microphone without Opus DTX (the SDK turns it on), so a quiet microphone keeps sending.
 -->
 <html>
 <head>
@@ -280,7 +281,7 @@ async function joinGroup(code) {
   const url = params.get('lk') || t.url || (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host;
   const lkRoom = new LK.Room({
     adaptiveStream: true, dynacast: true,
-    publishDefaults: {simulcast: true, videoCodec: params.get('codec') || 'h264'},
+    publishDefaults: {simulcast: true, videoCodec: params.get('codec') || 'h264', dtx: params.get('dtx') !== '0'},
   });
   const G = group = {room: lkRoom, connected: false, tiles: new Map(), joined: [], left: [], speakersSeen: new Set(),
                      leaveTimer: null};

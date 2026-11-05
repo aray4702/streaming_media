@@ -27,8 +27,11 @@
 // reply source's OnUserTurn runs on a worker thread. The library reads no clock; this app passes it the loop's.
 #pragma once
 
+#include <deque>
 #include <functional>
+#include <future>
 #include <memory>
+#include <optional>
 #include <span>
 #include <string>
 #include <vector>
@@ -38,6 +41,7 @@
 #include "os_sockets.h"
 #include "sm/core/units.h"
 #include "sm/p2p/port_allocator.h"
+#include "sm/timing/audio_jitter_buffer.h"
 #include "turn_detector.h"
 #include "websocket.h"
 
@@ -108,6 +112,53 @@ struct AiServerConfig {
   // Makes each call's reply source; null: ScriptedReplySource with its default.
   std::function<std::unique_ptr<AiReplySource>()> reply_factory;
   bool verbose = false;  // Log to stderr.
+};
+
+// The AI's side of one conversation, apart from its transport (#1126, C20 #1172): the turn detector on the audio it
+// hears, the reply source on a worker thread, and the reply paced by the test bench's AI source, one frame per 20 ms
+// slot. Each one-to-one call (AiCall) has one, and so does the AI in a LiveKit room (ai_livekit.h), which feeds it the
+// active speaker's audio. On the owner's loop thread; only the reply source's OnUserTurn runs on the worker.
+class AiConversation {
+ public:
+  AiConversation(const AiServerConfig& config, AiCallMetrics* metrics, std::function<void(const std::string&)> log);
+  ~AiConversation();
+  AiConversation(const AiConversation&) = delete;
+  AiConversation& operator=(const AiConversation&) = delete;
+
+  // 10 ms heard at `at` (48 kHz mono, as played out) with the jitter buffer's operation for it.
+  void OnPlayout(std::span<const float> pcm, timing::AudioOperation op, Timestamp at);
+  // A reply that has been generated starts at `next_slot`, the first slot not yet sent.
+  void CollectReply(Timestamp now, Timestamp next_slot);
+  // The 20 ms slot starting at `slot`, sent at `now`: the reply's audio due by it (up to 20 ms); empty: silence.
+  std::span<const float> Slot(Timestamp slot, Timestamp now);
+  bool replying() const { return source_.active(); }
+
+ private:
+  struct PendingTurn {
+    std::vector<float> audio;
+    Timestamp at;
+    Timestamp last_speech;
+  };
+  void StartGeneration(std::vector<float> user_audio, Timestamp at, Timestamp last_speech);
+
+  AiCallMetrics* metrics_;
+  std::function<void(const std::string&)> log_;
+  testbench::TurnDetector detector_;
+  bool detector_config_ok_ = true;
+  testbench::AiMediaSource source_;
+  std::unique_ptr<AiReplySource> reply_;
+  // The reply being generated (after reply_, so it is waited for before the source goes away).
+  std::future<std::vector<float>> generating_;
+  Timestamp gen_at_ = Timestamp::Micros(0);
+  Timestamp gen_last_speech_ = Timestamp::Micros(0);
+  std::optional<PendingTurn> next_turn_;
+  bool barge_in_deferred_ = false;
+  Timestamp barge_in_at_ = Timestamp::Micros(0);
+  std::deque<testbench::AiFrame> held_;  // Frames due but not yet sent (one per slot).
+  std::vector<float> reply_audio_;
+  std::vector<float> user_audio_;
+  Timestamp turn_end_speech_ = Timestamp::Micros(0);
+  bool awaiting_first_frame_ = false;
 };
 
 class AiCall;

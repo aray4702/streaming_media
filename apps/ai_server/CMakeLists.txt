@@ -7,8 +7,15 @@ target_include_directories(sm_ai_server_lib PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(sm_ai_server_lib PUBLIC sm_testbench_lib sm_os_sockets sm::pc_endpoint sm::p2p_tls Threads::Threads)
 sm_configure_target(sm_ai_server_lib)
 
+# The AI as a participant of a LiveKit room (C20, #1172) through the native LiveKit client of apps/call (sm_call_client,
+# defined in apps/call, which the top level adds whenever it adds this directory).
+add_library(sm_ai_livekit STATIC ai_livekit.cc)
+target_include_directories(sm_ai_livekit PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(sm_ai_livekit PUBLIC sm_ai_server_lib sm_call_client)
+sm_configure_target(sm_ai_livekit)
+
 add_executable(sm_ai_server main.cc)
-target_link_libraries(sm_ai_server PRIVATE sm_ai_server_lib)
+target_link_libraries(sm_ai_server PRIVATE sm_ai_livekit)
 sm_configure_target(sm_ai_server)
 
 if(SM_BUILD_TESTS)

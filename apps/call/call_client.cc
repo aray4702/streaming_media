@@ -1328,8 +1328,8 @@ void CallClient::UpdateStats(Timestamp now) {
     c.livekit_joined = lk_->joined_after;
     c.livekit_left = lk_->left;
     if (lk_->got_speakers) {
-      const auto s = lk_->speakers.find(lk_->sid);
-      c.livekit_local_level = s == lk_->speakers.end() ? 0 : s->second.level;
+      const auto me = lk_->speakers.find(lk_->sid);
+      c.livekit_local_level = me == lk_->speakers.end() ? 0 : me->second.level;
     } else {
       c.livekit_local_level = capture_level_;
     }
