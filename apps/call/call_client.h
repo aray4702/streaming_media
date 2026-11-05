@@ -192,7 +192,8 @@ class CallClient {
   void OnSignalingClosed(Timestamp now);
   // Endpoint, audio and video due by `now`. Returns when it next needs to run.
   Timestamp Step(Timestamp now);
-  // Waits up to `wait` (at most 5 ms) for the call's sockets.
+  // Waits up to `wait` (at most 5 ms) for the call's sockets. `now` is the clock at this call: packets are stamped
+  // from it (OsSocketServer::Poll, #1168).
   void Wait(Timestamp now, TimeDelta wait);
   // Sends bye and ends the call.
   void Hangup(Timestamp now);

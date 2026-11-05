@@ -80,7 +80,9 @@ int main(int argc, char** argv) {
   while (!g_stop && (max_seconds <= 0 || (Now() - start).seconds() < max_seconds)) {
     const sm::Timestamp now = Now();
     const sm::Timestamp next = server.Step(now);
-    server.Wait(now, next - now);
+    // Wait stamps arrivals from the clock it is given (#1168): read it after Step's work.
+    const sm::Timestamp before_wait = Now();
+    server.Wait(before_wait, next - before_wait);
   }
   server.Shutdown(Now());
   return 0;

@@ -614,6 +614,8 @@ int main(int argc, char** argv) {
     }
     Timestamp next = ep.NextProcessTime(now);
     next = std::min({next, next_audio, next_video, next_pull, now + TimeDelta::Millis(10)});
+    // Poll stamps arrivals from the clock at the call (#1168), so read it fresh after this iteration's work.
+    now = Now();
     sockets.Poll(now, std::clamp(next - now, TimeDelta::Zero(), TimeDelta::Millis(10)));
     now = Now();
     resolver.Poll(now);

@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <array>
 #include <cerrno>
+#include <chrono>
 #include <cstring>
 #include <utility>
 
@@ -160,9 +161,9 @@ int OsUdpSocket::SetOption(p2p::SocketOption opt, int value) {
   return 0;
 }
 
-void OsUdpSocket::OnReadable(Timestamp now) {
+void OsUdpSocket::OnReadable() {
   std::array<uint8_t, 65536> buf;
-  while (fd_ >= 0) {
+  while (fd_ >= 0 && server_) {
     sockaddr_in from{};
     socklen_t len = sizeof(from);
     const ssize_t n = ::recvfrom(fd_, buf.data(), buf.size(), 0, reinterpret_cast<sockaddr*>(&from), &len);
@@ -170,7 +171,8 @@ void OsUdpSocket::OnReadable(Timestamp now) {
     p2p::ReceivedPacket p;
     p.payload = std::span<const uint8_t>(buf.data(), static_cast<size_t>(n));
     p.source_address = FromSockaddr(&from);
-    p.arrival_time = now;
+    // The time it was read, not the time Poll was called (#1168): see OsSocketServer::Poll.
+    p.arrival_time = server_->ReadTime();
     NotifyPacketReceived(p);
   }
 }
@@ -371,16 +373,27 @@ void OsSocketServer::Poll(Timestamp now, TimeDelta wait) {
     owners.emplace_back(nullptr, s);
   }
   const int timeout_ms = static_cast<int>(std::max<int64_t>(0, wait.ms()));
+  poll_now_ = now;
+  poll_start_us_ = SteadyMicros();
   if (::poll(fds.data(), fds.size(), timeout_ms) <= 0) return;
   for (size_t i = 0; i < fds.size(); ++i) {
     if (fds[i].revents == 0) continue;
     // A callback may have closed or destroyed a socket polled with this one.
     if (OsUdpSocket* u = owners[i].first) {
-      if (udp_.count(u) && u->fd_ == fds[i].fd) u->OnReadable(now);
+      if (udp_.count(u) && u->fd_ == fds[i].fd) u->OnReadable();
     } else if (OsTcpSocket* t = owners[i].second) {
-      if (tcp_.count(t) && t->fd_ == fds[i].fd) t->OnEvents(now, fds[i].revents);
+      if (tcp_.count(t) && t->fd_ == fds[i].fd) t->OnEvents(ReadTime(), fds[i].revents);
     }
   }
+}
+
+int64_t OsSocketServer::SteadyMicros() {
+  return std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now().time_since_epoch())
+      .count();
+}
+
+Timestamp OsSocketServer::ReadTime() const {
+  return poll_now_ + TimeDelta::Micros(std::max<int64_t>(0, SteadyMicros() - poll_start_us_));
 }
 
 }  // namespace sm::interop
