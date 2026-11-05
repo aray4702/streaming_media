@@ -842,3 +842,102 @@ SM_TEST(PcPeerEndpoint, DataChannelsNotBuilt) {
 }
 
 #endif  // SM_WITH_DATACHANNEL
+
+// Simulcast send (C17, #1162): with RIDs the offer has an a=rid send line per encoding and a=simulcast:send, and no
+// video SSRCs (CreateStreamParamsForNewSenderWithRids). An SFU's answer (a=rid recv, a=simulcast:recv, as LiveKit
+// answers; munged into this endpoint's answer here) gives one video send stream per layer with generated SSRCs and
+// RTX (BaseChannel::UpdateLocalStreams_w) and the layer's RID; an answer without a=simulcast rejects simulcast and
+// leaves only the first encoding active (DisableSimulcastInSender); a paused layer (~f) is inactive
+// (UpdateSimulcastLayerStatusInSender).
+namespace {
+std::string WithSimulcastRecv(std::string answer, const std::string& simulcast_line) {
+  const std::string anchor = "a=mid:1\r\n";
+  const size_t at = answer.find(anchor);
+  if (at == std::string::npos) return answer;
+  answer.insert(at + anchor.size(), "a=rid:q recv\r\na=rid:h recv\r\na=rid:f recv\r\n" + simulcast_line + "\r\n");
+  return answer;
+}
+
+struct SimulcastNegotiation {
+  Network network{false};
+  RecordingDecoder dec[2];
+  std::unique_ptr<PeerEndpoint> a, b;
+  std::string offer_sdp, answer_sdp;
+  SimulcastNegotiation() {
+    PeerEndpointConfig ca;
+    ca.allocator = network.host[0].allocator.get();
+    ca.audio_decoder = &dec[0];
+    ca.video_simulcast_rids = {"q", "h", "f"};
+    a = std::make_unique<PeerEndpoint>(std::move(ca), network.now);
+    PeerEndpointConfig cb;
+    cb.allocator = network.host[1].allocator.get();
+    cb.audio_decoder = &dec[1];
+    b = std::make_unique<PeerEndpoint>(std::move(cb), network.now);
+    std::string error;
+    auto offer = a->CreateOffer(&error);
+    offer_sdp = SdpSerialize(*offer);
+    a->SetLocalDescription(std::move(offer), network.now, &error);
+    SdpParseError perr;
+    b->SetRemoteDescription(SdpDeserialize(SdpType::kOffer, offer_sdp, &perr), network.now, &error);
+    auto answer = b->CreateAnswer(&error);
+    answer_sdp = SdpSerialize(*answer);
+  }
+  bool ApplyAnswer(const std::string& sdp) {
+    std::string error;
+    SdpParseError perr;
+    auto desc = SdpDeserialize(SdpType::kAnswer, sdp, &perr);
+    return desc && a->SetRemoteDescription(std::move(desc), network.now, &error);
+  }
+};
+}  // namespace
+
+SM_TEST(PcPeerEndpoint, SimulcastOfferAndSfuAnswer) {
+  SimulcastNegotiation n;
+  for (const char* line : {"a=rid:q send", "a=rid:h send", "a=rid:f send", "a=simulcast:send q;h;f"}) {
+    SM_EXPECT_TRUE(Contains(n.offer_sdp, line));
+  }
+  SM_EXPECT_TRUE(n.offer_sdp.find(" urn:ietf:params:rtp-hdrext:sdes:rtp-stream-id\r\n") != std::string::npos);
+  SM_EXPECT_TRUE(n.offer_sdp.find(" urn:ietf:params:rtp-hdrext:sdes:repaired-rtp-stream-id\r\n") != std::string::npos);
+  // No a=ssrc in the video section: the layers are named by RID.
+  const std::string video = n.offer_sdp.substr(n.offer_sdp.find("m=video"));
+  SM_EXPECT_TRUE(video.find("a=ssrc:") == std::string::npos);
+  SM_ASSERT_TRUE(n.ApplyAnswer(WithSimulcastRecv(n.answer_sdp, "a=simulcast:recv q;h;f")));
+  rtp::Session* s = n.a->session();
+  SM_ASSERT_TRUE(s != nullptr);
+  SM_ASSERT_EQ(n.a->video_simulcast_sends().size(), 3u);
+  SM_ASSERT_EQ(n.a->video_simulcast().size(), 3u);
+  std::vector<uint32_t> ssrcs;
+  const char* rids[] = {"q", "h", "f"};
+  for (size_t i = 0; i < 3; ++i) {
+    const rtp::RtpSender& sender = s->video_sender(n.a->video_simulcast_sends()[i]);
+    SM_EXPECT_EQ(sender.config().rid, std::string(rids[i]));
+    SM_EXPECT_TRUE(sender.config().rtx_ssrc.has_value());
+    SM_EXPECT_TRUE(n.a->video_simulcast()[i].active);
+    ssrcs.push_back(sender.config().ssrc);
+    ssrcs.push_back(sender.config().rtx_ssrc.value_or(0));
+  }
+  std::sort(ssrcs.begin(), ssrcs.end());
+  SM_EXPECT_TRUE(std::adjacent_find(ssrcs.begin(), ssrcs.end()) == ssrcs.end());  // Six distinct SSRCs.
+  SM_EXPECT_TRUE(n.a->video_send().has_value() && n.a->video_send()->index == n.a->video_simulcast_sends()[0].index);
+}
+
+SM_TEST(PcPeerEndpoint, SimulcastRejectedOrPausedByTheAnswer) {
+  {
+    // A peer that does not do simulcast (this endpoint's own answer): only the first encoding stays active.
+    SimulcastNegotiation n;
+    SM_ASSERT_TRUE(n.ApplyAnswer(n.answer_sdp));
+    SM_ASSERT_EQ(n.a->video_simulcast().size(), 3u);
+    SM_EXPECT_TRUE(n.a->video_simulcast()[0].active);
+    SM_EXPECT_FALSE(n.a->video_simulcast()[1].active);
+    SM_EXPECT_FALSE(n.a->video_simulcast()[2].active);
+  }
+  {
+    // The SFU pauses the top layer.
+    SimulcastNegotiation n;
+    SM_ASSERT_TRUE(n.ApplyAnswer(WithSimulcastRecv(n.answer_sdp, "a=simulcast:recv q;h;~f")));
+    SM_ASSERT_EQ(n.a->video_simulcast().size(), 3u);
+    SM_EXPECT_TRUE(n.a->video_simulcast()[0].active);
+    SM_EXPECT_TRUE(n.a->video_simulcast()[1].active);
+    SM_EXPECT_FALSE(n.a->video_simulcast()[2].active);
+  }
+}

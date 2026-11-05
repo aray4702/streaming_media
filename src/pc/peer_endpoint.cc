@@ -155,7 +155,19 @@ MediaSessionOptions PeerEndpoint::OfferOptions() const {
   if (config_.video) {
     MediaDescriptionOptions o(MediaType::VIDEO, kVideoMid, RtpTransceiverDirection::kSendRecv, false);
     o.header_extensions = DefaultVideoRtpHeaderExtensions();
-    o.AddVideoSender(config_.video_track_id, {config_.stream_id}, {}, SimulcastLayerList(), 1);
+    if (config_.video_simulcast_rids.size() > 1) {
+      // GetMediaDescriptionOptionsForTransceiver: a send RID per encoding and the simulcast layers; with RIDs,
+      // num_sim_layers is 0 (no SSRCs in the offer).
+      std::vector<RidDescription> rids;
+      SimulcastLayerList layers;
+      for (const std::string& rid : config_.video_simulcast_rids) {
+        rids.emplace_back(rid, RidDirection::kSend);
+        layers.AddLayer(SimulcastLayer(rid, /*is_paused=*/false));
+      }
+      o.AddVideoSender(config_.video_track_id, {config_.stream_id}, rids, layers, 0);
+    } else {
+      o.AddVideoSender(config_.video_track_id, {config_.stream_id}, {}, SimulcastLayerList(), 1);
+    }
     opts.media_description_options.push_back(std::move(o));
   }
 #if SM_ENDPOINT_DATA_CHANNELS
@@ -413,6 +425,17 @@ bool PeerEndpoint::CreateMediaSession(std::string* error) {
   if (video.mid_negotiated) cfg.mid_video = video.content->mid();
   const StreamParams* local_audio = FirstStream(audio.local);
   const StreamParams* local_video = FirstStream(video.local);
+  // BaseChannel::UpdateLocalStreams_w: a sender signaled with RIDs and no SSRCs (simulcast, C17) gets an SSRC per
+  // layer, and an RTX SSRC for each when RTX is negotiated.
+  std::optional<StreamParams> simulcast_video;
+  if (!local_video && video.local && !video.local->streams().empty() && video.local->streams()[0].has_rids()) {
+    simulcast_video = video.local->streams()[0];
+    const Codec* h264 = video.answer ? FindCodec(video.answer->codecs(), kH264CodecName) : nullptr;
+    const bool rtx = h264 && FindRtxFor(video.answer->codecs(), h264->id);
+    simulcast_video->GenerateSsrcs(static_cast<int>(simulcast_video->rids().size()), rtx, /*generate_fec_fr=*/false,
+                                   [this] { return ssrc_generator_.GenerateId(); });
+    local_video = &*simulcast_video;
+  }
   const bool send_audio = local_audio && audio.local && RtpTransceiverDirectionHasSend(audio.local->direction());
   const bool send_video = local_video && video.local && RtpTransceiverDirectionHasSend(video.local->direction());
   const StreamParams* remote_audio = FirstStream(audio.remote);
@@ -466,7 +489,40 @@ bool PeerEndpoint::CreateMediaSession(std::string* error) {
     video_pts.push_back(v.payload_type);
     if (rtx) video_pts.push_back(v.rtx_payload_type);
     v.parser = &h264_parser_;
-    if (send_video) {
+    if (send_video && simulcast_video) {
+      // One send stream per encoding, with its SSRC, RTX SSRC and RID (RtpVideoSender's module per layer).
+      // SimulcastIsRejected: the answer has no a=simulcast or no RID extension, and only the first encoding stays
+      // active (DisableSimulcastInSender); otherwise an encoding the answer pauses or leaves out is inactive
+      // (UpdateSimulcastLayerStatusInSender).
+      bool rid_negotiated = false;
+      for (const RtpExtension& e : video.answer->rtp_header_extensions()) rid_negotiated |= e.uri == RtpExtension::kRidUri;
+      const bool rejected = !video.answer->HasSimulcast() || !rid_negotiated;
+      const SimulcastDescription& sd = video.answer->simulcast_description();
+      const std::vector<SimulcastLayer> answered = video.answer == video.remote ? sd.receive_layers().GetAllLayers()
+                                                                                : sd.send_layers().GetAllLayers();
+      std::vector<uint32_t> primaries;
+      local_video->GetPrimarySsrcs(&primaries);
+      const auto& rids = local_video->rids();
+      for (size_t i = 0; i < rids.size() && i < primaries.size(); ++i) {
+        SimulcastEncoding enc;
+        enc.rid = rids[i].rid;
+        if (rejected) {
+          enc.active = i == 0;
+        } else {
+          auto it = std::find_if(answered.begin(), answered.end(),
+                                 [&](const SimulcastLayer& l) { return l.rid == enc.rid; });
+          enc.active = it != answered.end() && !it->is_paused;
+        }
+        v.ssrc = primaries[i];
+        uint32_t fid = 0;
+        v.rtx_ssrc = rtx && local_video->GetFidSsrc(v.ssrc, &fid) ? std::optional<uint32_t>(fid) : std::nullopt;
+        v.rid = enc.rid;
+        video_simulcast_sends_.push_back(session_->AddVideoSend(v));
+        video_simulcast_.push_back(enc);
+      }
+      v.rid.clear();
+      if (!video_simulcast_sends_.empty()) video_send_ = video_simulcast_sends_.front();
+    } else if (send_video) {
       v.ssrc = local_video->first_ssrc();
       uint32_t fid = 0;
       v.rtx_ssrc = rtx && local_video->GetFidSsrc(v.ssrc, &fid) ? std::optional<uint32_t>(fid) : std::nullopt;
