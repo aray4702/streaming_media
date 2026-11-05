@@ -1531,6 +1531,38 @@ ALGORITHMS = [
          verification="New in #241's first PR. The two-band analysis matches a direct-form evaluation of "
                       "`WebRtcSpl_AllPassQMF` to 1e-6 across two frames, and both paths were bit-exact with libwebrtc's own `splitting_filter.c` and `three_band_filter_bank.cc` compiled from `reference/` (the three-band files arrive there with #247; golden values pinned in `SplittingFilter.MatchesLibwebrtcOutput`); level through analysis and synthesis is "
                       "within 0.002 dB at 32 and 48 kHz on a 0.2-4.2 kHz chirp."),
+    dict(id="6.13", slug="audio-mixer", title="Receive-side audio mixing (group calls)",
+         problems=["Several remote talkers in a group call -> one playout stream: mix every unmuted stream, "
+                   "with a limiter so the sum doesn't clip (AudioMixerImpl, FrameCombiner)"],
+         headers=["audio/audio_mixer.h"], unit=["AudioMixer", "FrameCombiner", "AudioFrameManipulator"],
+         e2e=["E2E_AudioMixer"],
+         bench=[],
+         scenario="Five talkers near full scale mixed as a group call's playout: the plain saturating sum flattens "
+                  "790 peaks in 10 s, the mixer 2 (its limiter maps a peak to exactly full scale, as libwebrtc's), and "
+                  "every talker, the two quietest included, is in the mix; talkers joining, leaving, muting and "
+                  "failing at 16, 32 and 48 kHz move the mix rate as libwebrtc's DefaultOutputRateCalculator does; a "
+                  "stereo talker keeps its two channels in a stereo mix.",
+         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#64-receive-side-mixing-for-group-calls) "
+               "for the differences from libwebrtc. A port of libwebrtc M157's `modules/audio_mixer/` (#1175): "
+               "`AudioMixerImpl` (audio_mixer_impl.cc), `FrameCombiner` (frame_combiner.cc) with AGC2's `Limiter` "
+               "(the library's port in sm/audio/agc2.h, now taking several deinterleaved channels as libwebrtc's), "
+               "`DefaultOutputRateCalculator` and `audio_frame_manipulator.cc` (RemixFrame, Ramp, "
+               "AudioMixerCalculateEnergy), with the `AudioMixer::Source` interface of api/audio/audio_mixer.h. M157 "
+               "mixes **every** unmuted source and has no \"3 loudest\" selection and no ramp-in/out of sources (both "
+               "were in older libwebrtc releases); `WebRtcVoiceEngine` creates `AudioMixerImpl::Create()` (limiter on) "
+               "unless the app injects a mixer. The mixer was removed in #27 under \"one-to-one calls\" and comes back "
+               "for the group calls of the Owner's #1160. Differences: no mutex or reference counting (single-threaded, "
+               "the caller serializes calls, as every module here), libwebrtc's generic `ChannelMixer` is ported only "
+               "for a mono input (its VoIP case; other layouts with more than two channels are left out of the mix "
+               "and counted), and the NewHighestSourceCount UMA histogram is the `max_source_count` metric.",
+         verification="#1175: `sm_mixer_compare` (compare/webrtc/mixer_compare.cc) runs the E2E_AudioMixer scenarios "
+                      "through this port and through libwebrtc M157's own AudioMixerImpl from the prebuilt library: "
+                      "bit-exact on all 8 (one talker, two quiet, five loud at 48 kHz, five with join/leave/mute/error "
+                      "at 16/32/48 kHz, stereo out with a stereo talker, stereo talkers into mono, 8 kHz, and five loud "
+                      "without the limiter), samples, rates, channel counts and RTP timestamps, on macOS arm64; it "
+                      "runs after every compare build and fails it on a difference. `audio_mixer_impl_unittest.cc`, "
+                      "`frame_combiner_unittest.cc` and `audio_frame_manipulator_unittest.cc` are ported, except the "
+                      "death tests and the cross-thread construction test."),
     # ------------------------------------------------------------------ 7
     dict(id="7.1", slug="freeze-detector", title="Freeze detection",
          problems=["Lost frame (decode impossible) -> freeze the last frame until recovery (measured as freezes)"],
