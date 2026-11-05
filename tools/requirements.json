@@ -569,14 +569,15 @@
    "catalog": "6.13",
    "title": "Receive-side audio mixing (group calls)",
    "acceptance": "(1) AudioMixerImpl, FrameCombiner (with AGC2's Limiter), DefaultOutputRateCalculator and audio_frame_manipulator are ported from reference/modules/audio_mixer/ with api/audio/audio_mixer.h's Source interface. (2) Defaults as M157: the limiter on (AudioMixerImpl::Create()), every unmuted source mixed. (3) AudioMixer.*, FrameCombiner.*, AudioFrameManipulator.* (ports of the libwebrtc unit tests) and E2E_AudioMixer.* pass, and sm_mixer_compare is bit-exact with libwebrtc's AudioMixerImpl. (4) The group-call playout in apps/call uses it. (5) No open req:F6.13 item.",
-   "status": "open",
+   "status": "done",
    "evidence": "#1175: the port (src/audio/audio_mixer.cc), its unit and e2e tests, and sm_mixer_compare (bit-exact on 8 scenarios on macOS arm64). M157 has no 3-loudest selection (the issue's wording); whether to deviate is the Owner's call on #1175. The apps/call group playout uses it (GroupPlayoutMixer: one source per remote audio track, mono at 48 kHz; LiveKitClient.GroupPlayoutLimitsFiveLoudTalkers, interop.WebApp.group_native and group_all).",
-   "verification": "",
+   "verification": "Owner approved marking done, 2026-11-05.",
    "start": "2026-11-04",
-   "end": "",
+   "end": "2026-11-05",
    "depends_on": [],
    "cost": "",
-   "note": "Added as open by the Fixer for #1175 (window subagent, 2026-11-04); the Owner decides its status and placement."
+   "note": "Added as open by the Fixer for #1175 (window subagent, 2026-11-04); the Owner decides its status and placement.",
+   "verified": "pass"
   },
   {
    "id": "F7.1",
@@ -713,12 +714,12 @@
    "catalog": "7.9",
    "title": "Simulcast send",
    "acceptance": "(1) Ports video/config/simulcast.cc, the simulcast path of encoder_stream_factory.cc, simulcast_rate_allocator.cc and simulcast_utility.cc, and SimulcastEncoderAdapter's behaviour in the send path. (2) Defaults equal libwebrtc's (bitrate tables, 1.2 hysteresis, per-SSRC pacing, PLI keys every layer). (3) Simulcast.*, EncoderStreamFactory.*, SimulcastRateAllocator.*, SimulcastSend.* pass; the simulcast_* scenarios have no behind cell against libwebrtc. (4) No open req:F7.9 item. Part of C17.",
-   "status": "open",
+   "status": "done",
    "evidence": "See C17 (#1162).",
-   "verification": "",
-   "verified": "",
+   "verification": "Owner approved marking done, 2026-11-05.",
+   "verified": "pass",
    "start": "2026-11-04",
-   "end": "",
+   "end": "2026-11-05",
    "depends_on": [],
    "cost": ""
   },
@@ -1200,14 +1201,15 @@
    "area": "Connectivity",
    "title": "Topology decision: SFU for group calls",
    "acceptance": "The Owner's choice is recorded (#1160): 1:1 calls stay peer-to-peer; group calls of up to 6 go through an SFU, LiveKit; the mesh of 3-4 is dropped (its test bench mode and scenarios removed, C9 kept as history). The README Decisions section says so.",
-   "status": "open",
+   "status": "done",
    "depends_on": [],
    "evidence": "#1160 (the Owner's decision), #1161 (README Decisions: call topology), PR #1165 for #1163 (the test bench's mesh mode removed)",
-   "verification": "The README Decisions section records the topology: 1:1 calls peer-to-peer, group calls of up to 6 through an SFU, LiveKit, the mesh of 3-4 dropped (#1161). PR #1165 removes the mesh from the test bench: `call mesh 3|4` and `participant <i> [reverse] at ...` no longer parse (TestbenchCallMode.MeshIsNotACallMode), RunMeshCall and its p<i>_to_p<j>.*, p<i>.* and mesh.* metrics are gone, and the four mesh scenarios (mesh_3_home_broadband, mesh_4_home_broadband, mesh_3_weak_participant, ice_mesh_3_home_broadband) and their baselines are deleted. 1:1 calls are untouched (transport ice one-way and two-way, the endpoint, SDP): ctest 599/599 passed, the 193 remaining scenarios pass with 0 regressions against the baseline, and sm_compare still compares the same 166 scenarios. C9 stays done, as history.",
+   "verification": "The README Decisions section records the topology: 1:1 calls peer-to-peer, group calls of up to 6 through an SFU, LiveKit, the mesh of 3-4 dropped (#1161). PR #1165 removes the mesh from the test bench: `call mesh 3|4` and `participant <i> [reverse] at ...` no longer parse (TestbenchCallMode.MeshIsNotACallMode), RunMeshCall and its p<i>_to_p<j>.*, p<i>.* and mesh.* metrics are gone, and the four mesh scenarios (mesh_3_home_broadband, mesh_4_home_broadband, mesh_3_weak_participant, ice_mesh_3_home_broadband) and their baselines are deleted. 1:1 calls are untouched (transport ice one-way and two-way, the endpoint, SDP): ctest 599/599 passed, the 193 remaining scenarios pass with 0 regressions against the baseline, and sm_compare still compares the same 166 scenarios. C9 stays done, as history. Owner approved marking done, 2026-11-05.",
    "start": "2026-11-04",
-   "end": "",
+   "end": "2026-11-05",
    "milestone": 5,
-   "note": "Owner, 2026-11-04 (#1160): group video calls of up to 6 through an SFU (LiveKit); the mesh of 3-4 is dropped; C16-C21 accepted as the next milestone."
+   "note": "Owner, 2026-11-04 (#1160): group video calls of up to 6 through an SFU (LiveKit); the mesh of 3-4 is dropped; C16-C21 accepted as the next milestone.",
+   "verified": "pass"
   },
   {
    "id": "C17",
@@ -1215,17 +1217,18 @@
    "area": "Connectivity",
    "title": "Simulcast send",
    "acceptance": "Up to 3 spatial layers per video track as libwebrtc M157: SimulcastEncoderAdapter behaviour, SimulcastRateAllocator layer bitrates, RID on the wire, a=simulcast/a=rid offer/answer; layers switched off under congestion as libwebrtc does. Compared with libwebrtc in new test bench scenarios with 0 behind cells.",
-   "status": "open",
+   "status": "done",
    "depends_on": [
     "C6",
     "C16"
    ],
    "evidence": "Issue #1162, PR c17/simulcast-send: video/config/simulcast.cc and the simulcast path of encoder_stream_factory.cc (sm/video/simulcast.h), simulcast_rate_allocator.cc and simulcast_utility.cc (sm/video/simulcast_rate_allocator.h), the per-layer EncoderBitrateAdjuster, rtp::SimulcastSendController (VideoStreamEncoder with a SimulcastEncoderAdapter: one encoder per layer, layers paused below 1 kbps and keyed on return, PLI on any layer keys every layer), VideoSendStreamImpl's allocation limits for several streams, RID/repaired RID on the wire, SRs per layer, the pacer's round robin between SSRCs and per-SSRC keyframe flush, a=rid/a=simulcast offer and the SFU's answer in PeerEndpoint; sm_compare runs libwebrtc's simulcast (three SSRCs/RIDs, SimulcastEncoderAdapter) on the four simulcast_* scenarios with 0 gaps on 10 seeds (simulcast_capacity_drop_low_layer 0 on 20). Remaining: CPU adaptation and per-layer frame rate with simulcast, temporal layers, the 3% random-loss freeze difference (on #1162), Chrome sending simulcast to this library (needs C18).",
-   "verification": "",
+   "verification": "Owner approved marking done, 2026-11-05.",
    "start": "2026-11-04",
-   "end": "",
+   "end": "2026-11-05",
    "milestone": 5,
-   "note": "Owner, 2026-11-04 (#1160): group video calls of up to 6 through an SFU (LiveKit); the mesh of 3-4 is dropped; C16-C21 accepted as the next milestone."
+   "note": "Owner, 2026-11-04 (#1160): group video calls of up to 6 through an SFU (LiveKit); the mesh of 3-4 is dropped; C16-C21 accepted as the next milestone.",
+   "verified": "pass"
   },
   {
    "id": "C18",
@@ -1233,17 +1236,18 @@
    "area": "Connectivity",
    "title": "Multi-stream receive",
    "acceptance": "One connection receives up to 5 remote video and 5 audio streams (unified-plan transceivers), demultiplexed by MID/SSRC, each with its own jitter buffer, A/V sync and stats; tested in the test bench and against Chrome.",
-   "status": "open",
+   "status": "done",
    "depends_on": [
     "C6",
     "C16"
    ],
    "evidence": "PR #1169 (issue #1167: rtp::Session receive streams per MID and sync group, RemoveAudioReceive/RemoveVideoReceive, one synchronizer per participant; pc::PeerEndpoint transceivers, subsequent offers/answers from either side, a recvonly transceiver and a receive stream per remote section, OnTrack/OnRemoveTrack; parity 10.23)",
-   "verification": "unit.SessionMultiStream (streams of two participants demuxed by MID and SSRC, per-stream stats and report blocks, sync per group, removal); unit.PcRenegotiation (an SFU-like peer's offers add, deactivate, stop and recycle sections on one BUNDLE transport without an ICE restart; per-section demux, NACK, sync and stats; either side re-offers with the DTLS role kept); e2e.E2E_MultiStream (5 participants' endpoints through an SSRC-preserving forwarder that terminates RTCP per leg; joins and a leave by renegotiation; the receiver holds 5 audio + 5 video tracks at once, every frame whole and in order, A/V sync per participant, NACK only on the lossy stream); interop.Browser.multistream_chrome_offers (Chrome sends 5 participants, 10 tracks, in three offers; the endpoint answers each and receives every track; Chrome sees a receiver report for each of its streams). Scenario suite unchanged against the baseline (0 regressions, 0 improvements). Status left to the Owner.",
+   "verification": "unit.SessionMultiStream (streams of two participants demuxed by MID and SSRC, per-stream stats and report blocks, sync per group, removal); unit.PcRenegotiation (an SFU-like peer's offers add, deactivate, stop and recycle sections on one BUNDLE transport without an ICE restart; per-section demux, NACK, sync and stats; either side re-offers with the DTLS role kept); e2e.E2E_MultiStream (5 participants' endpoints through an SSRC-preserving forwarder that terminates RTCP per leg; joins and a leave by renegotiation; the receiver holds 5 audio + 5 video tracks at once, every frame whole and in order, A/V sync per participant, NACK only on the lossy stream); interop.Browser.multistream_chrome_offers (Chrome sends 5 participants, 10 tracks, in three offers; the endpoint answers each and receives every track; Chrome sees a receiver report for each of its streams). Scenario suite unchanged against the baseline (0 regressions, 0 improvements). Status left to the Owner. Owner approved marking done, 2026-11-05.",
    "start": "2026-11-04",
-   "end": "",
+   "end": "2026-11-05",
    "milestone": 5,
-   "note": "Owner, 2026-11-04 (#1160): group video calls of up to 6 through an SFU (LiveKit); the mesh of 3-4 is dropped; C16-C21 accepted as the next milestone."
+   "note": "Owner, 2026-11-04 (#1160): group video calls of up to 6 through an SFU (LiveKit); the mesh of 3-4 is dropped; C16-C21 accepted as the next milestone.",
+   "verified": "pass"
   },
   {
    "id": "C19",
@@ -1251,17 +1255,18 @@
    "area": "Connectivity",
    "title": "SFU deployment (LiveKit)",
    "acceptance": "LiveKit runs next to coturn (TURN from coturn, TLS); a LiveKit signaling client lets the web app (LiveKit JS SDK or our page), apps/call (so the iOS app) and the AI server join a room; credentials (LiveKit tokens) are issued by a service, never shipped in the apps.",
-   "status": "open",
+   "status": "done",
    "depends_on": [
     "C16",
     "C15"
    ],
    "evidence": "Server: LiveKit v1.13.11 on the Lightsail host behind nginx TLS (wss://<host>:8443/rtc), RTC on TCP 7881 and UDP 7882, TURN from coturn, rooms of up to 6 (the window, #1160). Clients and tokens: issue #1164, PR #1166: GET /lk-token in apps/signaling/server.py (HS256 LiveKit access tokens from LIVEKIT_API_KEY/LIVEKIT_API_SECRET in the environment, never in the apps); the web app's Group mode with the vendored, checksum-pinned livekit-client 2.23.0 (camera in H.264 with three simulcast layers, microphone, one tile per participant); a native LiveKit signaling client in apps/call (protobuf over WebSocket, .proto files vendored from livekit/protocol at the commit server v1.13.11 pins; publisher connection: AddTrack, offer/answer, trickle, ping, leave); docs/deploy/livekit.md",
-   "verification": "unit.SignalingService (/lk-token claims and signature, input checks, 503 without keys, publish-only grants; the vendored files' checksums), unit.LiveKitProto and unit.LiveKitClient (the protobuf codec and the native publisher's signaling without a server). Against a local livekit-server 1.13.11 with headless Chrome: interop.WebApp.group (two pages in one room publish H.264 with three simulcast encodings and receive each other's audio and video) and interop.WebApp.group_native (sm_call_smoke --livekit publishes Opus and 640x360 H.264; the page receives both); a native publisher alone held the session for 75 s (pings answered). Not yet: the native subscriber path (LiveKit's data-only first subscriber offer, renegotiations and several remote streams need C18), so the native client and the iOS app join publish-only; the AI server joining a room and the apps' grid are C20; not yet run against the Lightsail host (needs LIVEKIT_API_KEY/LIVEKIT_API_SECRET in the signaling service's environment there).",
+   "verification": "unit.SignalingService (/lk-token claims and signature, input checks, 503 without keys, publish-only grants; the vendored files' checksums), unit.LiveKitProto and unit.LiveKitClient (the protobuf codec and the native publisher's signaling without a server). Against a local livekit-server 1.13.11 with headless Chrome: interop.WebApp.group (two pages in one room publish H.264 with three simulcast encodings and receive each other's audio and video) and interop.WebApp.group_native (sm_call_smoke --livekit publishes Opus and 640x360 H.264; the page receives both); a native publisher alone held the session for 75 s (pings answered). Not yet: the native subscriber path (LiveKit's data-only first subscriber offer, renegotiations and several remote streams need C18), so the native client and the iOS app join publish-only; the AI server joining a room and the apps' grid are C20; not yet run against the Lightsail host (needs LIVEKIT_API_KEY/LIVEKIT_API_SECRET in the signaling service's environment there). Owner approved marking done, 2026-11-05.",
    "start": "2026-11-04",
-   "end": "",
+   "end": "2026-11-05",
    "milestone": 5,
-   "note": "Owner, 2026-11-04 (#1160): group video calls of up to 6 through an SFU (LiveKit); the mesh of 3-4 is dropped; C16-C21 accepted as the next milestone."
+   "note": "Owner, 2026-11-04 (#1160): group video calls of up to 6 through an SFU (LiveKit); the mesh of 3-4 is dropped; C16-C21 accepted as the next milestone.",
+   "verified": "pass"
   },
   {
    "id": "C20",
@@ -1269,7 +1274,7 @@
    "area": "Connectivity",
    "title": "Group call in the apps",
    "acceptance": "The web and iOS apps show a grid of up to 6 with join/leave, mute, an active-speaker highlight (from audio levels) and per-participant stats; the AI server can join as a participant.",
-   "status": "open",
+   "status": "done",
    "depends_on": [
     "C17",
     "C18",
@@ -1278,11 +1283,12 @@
     "C15"
    ],
    "evidence": "Issue #1172, PR (this branch c20/group-call-apps): apps/call's LiveKit subscriber (LiveKit's data-only first offer and per-participant re-offers through C18's renegotiation; tracks mapped to participants by msid and TrackInfo; an Opus decoder per audio track and a playout mix of every participant; a VideoToolbox decoder per video track; SpeakersChanged, MuteTrackRequest both ways, UpdateTrackSettings; the publish-only workaround removed); the iOS app's Group mode (/lk-token, binary /rtc WebSocket, a grid of up to 6 with a Metal view per tile and a local preview, active-speaker frame, mute and camera-off badges, level bar, per-participant stats); the web app's grid (up to 6 tiles, active speaker, join/leave log, Mute and Video, per-participant getStats); sm_ai_server --livekit (ai_livekit.h: joins a room and answers the active speaker's turns through AiConversation, shared with the one-to-one AiCall); docs/deploy/livekit.md, apps/ios and apps/ai_server READMEs",
-   "verification": "unit.LiveKitProto and unit.LiveKitClient (SpeakersChanged with float levels, MuteTrackRequest, UpdateTrackSettings; participants joining and leaving, the active speaker, mute announced and applied, the data-only subscriber offer answered). Against a local livekit-server 1.13.11 with headless Chrome (macOS arm64): interop.WebApp.group_native (the native client receives the page's audio and video) and interop.WebApp.group_all (two pages, sm_call_smoke and sm_ai_server --livekit in one room, a third page joining and leaving: every page receives every other participant's audio and video and the AI's audio; the native client received each page's audio (18.7 s) and video (about 356 frames) and the AI's audio; the AI received every participant; everyone saw the late page join and leave; every participant saw the active speaker move between the native client and the AI; the AI listened to the native client and answered 4 of 4 turns, its reply starting a mean 645 ms after the turn ended, as the AI measures it). iOS: SmCall and sm_call_smoke build for the simulator and the device (unsigned); apps/ios/simulator_group.sh: sm_call_smoke (simulator build) and the SmCall app join a room with a Chrome page; the app played 18-19 s of the page's audio, decoded 354-387 video frames and drew 341-385 on the page's tile, and the page received the app's audio (3 of 4 runs passed; in one, the simulator sm_call_smoke's subscriber connection did not connect, see #1172). Not yet: a real 6-way call through the Lightsail LiveKit (C21) and a real iPhone in a group. Status left to the Owner.",
+   "verification": "unit.LiveKitProto and unit.LiveKitClient (SpeakersChanged with float levels, MuteTrackRequest, UpdateTrackSettings; participants joining and leaving, the active speaker, mute announced and applied, the data-only subscriber offer answered). Against a local livekit-server 1.13.11 with headless Chrome (macOS arm64): interop.WebApp.group_native (the native client receives the page's audio and video) and interop.WebApp.group_all (two pages, sm_call_smoke and sm_ai_server --livekit in one room, a third page joining and leaving: every page receives every other participant's audio and video and the AI's audio; the native client received each page's audio (18.7 s) and video (about 356 frames) and the AI's audio; the AI received every participant; everyone saw the late page join and leave; every participant saw the active speaker move between the native client and the AI; the AI listened to the native client and answered 4 of 4 turns, its reply starting a mean 645 ms after the turn ended, as the AI measures it). iOS: SmCall and sm_call_smoke build for the simulator and the device (unsigned); apps/ios/simulator_group.sh: sm_call_smoke (simulator build) and the SmCall app join a room with a Chrome page; the app played 18-19 s of the page's audio, decoded 354-387 video frames and drew 341-385 on the page's tile, and the page received the app's audio (3 of 4 runs passed; in one, the simulator sm_call_smoke's subscriber connection did not connect, see #1172). Not yet: a real 6-way call through the Lightsail LiveKit (C21) and a real iPhone in a group. Status left to the Owner. Owner approved marking done, 2026-11-05.",
    "start": "2026-11-04",
-   "end": "",
+   "end": "2026-11-05",
    "milestone": 5,
-   "note": "Owner, 2026-11-04 (#1160): group video calls of up to 6 through an SFU (LiveKit); the mesh of 3-4 is dropped; C16-C21 accepted as the next milestone."
+   "note": "Owner, 2026-11-04 (#1160): group video calls of up to 6 through an SFU (LiveKit); the mesh of 3-4 is dropped; C16-C21 accepted as the next milestone.",
+   "verified": "pass"
   },
   {
    "id": "C21",
@@ -1290,18 +1296,19 @@
    "area": "Connectivity",
    "title": "Group-call test bench and real-network check",
    "acceptance": "A simulated SFU in the test bench (forwarding plus layer selection, deterministic) with per-receiver metrics (freezes, delay, layer switches, uplink use); a real 6-way call through the deployed SFU with metrics measured at the callers.",
-   "status": "open",
+   "status": "done",
    "depends_on": [
     "C17",
     "C18",
     "C19"
    ],
    "evidence": "Issue #1180, PR c21/group-call-testbench. Simulated SFU: testbench/sfu.h (modelled on LiveKit): an ingress rtp::Session per publisher terminating RTCP on the publish leg (RR, transport-cc for the publisher's GoogCC, NACK, PLI; RTX unwrapped and forwarded); per subscriber a downtrack per remote track forwarding the selected simulcast layer on one SSRC with sequence numbers and timestamps rewritten (layers aligned through their SRs), switching on the target layer's keyframe after a PLI; the subscribe leg terminated too (the SFU's own SRs, DLRR, NACKs answered from its cache with RTX under an RTT hold-back, 3 tries and the estimate as budget, PLI/FIR passed up for the layer forwarded); a per-subscriber GoogCC (cc::GccController, padding probes through cc::BitrateProber) split among the video tracks every 100 ms as LiveKit's StreamAllocator (lowest layers first, then upgrades in turn with a 10% margin, a track paused when its lowest layer does not fit); dynacast pausing layers nobody asks for. Test bench: call sfu <N> (2-6), participant <i> [reverse] at ..., participant <i> join|leave <t>, sfu_max_layer, sfu_dynacast; each participant a C17 simulcast publisher session and a C18 multi-stream subscriber session (a receive side per remote participant, its own sync group); metrics p<i>_to_p<j>.* (freezes, render fps, capture-to-render delay, time to first frame, received height, top-layer share, layer switches, A/V sync, audio concealment), p<i>.* (upload/download, link loss and queues, per-layer publish rates, the SFU's estimate, keyframe requests, totals as a receiver) and sfu.*. Scenarios sfu_6_mixed_links, sfu_join_leave and sfu_6_grid_dynacast with baselines, compare off (sm_compare is one-way). Real call: tools/real_group_call.py (4 Chrome pages ?group=1, sm_call_smoke --livekit --video and sm_ai_server --livekit in one room on the Lightsail LiveKit through /lk-token, 60 s, getStats and the native clients' JSON lines) and docs/results/real-group-call.md: three 6-way calls of 60 s on 2026-11-04 (all six joined, everyone received everyone, the AI answered every turn it heard); quality limited by the home Wi-Fi link all six clients shared (10-19% audio loss, about 20-25 freezes per stream per minute); dynacast paused no layer there, and the native client publishes one layer, so the real call does not exercise #1178 (the bench's sfu_6_grid_dynacast does). Not yet: an AI participant in the simulated room; a real call from well-connected clients.",
-   "verification": "unit.TestbenchSfu (allocator: wanted layers when they fit, lowest first then upgrades in turn, a pause when the bottom does not fit, layers not received skipped, the upgrade margin; forwarder: start and switch only on the target layer's keyframe, one SSRC and contiguous sequence numbers across a switch, duplicates dropped, pause; timestamps aligned through SRs and the downtrack SR's RTP; RTX resends from the layer forwarded, RTT hold-back, 3 tries, budget; Sfu node: transport-cc and PLI to the publisher from the ingress, nothing forwarded before a keyframe, subscribe-leg extensions rewritten, a subscriber NACK answered with RTX and not passed up, a PLI passed up as the ingress's PLI on the forwarded layer, RRTR answered with DLRR, the publisher's SR becoming the downtrack's). unit.TestbenchCallMode (call sfu, participant, join/leave, sfu_max_layer and sfu_dynacast parse, round-trip and are checked). Scenarios sfu_6_mixed_links, sfu_join_leave and sfu_6_grid_dynacast pass on seeds 1-5 and are deterministic. tools/test_real_group_call.py (the runner's summaries, offline). Status left to the Owner.",
+   "verification": "unit.TestbenchSfu (allocator: wanted layers when they fit, lowest first then upgrades in turn, a pause when the bottom does not fit, layers not received skipped, the upgrade margin; forwarder: start and switch only on the target layer's keyframe, one SSRC and contiguous sequence numbers across a switch, duplicates dropped, pause; timestamps aligned through SRs and the downtrack SR's RTP; RTX resends from the layer forwarded, RTT hold-back, 3 tries, budget; Sfu node: transport-cc and PLI to the publisher from the ingress, nothing forwarded before a keyframe, subscribe-leg extensions rewritten, a subscriber NACK answered with RTX and not passed up, a PLI passed up as the ingress's PLI on the forwarded layer, RRTR answered with DLRR, the publisher's SR becoming the downtrack's). unit.TestbenchCallMode (call sfu, participant, join/leave, sfu_max_layer and sfu_dynacast parse, round-trip and are checked). Scenarios sfu_6_mixed_links, sfu_join_leave and sfu_6_grid_dynacast pass on seeds 1-5 and are deterministic. tools/test_real_group_call.py (the runner's summaries, offline). Status left to the Owner. Owner approved marking done, 2026-11-05.",
    "start": "2026-11-04",
-   "end": "",
+   "end": "2026-11-05",
    "milestone": 5,
-   "note": "Owner, 2026-11-04 (#1160): group video calls of up to 6 through an SFU (LiveKit); the mesh of 3-4 is dropped; C16-C21 accepted as the next milestone."
+   "note": "Owner, 2026-11-04 (#1160): group video calls of up to 6 through an SFU (LiveKit); the mesh of 3-4 is dropped; C16-C21 accepted as the next milestone.",
+   "verified": "pass"
   },
   {
    "id": "F1.1",
