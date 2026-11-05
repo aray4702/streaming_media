@@ -211,11 +211,54 @@ void Session::UpdateVideoPacketOverhead() {
   send_.SetRtpOverheadPerPacket(static_cast<int64_t>(overhead));
 }
 
-void Session::MaybeCreateSync() {
-  if (!cfg_.av_sync || av_sync_ || audio_recv_.empty() || video_recv_.empty()) return;
-  sync_audio_ = std::make_unique<SyncableStream>(audio_recv_.front().receiver.get(), audio_recv_.front().ssrc);
-  sync_video_ = std::make_unique<SyncableStream>(video_recv_.front().receiver.get(), video_recv_.front().ssrc);
-  av_sync_ = std::make_unique<sync::RtpStreamsSynchronizer>(sync_video_.get(), cfg_.events);
+// Call::ConfigureSync (call/call.cc:1318-1341) for every group: each video receive stream of a group is paired with
+// the group's first audio receive stream (FindAudioStreamForSyncGroup), and only the first video stream of a group
+// is synced. With no group named anywhere, the first audio and the first video receive stream are one group (#77).
+// Each video stream's synchronizer is made when it is first paired (null until then, as before #1160), and keeps
+// running unpaired (ConfigureSync(nullptr)) when its audio stream goes.
+void Session::ConfigureSyncGroups() {
+  if (!cfg_.av_sync) return;
+  bool groups = false;
+  for (const auto* list : {&audio_recv_, &video_recv_}) {
+    for (const RecvStream& r : *list) groups = groups || (r.receiver && !r.sync_group.empty());
+  }
+  auto first_audio = [&](const std::string& group) -> int {
+    for (size_t i = 0; i < audio_recv_.size(); ++i) {
+      if (audio_recv_[i].receiver && audio_recv_[i].sync_group == group) return static_cast<int>(i);
+    }
+    return -1;
+  };
+  std::map<std::string, int> synced_in_group;
+  bool legacy_paired = false;
+  for (RecvStream& v : video_recv_) {
+    if (!v.receiver) continue;
+    int audio = -1;
+    if (groups) {
+      if (!v.sync_group.empty() && ++synced_in_group[v.sync_group] == 1) audio = first_audio(v.sync_group);
+    } else if (!legacy_paired) {
+      legacy_paired = true;
+      audio = first_audio("");
+    }
+    if (audio == v.sync_audio && (v.sync || audio < 0)) continue;
+    if (audio >= 0) {
+      RecvStream& a = audio_recv_[static_cast<size_t>(audio)];
+      if (!a.syncable) a.syncable = std::make_unique<SyncableStream>(a.receiver.get(), a.ssrc);
+      if (!v.syncable) v.syncable = std::make_unique<SyncableStream>(v.receiver.get(), v.ssrc);
+      if (!v.sync) v.sync = std::make_unique<sync::RtpStreamsSynchronizer>(v.syncable.get(), cfg_.events);
+    }
+    v.sync_audio = audio;
+    v.sync_pending = v.sync != nullptr;
+  }
+}
+
+// VideoReceiveStream2::SetSync -> RtpStreamsSynchronizer::ConfigureSync, once the time is known.
+void Session::ConfigurePendingSync(Timestamp now) {
+  for (RecvStream& v : video_recv_) {
+    if (!v.sync_pending || !v.receiver || !v.sync) continue;
+    v.sync_pending = false;
+    v.sync->ConfigureSync(v.sync_audio >= 0 ? audio_recv_[static_cast<size_t>(v.sync_audio)].syncable.get() : nullptr,
+                          now);
+  }
 }
 
 AudioRecvId Session::AddAudioReceive(const AudioStreamConfig& a, AudioDecoder* decoder) {
@@ -251,19 +294,25 @@ AudioRecvId Session::AddAudioReceive(const AudioStreamConfig& a, AudioDecoder* d
   } else {
     rtcp_.AddReceiveStatistics(r->receive_statistics());
   }
-  audio_recv_.push_back({std::move(r), a.ssrc, 0});
   std::vector<uint8_t> pts = {a.payload_type};
   if (a.red_payload_type) pts.push_back(*a.red_payload_type);
   const int sink = static_cast<int>(sinks_.size());
-  sinks_.emplace_back(false, static_cast<int>(audio_recv_.size()) - 1);
+  sinks_.emplace_back(false, static_cast<int>(audio_recv_.size()));
+  RecvStream rs;
+  rs.receiver = std::move(r);
+  rs.ssrc = a.ssrc;
+  rs.sink = sink;
+  rs.sync_group = a.sync_group;
+  audio_recv_.push_back(std::move(rs));
   // Call registers each receive stream by its SSRC (RtpStreamReceiverController), and the
   // BUNDLE transport by its MID and payload types; one RtpDemuxer here takes all three.
   sync::RtpDemuxerCriteria criteria;
-  criteria.mid = cfg_.mid_audio;
+  criteria.mid = a.mid.empty() ? cfg_.mid_audio : a.mid;
+  audio_recv_.back().mid = criteria.mid;
   criteria.ssrcs = {a.ssrc};
   criteria.payload_types = std::move(pts);
   demux_.AddSink(sink, criteria);
-  MaybeCreateSync();
+  ConfigureSyncGroups();
   return {static_cast<int>(audio_recv_.size()) - 1};
 }
 
@@ -303,7 +352,6 @@ VideoRecvId Session::AddVideoReceive(const VideoStreamConfig& v) {
   r->defer_receive_statistics_ = true;  // Counted after the RTCP the packet triggers (issue #777).
   rtcp_.AddReceiveStatistics(r->receive_statistics());
   rtcp_.AddReceiveStatistics(r->rtx_receive_statistics());
-  video_recv_.push_back({std::move(r), v.ssrc, v.rtx_ssrc.value_or(0)});
   std::vector<uint8_t> pts = {v.payload_type};
   if (v.rtx_ssrc) pts.push_back(v.rtx_payload_type);
   if (VideoFecEnabled(v)) {
@@ -311,15 +359,71 @@ VideoRecvId Session::AddVideoReceive(const VideoStreamConfig& v) {
     if (v.rtx_ssrc) pts.push_back(v.ulpfec.red_rtx_payload_type);
   }
   const int sink = static_cast<int>(sinks_.size());
-  sinks_.emplace_back(true, static_cast<int>(video_recv_.size()) - 1);
+  sinks_.emplace_back(true, static_cast<int>(video_recv_.size()));
+  RecvStream rs;
+  rs.receiver = std::move(r);
+  rs.ssrc = v.ssrc;
+  rs.rtx_ssrc = v.rtx_ssrc.value_or(0);
+  rs.sink = sink;
+  rs.sync_group = v.sync_group;
+  video_recv_.push_back(std::move(rs));
   sync::RtpDemuxerCriteria criteria;
-  criteria.mid = cfg_.mid_video;
+  criteria.mid = v.mid.empty() ? cfg_.mid_video : v.mid;
+  video_recv_.back().mid = criteria.mid;
   criteria.ssrcs = {v.ssrc};
   if (v.rtx_ssrc) criteria.ssrcs.push_back(*v.rtx_ssrc);
   criteria.payload_types = std::move(pts);
   demux_.AddSink(sink, criteria);
-  MaybeCreateSync();
+  ConfigureSyncGroups();
   return {static_cast<int>(video_recv_.size()) - 1};
+}
+
+bool Session::HasAudioReceive(AudioRecvId id) const {
+  return id.index >= 0 && static_cast<size_t>(id.index) < audio_recv_.size() &&
+         audio_recv_[static_cast<size_t>(id.index)].receiver != nullptr;
+}
+
+bool Session::HasVideoReceive(VideoRecvId id) const {
+  return id.index >= 0 && static_cast<size_t>(id.index) < video_recv_.size() &&
+         video_recv_[static_cast<size_t>(id.index)].receiver != nullptr;
+}
+
+// Call::DestroyAudioReceiveStream (call/call.cc:858-889): unregistered from the transport (the demuxer) and from the
+// RTCP reports, the group's sync redone, then deleted. The video streams it was synced with stop at once
+// (ConfigureSync(nullptr) needs no time), before the stream they read goes.
+bool Session::RemoveAudioReceive(AudioRecvId id) {
+  if (!HasAudioReceive(id)) return false;
+  RecvStream& a = audio_recv_[static_cast<size_t>(id.index)];
+  demux_.RemoveSink(a.sink);
+  (audio_recv_rtcp_ ? *audio_recv_rtcp_ : rtcp_).RemoveReceiveStatistics(a.receiver->receive_statistics());
+  for (RecvStream& v : video_recv_) {
+    if (v.receiver && v.sync && v.sync_audio == id.index) {
+      v.sync->ConfigureSync(nullptr, Timestamp::Micros(0));
+      v.sync_audio = -1;
+      v.sync_pending = false;
+    }
+  }
+  a.syncable.reset();
+  a.receiver.reset();
+  ConfigureSyncGroups();
+  return true;
+}
+
+// Call::DestroyVideoReceiveStream (call/call.cc:1032-1046).
+bool Session::RemoveVideoReceive(VideoRecvId id) {
+  if (!HasVideoReceive(id)) return false;
+  RecvStream& v = video_recv_[static_cast<size_t>(id.index)];
+  demux_.RemoveSink(v.sink);
+  rtcp_.RemoveReceiveStatistics(v.receiver->receive_statistics());
+  rtcp_.RemoveReceiveStatistics(v.receiver->rtx_receive_statistics());
+  v.sync.reset();
+  v.syncable.reset();
+  v.sync_audio = -1;
+  v.sync_pending = false;
+  v.freeze_detector = nullptr;
+  v.receiver.reset();
+  ConfigureSyncGroups();
+  return true;
 }
 
 SendSideController::AudioAllocation Session::AudioAllocationOf(const SendStream& a) const {
@@ -341,7 +445,7 @@ void Session::Start(Timestamp now) {
   if (started_) return;
   started_ = true;
   // Call::ConfigureSync: the audio and video stream of one sync group.
-  if (av_sync_) av_sync_->ConfigureSync(sync_audio_.get(), now);
+  ConfigurePendingSync(now);
   // A receive-only endpoint has no congestion controller to run: its pacer,
   // GCC and outage monitor would only log decisions about a link it never
   // sends on.
@@ -633,18 +737,22 @@ void Session::SetRtt(TimeDelta rtt) {
   // With RRTR on, the XR measurement is what goes to CallStats.
   if (!cfg_.rtcp.xr_rrtr) pending_rr_rtt_ = rtt;
   send_.OnRtt(rtt_);
-  for (auto& a : audio_recv_) a.receiver->OnRtt(rtt_);
+  for (auto& a : audio_recv_) {
+    if (a.receiver) a.receiver->OnRtt(rtt_);
+  }
 }
 
 // VideoReceiveStream2::OnRttUpdate: the maximum RTT goes to NackRequester
 // (RtpVideoStreamReceiver2::UpdateRtt) and the jitter estimator.
 void Session::OnCallStatsUpdate(const std::optional<CallStats::Update>& u) {
   if (!u) return;
-  for (auto& v : video_recv_) v.receiver->OnRtt(TimeDelta::Millis(u->max_rtt_ms));
+  for (auto& v : video_recv_) {
+    if (v.receiver) v.receiver->OnRtt(TimeDelta::Millis(u->max_rtt_ms));
+  }
 }
 
 void Session::OnDecodeFailure(VideoRecvId id, Timestamp now) {
-  if (id.index < 0 || static_cast<size_t>(id.index) >= video_recv_.size()) return;
+  if (!HasVideoReceive(id)) return;
   video_recv_[static_cast<size_t>(id.index)].receiver->OnDecodeFailure(now);
 }
 
@@ -665,6 +773,7 @@ RtpSender* Session::SenderForSsrc(uint32_t ssrc) {
 
 void Session::OnPacket(std::span<const uint8_t> bytes, Timestamp now) {
   Start(now);
+  ConfigurePendingSync(now);
   packet_since_process_ = true;
   ++stats_.datagrams_in;
   if (LooksLikeRtcp(bytes)) {
@@ -698,7 +807,13 @@ void Session::HandleRtp(std::span<const uint8_t> bytes, Timestamp now) {
     return;
   }
   const auto [video, index] = sinks_[static_cast<size_t>(*sink)];
-  RtpReceiver& r = video ? *video_recv_[static_cast<size_t>(index)].receiver : *audio_recv_[static_cast<size_t>(index)].receiver;
+  RtpReceiver* receiver = video ? video_recv_[static_cast<size_t>(index)].receiver.get()
+                                : audio_recv_[static_cast<size_t>(index)].receiver.get();
+  if (receiver == nullptr) {  // Removed (its sink is gone from the demuxer, so this is not reached).
+    ++stats_.unroutable;
+    return;
+  }
+  RtpReceiver& r = *receiver;
   if (r.OnPacket(bytes, now) == ReceivedKind::kMalformed) ++stats_.malformed;
   if (!video) {
     // ChannelReceive::OnRtpPacket asks the tracker right after the packet, with its receive-only
@@ -759,10 +874,10 @@ void Session::HandleRtcp(std::span<const uint8_t> bytes, Timestamp now) {
   if (audio_rtcp_) audio_rtcp_->OnRtcp(bytes, now);
   for (const auto& sr : in.sender_reports) {
     for (auto& v : video_recv_) {
-      if (v.ssrc == sr.ssrc) v.receiver->OnSenderReport(sr, now);
+      if (v.receiver && v.ssrc == sr.ssrc) v.receiver->OnSenderReport(sr, now);
     }
     for (auto& a : audio_recv_) {
-      if (a.ssrc == sr.ssrc) a.receiver->OnSenderReport(sr, now);
+      if (a.receiver && a.ssrc == sr.ssrc) a.receiver->OnSenderReport(sr, now);
     }
   }
   // RTCPReceiver::HandleXrDlrrReportBlock keeps the latest XR RTT for
@@ -806,13 +921,19 @@ void Session::HandleRtcp(std::span<const uint8_t> bytes, Timestamp now) {
   // (RegisteredSsrcs, RttStats::AddRtt; rtcp_receiver.cc:516-575): ModuleRtpRtcpImpl2::LastRtt.
   for (size_t i = 0; i < in.rtts.size(); ++i) {
     if (in.rtt_ssrcs[i] != cfg_.local_ssrc) continue;
-    for (auto& v : video_recv_) v.receiver->OnReportBlockRtt(in.rtts[i]);
-    for (auto& a : audio_recv_) a.receiver->OnReportBlockRtt(in.rtts[i]);
+    for (auto& v : video_recv_) {
+      if (v.receiver) v.receiver->OnReportBlockRtt(in.rtts[i]);
+    }
+    for (auto& a : audio_recv_) {
+      if (a.receiver) a.receiver->OnReportBlockRtt(in.rtts[i]);
+    }
   }
   if (!in.rtts.empty()) {
     rtt_ = in.rtts.back();
     have_rtt_ = true;
-    for (auto& a : audio_recv_) a.receiver->OnRtt(rtt_);
+    for (auto& a : audio_recv_) {
+      if (a.receiver) a.receiver->OnRtt(rtt_);
+    }
     // The packet history and CallStats (so the video receivers) take their RTT
     // from the 1 s periodic update, the history also from each NACK
     // (PeriodicRttUpdate, the NACK loop below), not from every sample.
@@ -921,8 +1042,12 @@ void Session::HandleRtcp(std::span<const uint8_t> bytes, Timestamp now) {
     Emit(e);
   }  // Call::DeliverRtcpPacket_w hands every packet to each receive stream too, which then
   // trains its RemoteNtpTimeEstimator from the SR (DeliverRtcp, ReceivedRTCPPacket).
-  for (auto& v : video_recv_) v.receiver->OnRtcpPacket(now);
-  for (auto& a : audio_recv_) a.receiver->OnRtcpPacket(now);
+  for (auto& v : video_recv_) {
+    if (v.receiver) v.receiver->OnRtcpPacket(now);
+  }
+  for (auto& a : audio_recv_) {
+    if (a.receiver) a.receiver->OnRtcpPacket(now);
+  }
   FlushResends(now);
 }
 
@@ -978,7 +1103,9 @@ void Session::PeriodicRttUpdate(Timestamp now) {
       OnCallStatsUpdate(call_stats_.OnRttUpdate(pending_rr_rtt_->ms(), at));
       // set_rtt_ms on each video receive module, which has RRTR on (the audio one has it only with
       // AudioReceiveStream's enable_non_sender_rtt, off by default).
-      for (auto& v : video_recv_) v.receiver->OnPeriodicRtt(TimeDelta::Millis(pending_rr_rtt_->ms()));
+      for (auto& v : video_recv_) {
+        if (v.receiver) v.receiver->OnPeriodicRtt(TimeDelta::Millis(pending_rr_rtt_->ms()));
+      }
       pending_rr_rtt_.reset();
     }
     next_rtt_update_ += kRttUpdateInterval;
@@ -990,6 +1117,7 @@ void Session::Process(Timestamp now) {
   // saturating (#441), RtcpEngine's catch-up loop would chase it forever, so it is ignored.
   if (!now.IsFinite()) return;
   Start(now);
+  ConfigurePendingSync(now);
   last_process_ = now;
   packet_since_process_ = false;
   call_stats_.EnsureStarted(now);
@@ -1003,6 +1131,7 @@ void Session::Process(Timestamp now) {
   ProcessTransportFeedback(now);
   // Receivers: frames, NACK and keyframe requests.
   for (auto& v : video_recv_) {
+    if (!v.receiver) continue;
     RtpReceiver& r = *v.receiver;
     r.Process(now);
     ReceiverFeedback fb = r.TakeFeedback();
@@ -1022,8 +1151,10 @@ void Session::Process(Timestamp now) {
       }
     }
   }
-  // RtpStreamsSynchronizer's 1 s task.
-  if (av_sync_) av_sync_->Process(now);
+  // RtpStreamsSynchronizer's 1 s task, one per synced video stream.
+  for (auto& v : video_recv_) {
+    if (v.receiver && v.sync) v.sync->Process(now);
+  }
   // RTCP: reports and queued feedback, before the paced media due at the same time. libwebrtc runs both
   // as delayed tasks on the worker queue (ModuleRtpRtcpImpl2::ScheduleMaybeSendRtcpAtOrAfterTimestamp,
   // rtp_rtcp_impl2.cc:797-808; TaskQueuePacedSender on worker_thread_, rtp_transport_controller_send.cc:100-105),
@@ -1037,7 +1168,9 @@ void Session::Process(Timestamp now) {
     out_.push_back({std::move(o.bytes), OutgoingKind::kRtcp, wire});
   }
   // The last packet's RTCP is out: it counts in the next report (RtpVideoStreamReceiver2::OnRtpPacket).
-  for (auto& v : video_recv_) v.receiver->CommitReceiveStatistics();
+  for (auto& v : video_recv_) {
+    if (v.receiver) v.receiver->CommitReceiveStatistics();
+  }
   if (audio_rtcp_) {
     audio_rtcp_->SetSenderState(audio_send_.front().sender->SenderState(now, audio_rtcp_->BuildsReport(now)));
     for (RtcpOutgoing& o : audio_rtcp_->Process(now)) {
@@ -1108,8 +1241,11 @@ Timestamp Session::NextProcessTime(Timestamp now) const {
   next = std::min(next, NextHeldAudioTime(now));
   next = std::min(next, call_stats_.NextProcessTime());
   if (packet_since_process_) return now;
-  for (const auto& v : video_recv_) next = std::min(next, v.receiver->NextProcessTime(now));
-  if (av_sync_ && av_sync_->NextProcessTime()) next = std::min(next, *av_sync_->NextProcessTime());
+  for (const auto& v : video_recv_) {
+    if (!v.receiver) continue;
+    next = std::min(next, v.receiver->NextProcessTime(now));
+    if (v.sync && v.sync->NextProcessTime()) next = std::min(next, *v.sync->NextProcessTime());
+  }
   if (cfg_.transport_feedback_interval.us() > 0 && tcc_wake_.IsFinite()) next = std::min(next, tcc_wake_);
   return std::max(next, now);
 }
@@ -1122,7 +1258,7 @@ std::vector<OutgoingPacket> Session::TakeOutgoing() {
 }
 
 std::vector<ReceivedVideoFrame> Session::TakeVideoFrames(VideoRecvId id) {
-  if (id.index < 0 || static_cast<size_t>(id.index) >= video_recv_.size()) return {};
+  if (!HasVideoReceive(id)) return {};
   return video_recv_[static_cast<size_t>(id.index)].receiver->TakeFrames();
 }
 
@@ -1147,7 +1283,7 @@ size_t Session::CancelAudio(AudioSendId id, Timestamp now) {
 }
 
 void Session::FlushAudio(AudioRecvId id, Timestamp now) {
-  if (id.index < 0 || static_cast<size_t>(id.index) >= audio_recv_.size()) return;
+  if (!HasAudioReceive(id)) return;
   RecvStream& r = audio_recv_[static_cast<size_t>(id.index)];
   r.receiver->jitter_buffer().FlushBuffers(now);
   ++stats_.audio_flushes;
@@ -1155,7 +1291,10 @@ void Session::FlushAudio(AudioRecvId id, Timestamp now) {
 }
 
 timing::AudioOperation Session::GetAudio(AudioRecvId id, std::span<float> out, Timestamp now) {
-  if (id.index < 0 || static_cast<size_t>(id.index) >= audio_recv_.size()) return timing::AudioOperation::kSilence;
+  if (!HasAudioReceive(id)) {
+    std::fill(out.begin(), out.end(), 0.0f);
+    return timing::AudioOperation::kSilence;
+  }
   return audio_recv_[static_cast<size_t>(id.index)].receiver->GetAudio(out, now);
 }
 
@@ -1219,8 +1358,37 @@ void Session::ExportMetrics(MetricsWriter& w) const {
   }
 }
 
-const sync::Syncable* Session::sync_audio() const { return sync_audio_.get(); }
-const sync::Syncable* Session::sync_video() const { return sync_video_.get(); }
+const sync::RtpStreamsSynchronizer* Session::av_sync() const {
+  for (const RecvStream& v : video_recv_) {
+    if (v.receiver && v.sync) return v.sync.get();
+  }
+  return nullptr;
+}
+
+const sync::Syncable* Session::sync_audio() const {
+  for (const RecvStream& v : video_recv_) {
+    if (v.receiver && v.sync && v.sync_audio >= 0) return audio_recv_[static_cast<size_t>(v.sync_audio)].syncable.get();
+  }
+  return nullptr;
+}
+
+const sync::Syncable* Session::sync_video() const {
+  for (const RecvStream& v : video_recv_) {
+    if (v.receiver && v.sync && v.sync_audio >= 0) return v.syncable.get();
+  }
+  return nullptr;
+}
+
+const sync::RtpStreamsSynchronizer* Session::av_sync(VideoRecvId id) const {
+  if (!HasVideoReceive(id)) return nullptr;
+  return video_recv_[static_cast<size_t>(id.index)].sync.get();
+}
+
+std::optional<AudioRecvId> Session::synced_audio(VideoRecvId id) const {
+  if (!HasVideoReceive(id)) return std::nullopt;
+  const int a = video_recv_[static_cast<size_t>(id.index)].sync_audio;
+  return a >= 0 ? std::optional<AudioRecvId>(AudioRecvId{a}) : std::nullopt;
+}
 
 }  // namespace sm::rtp
 
@@ -1229,7 +1397,7 @@ namespace sm::rtp {
 // --- Stats snapshot (issue #988) ---------------------------------------------------
 
 void Session::SetFreezeDetector(VideoRecvId id, const video::FreezeDetector* detector) {
-  if (id.index < 0 || static_cast<size_t>(id.index) >= video_recv_.size()) return;
+  if (!HasVideoReceive(id)) return;
   video_recv_[static_cast<size_t>(id.index)].freeze_detector = detector;
 }
 
@@ -1291,6 +1459,7 @@ ObsStatus Session::GetStats(Timestamp now, StatsReport* out) const {
     const timing::ReceiveStatsSnapshot snap = rx.receive_statistics().Snapshot();
     InboundRtpStats in;
     in.ssrc = st.ssrc;
+    in.mid = st.mid;
     in.video = video;
     in.packets_received = snap.packets_received;
     in.packets_lost = snap.cumulative_lost;
@@ -1327,8 +1496,12 @@ ObsStatus Session::GetStats(Timestamp now, StatsReport* out) const {
     }
     r.inbound.push_back(std::move(in));
   };
-  for (const RecvStream& st : audio_recv_) add_inbound(st, false);
-  for (const RecvStream& st : video_recv_) add_inbound(st, true);
+  for (const RecvStream& st : audio_recv_) {
+    if (st.receiver) add_inbound(st, false);
+  }
+  for (const RecvStream& st : video_recv_) {
+    if (st.receiver) add_inbound(st, true);
+  }
 
   *out = std::move(r);
   return ObsStatus::kOk;
