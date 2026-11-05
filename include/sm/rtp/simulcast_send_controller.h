@@ -35,6 +35,18 @@
 //    at most one per 300 ms; with `per_layer_keyframes` (the codec's
 //    x-google-per-layer-pli=1 or WebRTC-Video-PerSsrcKeyframes) only on the layer
 //    named, with an interval per layer;
+//  - the encodings' active state (RtpEncodingParameters::active, issue #1173): an SFU that pauses a layer
+//    (a=simulcast with ~rid) or leaves it out sets it through pc::PeerEndpoint on the session
+//    (Session::SetVideoSendActive), as SetRemoteDescription's UpdateSimulcastLayerStatusInSender calls
+//    WebRtcVideoSendStream::SetRtpParameters. A change reconfigures the encoder at once
+//    (CreateVideoEncoderConfig copies `active` into simulcast_layers; VideoStreamEncoder::ConfigureEncoder runs
+//    ReconfigureEncoder when the frame size is known): the inactive stream is not encoded (SimulcastEncoderAdapter
+//    gets no rate for it), SimulcastRateAllocator gives its rate to the active streams, and the allocation limits
+//    count only the active streams (OnEncoderConfigurationChanged: the maximum, the pad-up rate). The encoder is
+//    re-initialized only when RequiresEncoderReset says so: a stream turned off needs none, a stream turned back
+//    on does, and every layer's next frame is then a keyframe (next_frame_types_). With every encoding inactive
+//    nothing is encoded (VideoSendStreamImpl then stops the stream, which is not ported: the allocation limits
+//    are left as they were);
 //  - VideoStreamEncoder's drops for the whole frame, in its order: the
 //    congestion-window drop (OnFrame), the paused encoder (the frame is held as
 //    pending_frame_ and may be encoded on resume, MaybeEncodePendingFrame), and
@@ -135,6 +147,12 @@ class SimulcastSendController : public MetricsSource {
   void OnSessionEvent(const SessionEvent& e);
   // A keyframe on every layer (VideoStreamEncoder::SendKeyFrame()).
   void RequestKeyframe();
+  // RtpEncodingParameters::active for `layer` (issue #1173): sets the session's state for the layer's stream
+  // (Session::SetVideoSendActive) and applies it at once. A change the session got from elsewhere (pc::PeerEndpoint
+  // applying a remote description) is applied at the next OnCapturedFrame or MaybeEncodePendingFrame.
+  void SetLayerActive(size_t layer, bool active, Timestamp now);
+  // The encoding's active state as the encoder is configured (VideoEncoderConfig::simulcast_layers[i].active).
+  bool layer_active(size_t layer) const;
 
   // The configured encoder streams (empty before the first frame).
   const std::vector<video::VideoStream>& streams() const { return streams_; }
@@ -160,7 +178,11 @@ class SimulcastSendController : public MetricsSource {
     Timestamp last_keyframe_request = Timestamp::MinusInfinity();
     uint64_t encoded = 0, keyframes = 0, enables = 0, disables = 0;
   };
-  void Reconfigure(int width, int height, Timestamp now);
+  // `size_changed`: the input size changed (or the first frame), which always re-initializes the encoder;
+  // otherwise RequiresEncoderReset decides (an encoding's active state changed).
+  void Reconfigure(int width, int height, bool size_changed, Timestamp now);
+  // The session's active state for each layer into the encoder config; reconfigures on a change (issue #1173).
+  void SyncLayerActive(Timestamp now);
   // UpdateBitrateAllocation and SetEncoderRates (the allocator, the adjuster, SimulcastEncoderAdapter::SetRates).
   void UpdateRates(const SendRates& rates, double fps, Timestamp now);
   void MaybeUpdateRates(const SendRates& rates, double fps, bool encode_path, bool reconfigured, Timestamp now);
@@ -197,6 +219,13 @@ class SimulcastSendController : public MetricsSource {
   uint64_t dropped_[5] = {0, 0, 0, 0, 0};
   uint64_t encoded_frames_ = 0, keyframe_requests_ignored_ = 0, layer_switches_ = 0, reconfigurations_ = 0;
   uint64_t pending_dropped_ = 0, pending_encoded_ = 0;
+  uint64_t active_changes_ = 0, encoder_resets_ = 0;  // Issue #1173.
 };
+
+// VideoStreamEncoder's RequiresEncoderReset (video_stream_encoder.cc) for the fields VideoCodec has here, with the
+// encoder called since its initialization: the codec, size, QP, stream count or mode changed, or an active stream
+// was inactive before or changed its size, temporal layers, QP or (differing from the codec's) frame rate. An
+// inactive stream needs no reset.
+bool SimulcastRequiresEncoderReset(const video::VideoCodec& prev, const video::VideoCodec& next);
 
 }  // namespace sm::rtp

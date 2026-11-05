@@ -171,7 +171,10 @@ struct PeerEndpointConfig {
   // first encoding stays active (DisableSimulcastInSender); a layer the answer pauses (~rid) or leaves out is
   // inactive (UpdateSimulcastLayerStatusInSender). Every later offer and answer (an SFU's re-offer as participants
   // join, C18) signals the same RIDs, again without SSRCs, and the layers keep their send streams and SSRCs; each
-  // later remote description updates the layers' state the same way. Empty or one RID: no simulcast.
+  // later remote description updates the layers' state the same way. Each layer's state goes to the session
+  // (rtp::Session::SetVideoSendActive), where rtp::SimulcastSendController takes it: an inactive layer is not encoded
+  // and its rate goes to the others, and a reactivated one restarts with a keyframe (issue #1173). Empty or one
+  // RID: no simulcast.
   std::vector<std::string> video_simulcast_rids;
 };
 
@@ -321,6 +324,7 @@ class PeerEndpoint {
   bool ApplyNegotiation(std::string* error);
   void UpdateTransceiverReceive(Transceiver& t, const ContentInfo* answer, const ContentInfo* remote);
   void UpdateSimulcastLayers(Transceiver& t, const MediaContentDescription& remote);
+  void UpdateSimulcastEncodings(Transceiver& t, const MediaContentDescription& remote);
   void RemoveRemoteTrack(Transceiver& t);
   void UnregisterSink(Transceiver& t);
   void RemoveStoppedTransceivers();

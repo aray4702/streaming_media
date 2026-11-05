@@ -189,6 +189,17 @@ struct Scenario {
   // subscribed to it would see it. Quality scaling is off for simulcast, as libwebrtc. One-way calls only. 0 = off.
   int simulcast = 0;
   int simulcast_view = -1;  // -1: the top layer.
+  // `simulcast_pause <i> at <time>` / `simulcast_resume <i> at <time>` (issue #1173): the receiver (an SFU) pauses
+  // or resumes layer i at that time, as an SFU's re-offer with a=simulcast:recv ...;~<rid> does through
+  // pc::PeerEndpoint: RtpEncodingParameters::active on both stacks (rtp::SimulcastSendController::SetLayerActive;
+  // libwebrtc's VideoSendStream::ReconfigureVideoEncoder with simulcast_layers[i].active). In time order.
+  struct SimulcastActive {
+    TimeDelta at = TimeDelta::Zero();
+    int layer = 0;
+    bool active = false;
+    bool operator==(const SimulcastActive&) const = default;
+  };
+  std::vector<SimulcastActive> simulcast_active;
   bool timing_v2 = true;  // `timing v2`: libwebrtc's video receive timing (VCMTiming, JitterEstimator, frame release; issue #24; default v2 since #24; v1 is the library's FrameScheduler).
   bool av_sync = true;  // `av_sync on|off`: lip sync, audio and video in one sync group on both stacks (issue #77; rtp::SessionConfig::av_sync; default on since #77 step 3). Off only empties the receiver's sync group; the sender's audio RTCP stays on, as libwebrtc's (issue #524).
   bool audio_receive_rtcp = true;  // `audio_receive_rtcp on|off` (default on, as libwebrtc): the receiver's audio stream reports in its own RTCP (an RR with the audio block alone every 5 s), as libwebrtc's ChannelReceive (issue #484; rtp::SessionConfig::audio_receive_rtcp). Off: the audio block rides in every compound the receiver sends. Our side only: libwebrtc's side of sm_compare always reports per stream.

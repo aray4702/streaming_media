@@ -14,6 +14,7 @@
 #include "sm/pc/codec.h"
 #include "sm/rtp/fake_h264.h"
 #include "sm/rtp/session.h"
+#include "sm/rtp/simulcast_send_controller.h"
 #include "sm_test.h"
 
 using namespace sm;
@@ -663,4 +664,107 @@ SM_TEST(PcRenegotiation, SfuReofferKeepsTheSimulcastLayersAndAddsARemoteTrack) {
   SM_EXPECT_TRUE(link->ok);
   SM_EXPECT_GT(received, frames - 10);
   for (const Layer& l : layers) SM_EXPECT_GT(at_sfu[l.ssrc], 20);
+}
+
+// Issue #1173: the SFU pauses a simulcast layer in a re-offer (a=simulcast:recv q;h;~f, as LiveKit does for a layer
+// no subscriber watches) and resumes it in the next one. The client's rtp::SimulcastSendController takes the state
+// the endpoint puts on the session: the paused layer is not encoded, nothing more reaches the SFU on its SSRC, and
+// when it is resumed its first frame is a keyframe (libwebrtc M157: UpdateSimulcastLayerStatusInSender ->
+// WebRtcVideoSendStream::SetRtpParameters -> VideoStreamEncoder::ReconfigureEncoder).
+SM_TEST(PcRenegotiation, SfuReofferPausesAndResumesASimulcastLayer) {
+  EndpointWorld w;
+  std::map<uint32_t, int> at_sfu;  // The client's RTP packets the SFU got, by SSRC.
+  PeerEndpoint* sfu = w.AddEndpoint("sfu", [&](PeerEndpointConfig& c) {
+    SfuConfig(c, [&](std::span<const uint8_t> p, bool rtcp, Timestamp) {
+      if (!rtcp) ++at_sfu[SsrcOf(p)];
+    });
+  });
+  PeerEndpoint* client = w.AddEndpoint("client", [&](PeerEndpointConfig& c) {
+    c.enable_data_channels = false;
+    c.video_simulcast_rids = {"q", "h", "f"};
+    // A start rate that covers every layer (the SFU here sends no transport feedback, so the estimate stays).
+    c.session.send_side.gcc.start_rate = DataRate::KilobitsPerSec(3000);
+    c.session.send_side.gcc.max_rate = DataRate::KilobitsPerSec(5000);
+  });
+  std::string recv_layers = "q;h;f";
+  EndpointWorld::Link* link = w.Connect(client, sfu);
+  link->munge = [&](int to, SdpType, std::string sdp) {
+    if (to != 0) return sdp;
+    const std::string anchor = "a=mid:1\r\n";
+    const size_t at = sdp.find(anchor);
+    if (at == std::string::npos) return sdp;
+    sdp.insert(at + anchor.size(),
+               "a=rid:q recv\r\na=rid:h recv\r\na=rid:f recv\r\na=simulcast:recv " + recv_layers + "\r\n");
+    return sdp;
+  };
+  SM_ASSERT_TRUE(link->Offer(0, w.now));
+  SM_ASSERT_TRUE(w.RunUntil([&] { return client->IsConnected() && sfu->IsConnected(); }, TimeDelta::Seconds(10)));
+  SM_ASSERT_TRUE(link->ok);
+  rtp::Session* s = client->session();
+  SM_ASSERT_TRUE(s != nullptr);
+  const std::vector<rtp::VideoSendId> ids = client->video_simulcast_sends();
+  SM_ASSERT_EQ(ids.size(), 3u);
+  const uint32_t q_ssrc = s->video_sender(ids[0]).config().ssrc;
+  const uint32_t f_ssrc = s->video_sender(ids[2]).config().ssrc;
+
+  // The app's encoder loop: one controller over the endpoint's layers, each encoded layer sent on its stream.
+  rtp::SimulcastSendController sc({}, *s, ids);
+  int frames = 0, f_encoded = 0;
+  bool f_was_encoding = false, paused_once = false;
+  std::vector<bool> f_restart_keyframes;  // The top layer's first frame each time it starts encoding again.
+  Timestamp next = w.now;
+  w.SetHook(
+      [&](Timestamp now) {
+        if (now < next) return;
+        const rtp::SimulcastEncodeDecision d = sc.OnCapturedFrame({1280, 720}, now);
+        for (size_t i = 0; i < d.layers.size(); ++i) {
+          if (!d.layers[i].encode) continue;
+          const bool key = d.layers[i].keyframe;
+          const size_t bytes = static_cast<size_t>(std::max<int64_t>(300, d.layers[i].target.bps() / 8 / 30));
+          const std::vector<uint8_t> frame = rtp::MakeFakeH264Frame(key, bytes);
+          const DataSize sent = s->SendVideo(ids[i], {static_cast<uint32_t>(3000 * frames), frame, key}, now);
+          sc.OnEncoded(i, {sent, key}, now);
+        }
+        const bool f_encoding = d.layers.size() == 3 && d.layers[2].encode;
+        if (f_encoding) ++f_encoded;
+        if (f_encoding && !f_was_encoding && paused_once) f_restart_keyframes.push_back(d.layers[2].keyframe);
+        f_was_encoding = f_encoding;
+        client->FlushOutgoing(now);
+        ++frames;
+        next = now + TimeDelta::Millis(33);
+      },
+      [&] { return next; });
+  w.Run(TimeDelta::Seconds(2));
+  SM_EXPECT_TRUE(sc.layer_active(2));
+  SM_EXPECT_GT(at_sfu[f_ssrc], 20);
+
+  // The SFU re-offers with the top layer paused.
+  recv_layers = "q;h;~f";
+  SM_ASSERT_TRUE(link->Offer(1, w.now));
+  w.Run(TimeDelta::Millis(500));
+  SM_ASSERT_TRUE(link->ok);
+  SM_EXPECT_FALSE(client->video_simulcast()[2].active);
+  SM_EXPECT_FALSE(s->video_send_active(ids[2]));
+  SM_EXPECT_FALSE(sc.layer_active(2));
+  SM_EXPECT_TRUE(sc.layer_paused(2));
+  paused_once = true;
+  const int f_at_pause = at_sfu[f_ssrc];
+  const int f_encoded_at_pause = f_encoded;
+  const int q_at_pause = at_sfu[q_ssrc];
+  w.Run(TimeDelta::Seconds(2));
+  SM_EXPECT_EQ(f_encoded, f_encoded_at_pause);
+  SM_EXPECT_EQ(at_sfu[f_ssrc], f_at_pause);  // Nothing more on the paused layer's SSRC.
+  SM_EXPECT_GT(at_sfu[q_ssrc], q_at_pause + 20);  // The others keep going.
+
+  // The next re-offer resumes it: it is encoded again, starting with a keyframe, and reaches the SFU.
+  recv_layers = "q;h;f";
+  SM_ASSERT_TRUE(link->Offer(1, w.now));
+  w.Run(TimeDelta::Seconds(2));
+  SM_ASSERT_TRUE(link->ok);
+  SM_EXPECT_TRUE(client->video_simulcast()[2].active);
+  SM_EXPECT_TRUE(sc.layer_active(2));
+  SM_ASSERT_EQ(f_restart_keyframes.size(), 1u);
+  SM_EXPECT_TRUE(f_restart_keyframes[0]);
+  SM_EXPECT_GT(f_encoded, f_encoded_at_pause + 10);
+  SM_EXPECT_GT(at_sfu[f_ssrc], f_at_pause + 10);
 }
