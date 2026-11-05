@@ -349,8 +349,9 @@ void SendSideController::AddPaddingSender(RtpSender* sender) {
 }
 
 std::vector<SenderPacket> SendSideController::GeneratePadding(size_t target_bytes, Timestamp now) {
-  // PacketRouter::GeneratePadding (packet_router.cc:255-297): first the last stream that padded, if
-  // it supports RTX payload padding; else the first stream, video before audio, that makes any.
+  // PacketRouter::GeneratePadding (packet_router.cc:255-297): first the last stream that sent a packet or
+  // padded (last_send_module_), if it supports RTX payload padding; else the first stream, video before
+  // audio, that makes any.
   std::vector<SenderPacket> padding;
   if (last_padding_sender_ && last_padding_sender_->SupportsRtxPayloadPadding()) {
     padding = last_padding_sender_->GeneratePadding(target_bytes, now);
@@ -426,6 +427,11 @@ void SendSideController::SendPacket(const cc::PacedPacket& sent, Timestamp now) 
     return;
   }
   if (sp.sender) sp.sender->AssignSequenceNumber(sp, now);
+  // PacketRouter::SendPacket (packet_router.cc:225-230): the stream that sent this packet, if it supports RTX
+  // payload padding, is the one GeneratePadding asks first (last_send_module_), so payload padding resends the
+  // stream that sends most. With one video stream this is the stream padding already used; with simulcast it
+  // follows the layers' packets (issue #1171).
+  if (sp.sender && sp.sender->SupportsRtxPayloadPadding()) last_padding_sender_ = sp.sender;
   if (cfg_.gcc.bwe_trace) {
     // The pacer as this packet leaves it, before OnPacketSent charges it; sm_compare reads libwebrtc's
     // PacingController at the same point, from its send transport (issue #893).

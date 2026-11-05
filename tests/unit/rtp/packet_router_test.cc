@@ -256,6 +256,49 @@ SM_TEST(PacketRouter, MidFrameVideoWithoutRtxLeavesThePaddingToAudio) {
   SM_EXPECT_TRUE(AllEqual(ssrcs, 0x20));
 }
 
+// PadsOnLastActiveMediaStream (packet_router.cc:225-230, 261-271): every packet a stream that supports RTX
+// payload padding sends makes it the stream padding asks first (last_send_module_), not only the last one
+// added or the last one that padded. With two simulcast layers and media on the first-added layer only, the
+// padding is that layer's history resent on its RTX SSRC (issue #1171; a one-to-one call's single video
+// stream never needed it before simulcast, C17).
+SM_TEST(PacketRouter, PaddingFollowsTheLastStreamThatSentMedia) {
+  sync::ExtensionMap map;
+  map.Register(1, sync::uri::kTransportCc);
+  SendSideController c(V2(), &map);
+  RtpSenderConfig l0c;
+  l0c.ssrc = 0x10;
+  l0c.rtx_ssrc = 0x20;
+  l0c.extensions = &map;
+  RtpSender layer0(l0c);
+  RtpSenderConfig l1c = l0c;
+  l1c.ssrc = 0x110;
+  l1c.rtx_ssrc = 0x120;
+  RtpSender layer1(l1c);
+  c.AddPaddingSender(&layer0);
+  c.AddPaddingSender(&layer1);  // Added last: AddSendRtpModule makes it last_send_module_.
+  c.Start(Timestamp::Millis(0));
+  const std::vector<uint8_t> chunk(300, 1);  // Large enough to start the start-up probes.
+  layer0.SendVideoFrame(std::span<const std::vector<uint8_t>>(&chunk, 1), 9000, Timestamp::Millis(0));
+  for (auto& p : layer0.TakePackets()) c.Enqueue(std::move(p), Timestamp::Millis(0));
+  // Before the frame leaves, padding goes on the last-added layer ("Initially, padding will be sent on last added
+  // rtp module"); once layer 0 has sent, on layer 0.
+  std::vector<uint32_t> before, after;
+  bool media_sent = false;
+  for (auto& r : Run(c, 0, 1000)) {
+    if (r.kind == PacketKind::kVideo) media_sent = true;
+    if (r.kind != PacketKind::kPadding) continue;
+    auto p = RtpPacket::Parse(r.bytes);
+    SM_ASSERT_TRUE(p.has_value());
+    (media_sent ? after : before).push_back(p->ssrc);
+  }
+  SM_ASSERT_TRUE(media_sent);
+  SM_EXPECT_TRUE(AllEqual(before, 0x120));
+  SM_EXPECT_GT(after.size(), 0u);
+  SM_EXPECT_TRUE(AllEqual(after, 0x20));
+  SM_EXPECT_GT(layer0.stats().payload_padding_packets, 0u);
+  SM_EXPECT_EQ(layer1.stats().payload_padding_packets, 0u);
+}
+
 // AllocatesRtpSequenceNumbersIfPacketCanBeSent: the media packets carry no RTP
 // sequence number until the pacer releases them, and get consecutive numbers in release order.
 // (DoNotAllocatesRtpSequenceNumbersIfPacketCanNotBeSent is SendSideController.
