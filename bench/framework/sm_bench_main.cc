@@ -72,7 +72,9 @@ int main(int argc, char** argv) {
         // Quality benchmarks run once; report the whole run's wall time.
         st.SetElapsedNs(std::chrono::duration<double, std::nano>(std::chrono::steady_clock::now() - t0).count());
       }
-      if (b.quality || st.elapsed_ns() >= min_time * 1e9 || iters >= (int64_t{1} << 30)) break;
+      // Never stop on the first, one-iteration round: a one-time stall there (lazy static set-up, a busy CI
+      // runner) would become the result. The next round starts afresh.
+      if (b.quality || (iters > 1 && st.elapsed_ns() >= min_time * 1e9) || iters >= (int64_t{1} << 30)) break;
       double per = st.elapsed_ns() / static_cast<double>(iters);
       int64_t next = per > 0 ? static_cast<int64_t>(min_time * 1e9 / per * 1.2) : iters * 10;
       iters = std::max(iters * 2, std::min(next, iters * 100));

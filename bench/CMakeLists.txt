@@ -28,6 +28,52 @@ endif()
 # controller and agent, ICE-lite, TURN and TCP framing (sections 1.1-1.9). SDP and offer/answer (1.10, 1.11) need
 # sm::pc_sdp and the endpoint (1.12) sm::pc_endpoint, both on sm::tls: not in the Wasm build.
 list(APPEND SM_BENCH_SOURCES p2p_bench.cc)
+# Sections of benchmarks beyond the library's SM_SECTIONS, each a ctest gate bench.<section> below.
+set(SM_BENCH_SECTIONS p2p)
+# Security (section 2): sm::tls on SM_TLS_BACKEND (BoringSSL or mbedTLS); never on wasm.
+if(SM_WITH_TLS)
+  list(APPEND SM_BENCH_SOURCES security_bench.cc)
+  list(APPEND SM_BENCH_SECTIONS security)
+endif()
+# Data channels (9.6-9.9): dcsctp alone, and over DTLS with sm::tls.
+if(SM_WITH_DATACHANNEL)
+  list(APPEND SM_BENCH_SOURCES datachannel_bench.cc)
+  list(APPEND SM_BENCH_SECTIONS dc)
+  # libwebrtc's dcsctp headers shadow names, as the library and its tests allow (src/CMakeLists.txt).
+  if(NOT MSVC)
+    set_source_files_properties(datachannel_bench.cc PROPERTIES COMPILE_OPTIONS "-Wno-shadow;-Wno-comment")
+  endif()
+endif()
+# Observability (section 10): the switches, connection stats with sm::pc, a hot path with events off and on with
+# section 3, and the fuzz targets' throughput over their corpora (fuzz_bench.cc).
+list(APPEND SM_BENCH_SOURCES observability_bench.cc)
+list(APPEND SM_BENCH_SECTIONS obs)
+# 10.4: the fuzz targets of this build (fuzz/targets.cmake), each source compiled in with LLVMFuzzerTestOneInput
+# renamed to SmFuzz_<target>. As fuzz/CMakeLists.txt: with section RTP, not on wasm. The second build of
+# dtls_record on the other TLS backend (a target with its own SM_FUZZ_SOURCE_) is left out: sm_bench has one backend.
+set(SM_BENCH_FUZZ_DEFS)
+set(SM_BENCH_FUZZ_INCLUDES)
+if(SM_WITH_RTP AND NOT EMSCRIPTEN)
+  include(${PROJECT_SOURCE_DIR}/fuzz/targets.cmake)
+  set(_extra)
+  foreach(t ${SM_FUZZ_TARGETS})
+    if(DEFINED SM_FUZZ_SOURCE_${t})
+      continue()
+    endif()
+    set(src ${PROJECT_SOURCE_DIR}/fuzz/${t}_fuzzer.cc)
+    list(APPEND SM_BENCH_SOURCES ${src})
+    set_source_files_properties(${src} PROPERTIES COMPILE_DEFINITIONS "LLVMFuzzerTestOneInput=SmFuzz_${t}")
+    list(APPEND _extra ${SM_FUZZ_SOURCES_${t}})
+    list(APPEND SM_BENCH_FUZZ_INCLUDES ${SM_FUZZ_INCLUDES_${t}})
+    list(APPEND SM_BENCH_FUZZ_DEFS SM_BENCH_FUZZ_${t}=1)
+  endforeach()
+  list(REMOVE_DUPLICATES _extra)
+  list(APPEND SM_BENCH_SOURCES fuzz_bench.cc ${_extra})
+  if(SM_WITH_DATACHANNEL AND NOT MSVC)
+    set_source_files_properties(${PROJECT_SOURCE_DIR}/fuzz/dcsctp_fuzzers.cc PROPERTIES COMPILE_OPTIONS
+                                "-Wno-shadow;-Wno-comment")
+  endif()
+endif()
 if(TARGET sm::pc_sdp)
   list(APPEND SM_BENCH_SOURCES pc_sdp_bench.cc)
 endif()
@@ -38,6 +84,27 @@ endif()
 add_executable(sm_bench ${SM_BENCH_SOURCES})
 target_link_libraries(sm_bench PRIVATE sm_bench_framework sm::sm sm::p2p)
 sm_configure_target(sm_bench)
+# Connectivity modules outside the sm::sm umbrella, when this build has them.
+foreach(m tls p2p_tls p2p_dtls pc_sdp pc dcsctp sctp pc_datachannel)
+  if(TARGET sm_${m})
+    target_link_libraries(sm_bench PRIVATE sm::${m})
+  endif()
+endforeach()
+if(TARGET sm_pc AND TARGET sm_p2p_tls)
+  target_compile_definitions(sm_bench PRIVATE SM_BENCH_WITH_PC=1)
+endif()
+if(SM_WITH_LOSS)
+  target_compile_definitions(sm_bench PRIVATE SM_BENCH_WITH_LOSS=1)
+endif()
+if(TARGET sm_pc_datachannel)
+  target_compile_definitions(sm_bench PRIVATE SM_BENCH_DC_OVER_DTLS=1)
+endif()
+if(SM_BENCH_FUZZ_DEFS)
+  target_compile_definitions(sm_bench PRIVATE ${SM_BENCH_FUZZ_DEFS} SM_FUZZ_CORPUS_DIR="${PROJECT_SOURCE_DIR}/fuzz/corpus")
+endif()
+# The fake ICE transport of the DTLS tests (data channels over DTLS), the fuzz targets' headers and test helpers.
+target_include_directories(sm_bench PRIVATE ${PROJECT_SOURCE_DIR}/fuzz ${PROJECT_SOURCE_DIR}/tests/unit/p2p_dtls
+                           ${SM_BENCH_FUZZ_INCLUDES})
 if(TARGET sm::p2p_tls)
   # STUN's crypto hooks on sm::tls, as an application installs them.
   target_link_libraries(sm_bench PRIVATE sm::p2p_tls)
@@ -60,7 +127,7 @@ endif()
 if(SM_BUILD_TESTS)
   # Benchmarks double as tests: each section's benchmarks must meet their
   # requirements. Short min-time keeps CI fast; scale budgets for slow targets.
-  foreach(s ${SM_SECTIONS} p2p)
+  foreach(s ${SM_SECTIONS} ${SM_BENCH_SECTIONS})
     add_test(NAME bench.${s} COMMAND sm_bench --filter=${s}/ --min-time=0.05)
     # Speed budgets are meaningless under CPU contention: never run in parallel.
     set_tests_properties(bench.${s} PROPERTIES LABELS bench RUN_SERIAL TRUE)
