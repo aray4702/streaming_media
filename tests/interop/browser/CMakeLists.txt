@@ -52,4 +52,12 @@ if(Python3_FOUND AND TARGET sm::pc_endpoint)
                    --role=offer --mdns ${SM_BROWSER_DC} --timeout=60)
   set_tests_properties(interop.Browser.mdns_chrome_offers PROPERTIES
     LABELS interop SKIP_RETURN_CODE 77 TIMEOUT 120 RESOURCE_LOCK sm_chrome RUN_SERIAL TRUE)
+  # Multi-stream receive with renegotiation (C18, #1160): Chrome sends 5 participants' audio and video (10 tracks) on
+  # one connection in three offers (2 participants, 3 more join, the first leaves); the endpoint answers each and
+  # receives every track on its own stream. No bandwidth check: the media are canvases and tones.
+  add_test(NAME interop.Browser.multistream_chrome_offers
+           COMMAND ${Python3_EXECUTABLE} ${SM_BROWSER_CALL} --peer=$<TARGET_FILE:sm_interop_browser_peer>
+                   --role=offer --multistream=5 --timeout=70)
+  set_tests_properties(interop.Browser.multistream_chrome_offers PROPERTIES
+    LABELS interop SKIP_RETURN_CODE 77 TIMEOUT 120 RESOURCE_LOCK sm_chrome RUN_SERIAL TRUE)
 endif()

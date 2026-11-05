@@ -1206,8 +1206,8 @@
     "C6",
     "C16"
    ],
-   "evidence": "",
-   "verification": "",
+   "evidence": "PR #1169 (issue #1167: rtp::Session receive streams per MID and sync group, RemoveAudioReceive/RemoveVideoReceive, one synchronizer per participant; pc::PeerEndpoint transceivers, subsequent offers/answers from either side, a recvonly transceiver and a receive stream per remote section, OnTrack/OnRemoveTrack; parity 10.23)",
+   "verification": "unit.SessionMultiStream (streams of two participants demuxed by MID and SSRC, per-stream stats and report blocks, sync per group, removal); unit.PcRenegotiation (an SFU-like peer's offers add, deactivate, stop and recycle sections on one BUNDLE transport without an ICE restart; per-section demux, NACK, sync and stats; either side re-offers with the DTLS role kept); e2e.E2E_MultiStream (5 participants' endpoints through an SSRC-preserving forwarder that terminates RTCP per leg; joins and a leave by renegotiation; the receiver holds 5 audio + 5 video tracks at once, every frame whole and in order, A/V sync per participant, NACK only on the lossy stream); interop.Browser.multistream_chrome_offers (Chrome sends 5 participants, 10 tracks, in three offers; the endpoint answers each and receives every track; Chrome sees a receiver report for each of its streams). Scenario suite unchanged against the baseline (0 regressions, 0 improvements). Status left to the Owner.",
    "start": "2026-11-04",
    "end": "",
    "milestone": 5,

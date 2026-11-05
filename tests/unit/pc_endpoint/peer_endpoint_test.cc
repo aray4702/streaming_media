@@ -575,8 +575,17 @@ SM_TEST(PcPeerEndpoint, AnswerRejectsDataAndChecksSignalingState) {
   c.set_component(p2p::ICE_CANDIDATE_COMPONENT_RTP);
   c.set_address(SocketAddress(kPublicIp[0], 1234));
   SM_EXPECT_TRUE(ep.AddIceCandidate(IceCandidate("2", 2, c), network.now, &error));
-  // No renegotiation yet.
-  SM_EXPECT_TRUE(ep.CreateOffer(&error) == nullptr);
+  // Renegotiation (C18, #1160): a subsequent offer from stable keeps the three sections in place, the data one
+  // rejected as negotiated.
+  {
+    auto reoffer = ep.CreateOffer(&error);
+    SM_ASSERT_TRUE(reoffer != nullptr);
+    const auto& rc = reoffer->description()->contents();
+    SM_ASSERT_EQ(rc.size(), 3u);
+    SM_EXPECT_TRUE(rc[0].mid() == "0" && !rc[0].rejected);
+    SM_EXPECT_TRUE(rc[1].mid() == "1" && !rc[1].rejected);
+    SM_EXPECT_TRUE(rc[2].mid() == "2" && rc[2].rejected);
+  }
   // No SCTP object with the switch off.
   SM_EXPECT_FALSE(ep.data_channels_enabled());
   SM_EXPECT_TRUE(ep.sctp_transport() == nullptr);

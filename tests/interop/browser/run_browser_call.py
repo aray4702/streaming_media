@@ -18,6 +18,13 @@ Usage:
   run_browser_call.py --self [--role=offer|answer]       harness self-test
   run_browser_call.py --peer=PATH [--role=offer|answer]  call our endpoint
   run_browser_call.py --peer=PATH --mdns                 ... with Chrome's mDNS host candidates (#1152)
+  run_browser_call.py --peer=PATH --multistream=N        Chrome sends N participants' tracks (C18, #1160)
+
+With --multistream=N the page is multistream.html: Chrome offers N
+participants' audio and video tracks on one connection in three offers
+(two participants, then the rest join, then the first leaves), and the
+peer, run with --multistream=N, answers each one; both sides' checks must
+pass (see multistream.html and browser_peer.cc).
 
 With --mdns the page uses no getUserMedia (a canvas and an oscillator), so
 Chrome, without a media permission, signals its host candidates under mDNS
@@ -131,8 +138,9 @@ def make_handler(relay, verbose):
 
         def do_GET(self):
             path, args = self._query()
-            if path in ('/', '/page.html'):
-                with open(os.path.join(HERE, 'page.html'), 'rb') as f:
+            if path in ('/', '/page.html', '/multistream.html'):
+                name = 'multistream.html' if path == '/multistream.html' else 'page.html'
+                with open(os.path.join(HERE, name), 'rb') as f:
                     self._reply(200, f.read(), 'text/html; charset=utf-8')
             elif path == '/poll':
                 self._reply(200, json.dumps(relay.poll(args.get('me', ''))))
@@ -291,10 +299,14 @@ def main():
                     help='file for the Chrome <-> Chrome estimate: --self writes it, a --peer call reads it')
     ap.add_argument('--mdns', action='store_true',
                     help="no getUserMedia, so Chrome's host candidates are mDNS names the peer must resolve (#1152)")
+    ap.add_argument('--multistream', type=int, default=0,
+                    help='Chrome sends this many participants (audio + video each) and renegotiates (C18, #1160)')
     ap.add_argument('-v', '--verbose', action='store_true')
     args = ap.parse_args()
     if not args.self_test and not args.peer:
         ap.error('give --self or --peer')
+    if args.multistream and (args.self_test or args.role != 'offer'):
+        ap.error('--multistream needs --peer and --role=offer (Chrome offers)')
 
     chrome = find_chrome()
     if not chrome:
@@ -313,18 +325,24 @@ def main():
     if args.peer:
         peer_role = 'answer' if args.role == 'offer' else 'offer'
         peer = NativePeer([args.peer, '--role=' + peer_role, '--ip=' + host_address()] +
-                          (['--no-data-channel'] if args.no_data_channel else []) +
-                          (['--mdns'] if args.mdns else []), relay, args.verbose)
+                          (['--no-data-channel'] if args.no_data_channel or args.multistream else []) +
+                          (['--mdns'] if args.mdns else []) +
+                          (['--multistream=%d' % args.multistream] if args.multistream else []), relay, args.verbose)
 
     page_timeout_ms = int((args.timeout - 10) * 1000)
-    url = 'http://127.0.0.1:%d/page.html?role=%s&timeout_ms=%d%s' % (
+    if args.multistream:
+        url = 'http://127.0.0.1:%d/multistream.html?n=%d&timeout_ms=%d' % (port, args.multistream, page_timeout_ms)
+    else:
+        url = None
+    url = url or 'http://127.0.0.1:%d/page.html?role=%s&timeout_ms=%d%s' % (
         port, args.role, page_timeout_ms, ('&self=1' if args.self_test else '') + ('&dc=0' if args.no_data_channel else '') +
         ('&mdns=1' if args.mdns else '') +
         ('&bwe_kbps=%d&bwe_ms=%d' % (args.bwe_kbps, args.bwe_seconds * 1000) if args.bwe_kbps else ''))
     profile = tempfile.mkdtemp(prefix='sm-chrome-')
     print('chrome: %s' % chrome)
     print('page:   %s' % url)
-    proc = subprocess.Popen(chrome_command(chrome, profile, url, media=not args.mdns), stdout=subprocess.DEVNULL,
+    proc = subprocess.Popen(chrome_command(chrome, profile, url, media=not args.mdns),
+                            stdout=subprocess.DEVNULL,
                             stderr=subprocess.PIPE if not args.verbose else None)
     page = None
     try:
@@ -361,7 +379,7 @@ def main():
             print('chrome stats:  %s' % json.dumps(page['browser'].get('stats', {}), sort_keys=True))
         if page.get('error'):
             print('page error: %s' % page['error'])
-    if peer and page and page.get('browser'):
+    if peer and page and page.get('browser') and not args.multistream:
         # What Chrome received from our endpoint: Opus and H.264 (Constrained Baseline is all it offers).
         stats = page['browser'].get('stats', {})
         codecs = (stats.get('audio', {}).get('inCodec'), stats.get('video', {}).get('inCodec'))

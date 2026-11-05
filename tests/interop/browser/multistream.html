@@ -1,0 +1,162 @@
+<!doctype html>
+<!--
+  Multi-stream receive with renegotiation (C18, #1160): Chrome sends several participants' tracks to the native peer
+  (pc::PeerEndpoint) on one RTCPeerConnection, as an SFU's subscriber leg would carry them, and renegotiates as
+  participants join and leave. run_browser_call.py --multistream=N serves this page.
+
+  Query parameters: n=N (participants, each a MediaStream "p<i>" with one audio and one video track), timeout_ms.
+  Stages, each a new offer from Chrome that the native peer answers:
+    1. participants 0 and 1 (2 audio + 2 video tracks);
+    2. participants 2..N-1 join (2N tracks in all);
+    3. participant 0 leaves (removeTrack: its two sections stop sending).
+  Media: a moving bar on a canvas (its own colour per participant) and a tone (its own pitch); getUserMedia is called
+  only for the media permission (host candidates as IPs).
+  The native peer sends its own audio and video back on the first pair of sections.
+  Signaling and the verdict as page.html: POST /send?to=native, GET /poll?me=browser, POST /result.
+  Chrome's checks: connected without an ICE restart; every stage's offer answered; every sender of a participant in the
+  call encoded and sent media; and the native peer reported on each of those streams (a remote-inbound-rtp per
+  outbound-rtp: its receiver reports are per stream).
+-->
+<html>
+<head><meta charset="utf-8"><title>sm multi-stream interop</title></head>
+<body>
+<pre id="log"></pre>
+<script>
+'use strict';
+const params = new URLSearchParams(location.search);
+const n = Number(params.get('n') || 5);
+const timeoutMs = Number(params.get('timeout_ms') || 60000);
+const lines = [];
+function log(s) {
+  lines.push(s);
+  document.getElementById('log').textContent += s + '\n';
+}
+async function send(to, msg) {
+  await fetch('/send?to=' + to, {method: 'POST', body: JSON.stringify(msg)});
+}
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+// One participant's media: a canvas bar and a tone.
+const ac = new AudioContext();
+function participantStream(i) {
+  const canvas = document.createElement('canvas');
+  canvas.width = 320;
+  canvas.height = 240;
+  const ctx = canvas.getContext('2d');
+  let x = 0;
+  const colour = 'hsl(' + (i * 360 / n) + ', 70%, 50%)';
+  setInterval(() => {
+    ctx.fillStyle = '#203040';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = colour;
+    ctx.fillRect(x, 0, 30, canvas.height);
+    x = (x + 6) % canvas.width;
+  }, 66);
+  const video = canvas.captureStream(15);
+  const osc = ac.createOscillator();
+  osc.frequency.value = 300 + 100 * i;
+  const dst = ac.createMediaStreamDestination();
+  osc.connect(dst);
+  osc.start();
+  return new MediaStream([...dst.stream.getAudioTracks(), ...video.getVideoTracks()]);
+}
+
+async function main() {
+  const t0 = performance.now();
+  const left = () => Math.max(0, timeoutMs - (performance.now() - t0));
+  // A media permission (Chrome's fake devices) so Chrome signals its host IPs rather than mDNS names, which not every
+  // CI host resolves; the tracks themselves are synthetic.
+  (await navigator.mediaDevices.getUserMedia({audio: true})).getTracks().forEach(t => t.stop());
+  const pc = new RTCPeerConnection({bundlePolicy: 'max-bundle', rtcpMuxPolicy: 'require'});
+  let connected = false, restarted = false, answers = 0;
+  const ufrags = new Set();
+  pc.onconnectionstatechange = () => {
+    log('connectionState ' + pc.connectionState);
+    if (pc.connectionState === 'connected') connected = true;
+  };
+  pc.onicecandidate = e => {
+    if (e.candidate) send('native', {type: 'candidate', candidate: e.candidate.candidate, sdpMid: e.candidate.sdpMid,
+                                     sdpMLineIndex: e.candidate.sdpMLineIndex});
+  };
+  pc.ontrack = e => log('ontrack ' + e.track.kind + ' mid ' + e.transceiver.mid);
+  let answered = null;
+  let running = true;
+  (async () => {
+    while (running) {
+      try {
+        const r = await fetch('/poll?me=browser');
+        for (const m of await r.json()) {
+          if (m.type === 'answer') {
+            await pc.setRemoteDescription({type: 'answer', sdp: m.sdp});
+            const u = /a=ice-ufrag:(\S+)/.exec(m.sdp);
+            if (u) ufrags.add(u[1]);
+            ++answers;
+            if (answered) answered();
+          } else if (m.type === 'candidate') {
+            try {
+              await pc.addIceCandidate({candidate: m.candidate, sdpMid: m.sdpMid, sdpMLineIndex: m.sdpMLineIndex});
+            } catch (e) { log('addIceCandidate failed: ' + e); }
+          }
+        }
+      } catch (e) { log('poll error: ' + e); }
+      await sleep(20);
+    }
+  })();
+  async function negotiate(what) {
+    const done = new Promise(res => { answered = res; });
+    const offer = await pc.createOffer();
+    await pc.setLocalDescription(offer);
+    log('offer (' + what + '): ' + (pc.localDescription.sdp.match(/^m=/gm) || []).length + ' m= sections');
+    await send('native', {type: 'offer', sdp: pc.localDescription.sdp});
+    return Promise.race([done.then(() => true), sleep(Math.min(left(), 10000)).then(() => false)]);
+  }
+
+  const streams = [];
+  const senders = [];
+  for (let i = 0; i < n; ++i) streams.push(participantStream(i));
+  const join = i => { senders[i] = streams[i].getTracks().map(t => pc.addTrack(t, streams[i])); };
+  const checks = {};
+
+  join(0);
+  join(1);
+  checks.stage1Answered = await negotiate('participants 0 and 1');
+  await Promise.race([new Promise(res => { const t = setInterval(() => { if (connected) { clearInterval(t); res(); } }, 50); }),
+                      sleep(Math.min(left(), 10000))]);
+  checks.connected = connected;
+  await sleep(Math.min(left(), 4000));
+  for (let i = 2; i < n; ++i) join(i);
+  checks.stage2Answered = await negotiate('participants 2..' + (n - 1) + ' join');
+  await sleep(Math.min(left(), 6000));
+  // Every sender in the call: media out, and the native peer's report about that stream.
+  const report = await pc.getStats();
+  const outbound = [];
+  report.forEach(s => { if (s.type === 'outbound-rtp') outbound.push(s); });
+  const reported = new Set();
+  report.forEach(s => { if (s.type === 'remote-inbound-rtp') reported.add(s.ssrc); });
+  const sending = outbound.filter(s => (s.packetsSent || 0) > 0);
+  log('outbound streams ' + outbound.length + ', sending ' + sending.length + ', reported by the peer ' + reported.size);
+  checks.allStreamsSending = sending.length === 2 * n;
+  checks.peerReportsEveryStream = sending.every(s => reported.has(s.ssrc));
+  checks.videoEncoded = outbound.filter(s => s.kind === 'video').every(s => (s.framesEncoded || 0) > 0);
+  // Participant 0 leaves.
+  for (const s of senders[0]) pc.removeTrack(s);
+  checks.stage3Answered = await negotiate('participant 0 leaves');
+  await sleep(Math.min(left(), 3000));
+  checks.noIceRestart = ufrags.size === 1;
+  checks.stillConnected = pc.connectionState === 'connected';
+  checks.answers = answers === 3;
+  const result = {ok: false, checks, log: lines};
+  result.ok = Object.values(checks).every(Boolean);
+  log('checks ' + JSON.stringify(checks));
+  running = false;
+  await send('native', {type: 'bye'});
+  await fetch('/result', {method: 'POST', body: JSON.stringify(result)});
+}
+
+main().catch(async e => {
+  log('error: ' + (e && e.stack || e));
+  await fetch('/result', {method: 'POST', body: JSON.stringify({ok: false, error: String(e), log: lines})});
+});
+</script>
+</body>
+</html>

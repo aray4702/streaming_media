@@ -211,6 +211,8 @@ class AiCall {
     c.transport.async_dns_resolver_factory = &server_.resolver_;
     c.audio = true;
     c.video = false;
+    // Only the AI's own audio transceiver: a caller's video section is rejected, not received (C18's default).
+    c.receive_remote_tracks = false;
     c.enable_data_channels = false;
     c.audio_decoder = &decoder_;
     c.audio_stream.nominal_rate = DataRate::BitsPerSec(cfg.opus_bitrate_bps + 8000);

@@ -16,6 +16,9 @@ void RtcpEngine::SetSenderState(const RtcpSenderState& s) { sender_ = s; }
 void RtcpEngine::AddReceiveStatistics(timing::ReceiveStatistics* stats) {
   if (stats) receive_stats_.push_back(stats);
 }
+void RtcpEngine::RemoveReceiveStatistics(const timing::ReceiveStatistics* stats) {
+  receive_stats_.erase(std::remove(receive_stats_.begin(), receive_stats_.end(), stats), receive_stats_.end());
+}
 void RtcpEngine::AddLocalMediaSsrc(uint32_t ssrc) { local_ssrcs_.push_back(ssrc); }
 
 TimeDelta RtcpEngine::NominalInterval() const {

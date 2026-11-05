@@ -17,7 +17,7 @@ One document per algorithm: problem, the issue it solves, design, implementation
 | 1.9 | [TCP packet sockets](1-connectivity/1.9-tcp-sockets.md) | 31 | 0 | 0 | not recorded | not recorded | not recorded | not recorded |
 | 1.10 | [SDP model and parse/write](1-connectivity/1.10-sdp.md) | 80 | 0 | 0 | not recorded | not recorded | not recorded | not recorded |
 | 1.11 | [Offer/answer generation](1-connectivity/1.11-offer-answer.md) | 65 | 0 | 0 | not recorded | not recorded | not recorded | not recorded |
-| 1.12 | [The endpoint (PeerEndpoint)](1-connectivity/1.12-endpoint.md) | 13 | 0 | 0 | not recorded | not recorded | not recorded | not recorded |
+| 1.12 | [The endpoint (PeerEndpoint)](1-connectivity/1.12-endpoint.md) | 18 | 1 | 0 | not recorded | not recorded | not recorded | not recorded |
 
 ## 2. Security
 

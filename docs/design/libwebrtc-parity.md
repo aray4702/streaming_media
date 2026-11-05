@@ -1136,7 +1136,7 @@ signaling states). Differences:
 |---|---|---|---|
 | Threads | Signaling and network threads, posted tasks | One thread; callbacks inside the call; `Process(now)` at `NextProcessTime` | The library's time model |
 | Media channels | `VoiceChannel` / `VideoChannel` per transceiver, created at the first description | One `rtp::Session` for both sections, created when the answer is applied | The library's session layer is one object per call; no media flows before DTLS-SRTP in either |
-| Transceivers | `AddTrack` / `AddTransceiver`, renegotiation, rollback, pranswer | One audio and one video transceiver from the config; one offer/answer; no rollback or pranswer | Outside part 3; C9 and part 4 need one negotiation per peer |
+| Transceivers | `AddTrack` / `AddTransceiver`, renegotiation, rollback, pranswer | Since C18 (#1167, 10.23): transceivers, subsequent offers and answers from either side, many remote tracks; no rollback or pranswer | |
 | Unsignaled streams | A default receive stream for an SSRC the SDP didn't name | Receive streams need a=ssrc | Chrome signals its SSRCs |
 | RTCP mux policy, DTLS-in-STUN, cryptex, aggregate states | `kRtcpMuxPolicyNegotiate`, SPED, `CryptoOptions` cryptex, `PeerConnectionState` | Require only; left out; the transports' own states are read | libwebrtc's defaults (require, SPED and cryptex off) |
 | Data channel | `SctpTransport` on the DTLS transport | Since C7 part 5 (#1091, 10.21): negotiated and started on the BUNDLE transport | |
@@ -1239,6 +1239,65 @@ Differences:
 | `CopyPortInformationToPacketInfo` | Fills the sent packet's `PacketInfo` (protocol, network) | Not filled | `PacketOptions` carries no packet info (10.9) |
 | `TCPPortNotDiscardedIfBoundToTemporaryIP` | IPv6 temporary address | Not run | The emulated network is IPv4 and `Network` keeps plain addresses (10.10, 10.14) |
 | `NotifyClosedForTest` | Closes the socket from the test | The far end closes it (the server port deleted) | Not in the library's socket interface |
+
+### 10.23 Transceivers, renegotiation and multi-stream receive (`src/pc/peer_endpoint.cc`, `src/rtp/session.cc`, C18, #1167)
+
+The Unified Plan half of `pc/sdp_offer_answer.cc` at M157 for one connection that receives many remote tracks (an SFU's
+subscriber leg, #1160), with `call/call.cc`'s receive-stream creation, destruction and `ConfigureSync`. Transceivers as
+`pc/rtp_transceiver.cc`: the config's audio and video are the AddTrack ones (`created_by_addtrack`), `AddTransceiver`
+(direction, msid streams, track id), `SetDirectionWithError`, `StopStandard` (stopping, then stopped when the section is
+rejected; the receiver stops at once); `mid`, `mline_index`, `current_direction`, `has_ever_been_used_to_send`.
+Offers: `GetOptionsForUnifiedPlanOffer` (JSEP 5.2.1/5.2.2): each section of the current descriptions keeps its place,
+with its transceiver's options or rejected when the transceiver is gone or stopping (recyclable), new transceivers take
+the recyclable sections first and then go at the end with MIDs from the mid generator (`UniqueStringGenerator`, which
+knows every MID the descriptions used), the data section after them (`MaybeNegotiateSctp`).
+`GetMediaDescriptionOptionsForTransceiver`: the msid is signaled while the transceiver sends and, once it has sent, in
+every later description until it stops. Answers: `GetOptionsForUnifiedPlanAnswer` (the associated transceiver's
+options, else rejected), with the transport's current DTLS role kept (`prefer_passive_role` from `GetDtlsRole`, as
+`WebRtcSessionDescriptionFactory::InternalCreateAnswer`), and the current local description passed to the factory so ICE
+credentials (no restart) and sender SSRCs stay. Applying a description: `AssociateTransceiver` (by MID; a local
+offer's new sections by m-line index, `FindUnassociatedByMLineIndex`; a remote offer's sendrecv or recvonly section
+without simulcast takes the first unassociated AddTrack transceiver of its kind, `FindAvailableTransceiverToReceive`,
+else a new recvonly transceiver is created); every completed offer/answer, either side offering, sets the current
+directions, stops the transceivers of rejected sections and removes stopped ones (`RemoveStoppedTransceivers`).
+Remote tracks as `ApplyRemoteDescriptionUpdateTransceiverState` and `ProcessRemovalOfRemoteTrack`: a section the peer
+sends on (its direction has send) with a signaled SSRC is received; one that stops (inactive or recvonly from the peer,
+rejected, stopped) loses its track. Each received section gets its own receive stream in the session
+(`CreateAudioReceiveStream` / `CreateVideoReceiveStream`: Opus with NetEq, H.264 with the video jitter buffer, RTX
+from the FID group, NACK as negotiated) and its own demuxer sink and extension map on the BUNDLE transport
+(`BaseChannel`); the session demuxes by MID and SSRC (`RtpDemuxer`), keeps each stream's receive statistics, report
+block, NACK and PLI, and destroys a stream with `RemoveAudioReceive` / `RemoveVideoReceive` (`DestroyAudioReceiveStream`
+/ `DestroyVideoReceiveStream`: out of the demuxer and the reports, its sync pairing redone). Lip sync per remote
+participant: the msid stream id is the sync group, and each video receive stream has its own `RtpStreamsSynchronizer`,
+paired with the first audio stream of its group, as `Call::ConfigureSync` (a second video of a group is not synced;
+while no stream names a group, the first audio and video pair as before, #77). GetStats' inbound-rtp carries the MID.
+
+Tests: `tests/unit/rtp/session_multi_stream_test.cc` (`SessionMultiStream`: streams of two participants routed to their
+own receivers by MID and SSRC, stats with MIDs, a report block per stream; one synchronizer per participant, pairing
+redone when an audio stream goes; removed streams out of the demuxer, stats and reports, ids not reused);
+`tests/unit/pc_endpoint/renegotiation_test.cc` (`PcRenegotiation`: an SFU-like endpoint's offers add sections,
+make them inactive and active again, stop one and recycle its m-line with a new MID, all on one BUNDLE transport
+without an ICE restart; two participants' RTP sessions behind it decoded on their own tracks, synced per participant,
+a lost packet NACKed and resent only on its stream, stats per MID; either side re-offers with the DTLS role kept
+(`a=setup:passive` from the DTLS server); the transceiver API's rules; `receive_remote_tracks` off);
+`tests/e2e/multi_stream_e2e_test.cc` (`E2E_MultiStream`: five participants, each its own endpoint over ICE and
+DTLS-SRTP, through an SSRC-preserving forwarder that terminates RTCP per leg and answers NACKs, as an SFU does; 3 join,
+then 2, then one leaves; the receiver holds 5 audio and 5 video tracks at once, every frame whole and in order on its
+own stream, A/V sync per participant, NACK only on the stream that lost a packet); and
+`interop.Browser.multistream_chrome_offers` (Chrome sends 5 participants' tracks in three offers, two participants,
+three more joining, the first leaving; the endpoint answers each, receives 10 tracks at once with media on each, and
+reports on every one of Chrome's streams). Differences:
+
+| Item | libwebrtc M157 | This library | Why |
+|---|---|---|---|
+| When remote-track changes apply | `SetRemoteDescription(offer)` creates receive streams and fires `OnTrack` | When the offer/answer completes (the local answer applied, or the remote answer); the track callbacks run then | The session is configured from the answer (its payload types), as at the first negotiation (10.19); the two calls follow each other in the app |
+| Track objects | `RtpReceiver` with a `MediaStreamTrack`; a new SSRC on a receiving section re-points the receive stream, no event | A `RemoteTrack` value (MID, kind, msid, SSRCs, the session's receive stream); a new SSRC is reported as the track removed and added again | No track objects in the library; the value names the new receive stream |
+| Send side on renegotiation | Senders start and stop with the direction; `AddTrack` sends on any transceiver | The config's audio and video send as the first answer that sent set up; a later direction change is signaled but does not start or stop them; extra transceivers send only the host's packets (`external_media`) | Out of C18 (receive side); simulcast send is C17 (#1162) |
+| Remote section with no free transceiver | Always gets a recvonly transceiver | The same by default; `receive_remote_tracks` off rejects it (the AI server, which wants no video) | Keeps the AI server's answer as before C18 |
+| RTCP of the receive streams | One receive-only RTP module per receive stream, each sending its own RR (audio every 5 s, video every 1 s) | Video blocks in the session's reports (one compound), audio blocks in the audio receive streams' shared module (one RR every 5 s); NACK, PLI and FIR per stream as libwebrtc | The session's one-module design for a one-to-one call (9.x); same blocks and feedback, packed in fewer compounds |
+| Rollback, pranswer, ICE restart on renegotiation, unsignaled SSRCs, simulcast receive | Supported | Not supported | Not needed by an SFU subscriber leg that signals its SSRCs (LiveKit and Chrome do) |
+| `MediaSectionsInSameOrder` and other `ValidateSessionDescription` checks of a subsequent description | Checked | Not checked; a description that reorders sections fails later in the transport or association | The peers that renegotiate here are libwebrtc-based |
+| Not in `reference/` | `pc/webrtc_session_description_factory.cc` (`InternalCreateAnswer`: `prefer_passive_role` from the current DTLS role) | Ported from M157's behaviour | Missing reference file (noted on #1167) |
 
 ## Open questions for the Owner
 
