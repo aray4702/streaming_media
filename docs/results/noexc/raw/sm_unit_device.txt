@@ -1,0 +1,59 @@
+[ RUN  ] DeviceAppleAudio.OneUnitForBothDirections
+[  OK  ] DeviceAppleAudio.OneUnitForBothDirections (0.0 ms)
+[ RUN  ] DeviceAppleAudio.TenMillisecondFramesWithDelayEstimate
+[  OK  ] DeviceAppleAudio.TenMillisecondFramesWithDelayEstimate (0.0 ms)
+[ RUN  ] DeviceAppleAudio.SilenceWhenNotPlaying
+[  OK  ] DeviceAppleAudio.SilenceWhenNotPlaying (0.0 ms)
+[ RUN  ] DeviceAppleAudio.EchoCancellerSwitch
+[  OK  ] DeviceAppleAudio.EchoCancellerSwitch (0.0 ms)
+[ RUN  ] DeviceAppleAudio.RunsAtTheSessionRate
+[  OK  ] DeviceAppleAudio.RunsAtTheSessionRate (0.0 ms)
+[ RUN  ] DeviceAppleAudio.InterruptionStopsAndRestarts
+[  OK  ] DeviceAppleAudio.InterruptionStopsAndRestarts (0.0 ms)
+[ RUN  ] DeviceAppleAudio.InterruptionEndWhileSessionUnavailableStaysStopped
+[  OK  ] DeviceAppleAudio.InterruptionEndWhileSessionUnavailableStaysStopped (0.0 ms)
+[ RUN  ] DeviceAppleAudio.StartDuringInterruptionWaitsForTheEnd
+[  OK  ] DeviceAppleAudio.StartDuringInterruptionWaitsForTheEnd (0.0 ms)
+[ RUN  ] DeviceAppleAudio.RouteChangeToANewRateReinitializes
+[  OK  ] DeviceAppleAudio.RouteChangeToANewRateReinitializes (0.0 ms)
+[ RUN  ] DeviceAppleAudio.MediaServicesResetRecreatesTheUnit
+[  OK  ] DeviceAppleAudio.MediaServicesResetRecreatesTheUnit (0.0 ms)
+[ RUN  ] DeviceAppleAudio.FailedStartLeavesTheDeviceStopped
+[  OK  ] DeviceAppleAudio.FailedStartLeavesTheDeviceStopped (0.0 ms)
+[ RUN  ] DeviceAppleAudio.DestructionShutsDown
+[  OK  ] DeviceAppleAudio.DestructionShutsDown (0.0 ms)
+[ RUN  ] DeviceFineAudioBuffer.PlayoutIsContinuousAcrossOddCallbackSizes
+[  OK  ] DeviceFineAudioBuffer.PlayoutIsContinuousAcrossOddCallbackSizes (0.0 ms)
+[ RUN  ] DeviceFineAudioBuffer.RecordDeliversExact10msFramesInOrder
+[  OK  ] DeviceFineAudioBuffer.RecordDeliversExact10msFramesInOrder (0.0 ms)
+[ RUN  ] DeviceFineAudioBuffer.StereoAndOtherRates
+[  OK  ] DeviceFineAudioBuffer.StereoAndOtherRates (0.0 ms)
+[ RUN  ] DeviceFineAudioBuffer.SilenceWithoutTransportOrShortPlayout
+[  OK  ] DeviceFineAudioBuffer.SilenceWithoutTransportOrShortPlayout (0.0 ms)
+[ RUN  ] DeviceFineAudioBuffer.ResetDropsBufferedAudio
+[  OK  ] DeviceFineAudioBuffer.ResetDropsBufferedAudio (0.0 ms)
+[ RUN  ] DeviceCaptureFormat.PicksTheClosestFormatThatReachesTheRate
+[  OK  ] DeviceCaptureFormat.PicksTheClosestFormatThatReachesTheRate (0.0 ms)
+[ RUN  ] DeviceFramerateController.HalvesTheRate
+[  OK  ] DeviceFramerateController.HalvesTheRate (0.0 ms)
+[ RUN  ] DeviceFramerateController.KeepsEveryFrameAtTheRateEvenWithJitter
+[  OK  ] DeviceFramerateController.KeepsEveryFrameAtTheRateEvenWithJitter (0.0 ms)
+[ RUN  ] DeviceFramerateController.SixtyToThirty
+[  OK  ] DeviceFramerateController.SixtyToThirty (0.0 ms)
+[ RUN  ] DeviceFramerateController.NoLimitAndReset
+[  OK  ] DeviceFramerateController.NoLimitAndReset (0.0 ms)
+[ RUN  ] DeviceNv12.ToI420WithStrides
+[  OK  ] DeviceNv12.ToI420WithStrides (0.0 ms)
+[ RUN  ] DeviceNv12.OddSizes
+[  OK  ] DeviceNv12.OddSizes (0.0 ms)
+[ RUN  ] DeviceScale.SameSizeIsACopyAndFlatStaysFlat
+[  OK  ] DeviceScale.SameSizeIsACopyAndFlatStaysFlat (1.2 ms)
+[ RUN  ] DeviceScale.CropsTheSidesForANarrowerAspect
+[  OK  ] DeviceScale.CropsTheSidesForANarrowerAspect (0.5 ms)
+[ RUN  ] DeviceScale.DownAndUpKeepsThePicture
+[metric] psnr_db=38.5064
+[  OK  ] DeviceScale.DownAndUpKeepsThePicture (1.8 ms)
+[ RUN  ] DeviceCaptureRotation.FollowsRtcCameraVideoCapturer
+[  OK  ] DeviceCaptureRotation.FollowsRtcCameraVideoCapturer (0.0 ms)
+
+28 tests run, 28 passed, 0 failed

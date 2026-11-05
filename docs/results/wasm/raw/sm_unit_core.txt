@@ -1,5 +1,37 @@
+[ RUN  ] AudioFrameOperations.MuteDisabledLeavesTheFrame
+[  OK  ] AudioFrameOperations.MuteDisabledLeavesTheFrame (0.0 ms)
+[ RUN  ] AudioFrameOperations.MuteEnabledZeroesTheFrame
+[  OK  ] AudioFrameOperations.MuteEnabledZeroesTheFrame (0.0 ms)
+[ RUN  ] AudioFrameOperations.MuteBeginMonoLong
+[  OK  ] AudioFrameOperations.MuteBeginMonoLong (0.1 ms)
+[ RUN  ] AudioFrameOperations.MuteBeginMonoShort
+[  OK  ] AudioFrameOperations.MuteBeginMonoShort (0.1 ms)
+[ RUN  ] AudioFrameOperations.MuteBeginStereoLong
+[  OK  ] AudioFrameOperations.MuteBeginStereoLong (0.1 ms)
+[ RUN  ] AudioFrameOperations.MuteBeginStereoShort
+[  OK  ] AudioFrameOperations.MuteBeginStereoShort (0.1 ms)
+[ RUN  ] AudioFrameOperations.MuteEndMonoLong
+[  OK  ] AudioFrameOperations.MuteEndMonoLong (0.1 ms)
+[ RUN  ] AudioFrameOperations.MuteEndMonoShort
+[  OK  ] AudioFrameOperations.MuteEndMonoShort (0.1 ms)
+[ RUN  ] AudioFrameOperations.MuteEndStereoLong
+[  OK  ] AudioFrameOperations.MuteEndStereoLong (0.1 ms)
+[ RUN  ] AudioFrameOperations.MuteEndStereoShort
+[  OK  ] AudioFrameOperations.MuteEndStereoShort (0.1 ms)
+[ RUN  ] AudioFrameOperations.FadeOfASilentFrameStaysSilent
+[  OK  ] AudioFrameOperations.FadeOfASilentFrameStaysSilent (0.0 ms)
 [ RUN  ] Units.Arithmetic
 [  OK  ] Units.Arithmetic (0.0 ms)
+[ RUN  ] Units.InfinitySaturates
+[  OK  ] Units.InfinitySaturates (0.0 ms)
+[ RUN  ] Units.RoundTo
+[  OK  ] Units.RoundTo (0.0 ms)
+[ RUN  ] Units.GettersRoundToNearest
+[  OK  ] Units.GettersRoundToNearest (0.0 ms)
+[ RUN  ] Units.FloatingPointGettersMultiplyByTheReciprocal
+[  OK  ] Units.FloatingPointGettersMultiplyByTheReciprocal (0.0 ms)
+[ RUN  ] Units.RelativeUnitOperatorsSaturate
+[  OK  ] Units.RelativeUnitOperatorsSaturate (0.0 ms)
 [ RUN  ] SeqNum.AheadOfWraps
 [  OK  ] SeqNum.AheadOfWraps (0.0 ms)
 [ RUN  ] SeqNum.UnwrapForwardAndBackward
@@ -7,24 +39,114 @@
 [ RUN  ] Histogram.PercentilesAreApproximatelyRight
 [  OK  ] Histogram.PercentilesAreApproximatelyRight (0.2 ms)
 [ RUN  ] Histogram.Merge
-[  OK  ] Histogram.Merge (0.1 ms)
+[  OK  ] Histogram.Merge (0.0 ms)
 [ RUN  ] Metrics.RegistryJsonAndPrometheus
-[  OK  ] Metrics.RegistryJsonAndPrometheus (0.5 ms)
+[  OK  ] Metrics.RegistryJsonAndPrometheus (0.4 ms)
 [ RUN  ] EventLog.RingBufferAndCallback
-[  OK  ] EventLog.RingBufferAndCallback (0.2 ms)
+[  OK  ] EventLog.RingBufferAndCallback (0.1 ms)
 [ RUN  ] Fft.ComplexRoundTripAndTone
 [  OK  ] Fft.ComplexRoundTripAndTone (0.2 ms)
 [ RUN  ] Fft.RealMatchesComplex
-[  OK  ] Fft.RealMatchesComplex (0.2 ms)
+[  OK  ] Fft.RealMatchesComplex (0.1 ms)
 [ RUN  ] Dsp.PitchAndLpc
-[  OK  ] Dsp.PitchAndLpc (0.5 ms)
+[  OK  ] Dsp.PitchAndLpc (0.4 ms)
 [ RUN  ] Dsp.HighPassRemovesDc
 [  OK  ] Dsp.HighPassRemovesDc (0.1 ms)
 [ RUN  ] RtpPacket.SerializeParseRoundTrip
 [  OK  ] RtpPacket.SerializeParseRoundTrip (0.2 ms)
+[ RUN  ] RtpPacket.PaddingOnlyAndPaddedPackets
+[  OK  ] RtpPacket.PaddingOnlyAndPaddedPackets (0.2 ms)
 [ RUN  ] NetworkLink.LossDelayAndCapacity
 [  OK  ] NetworkLink.LossDelayAndCapacity (1.1 ms)
+[ RUN  ] NetworkLink.CountsSentLostAndDroppedPerKind
+[  OK  ] NetworkLink.CountsSentLostAndDroppedPerKind (0.2 ms)
+[ RUN  ] NetworkLink.TracksPacketSizePercentilesPerKind
+[  OK  ] NetworkLink.TracksPacketSizePercentilesPerKind (0.2 ms)
 [ RUN  ] NetworkLink.GilbertBurstsAreLongerThanBernoulli
 [  OK  ] NetworkLink.GilbertBurstsAreLongerThanBernoulli (1.1 ms)
+[ RUN  ] NetworkLink.TraceRecordsEveryOfferedPacketWithItsOutcome
+[  OK  ] NetworkLink.TraceRecordsEveryOfferedPacketWithItsOutcome (0.2 ms)
+[ RUN  ] NetworkLink.TraceMarksOutageAndRandomLoss
+[  OK  ] NetworkLink.TraceMarksOutageAndRandomLoss (0.0 ms)
+[ RUN  ] RateTracker.Test30FPS
+[  OK  ] RateTracker.Test30FPS (0.0 ms)
+[ RUN  ] RateTracker.Test60FPS
+[  OK  ] RateTracker.Test60FPS (0.0 ms)
+[ RUN  ] RateTracker.Basics
+[  OK  ] RateTracker.Basics (0.1 ms)
+[ RUN  ] RateTracker.LongPeriodBetweenSamples
+[  OK  ] RateTracker.LongPeriodBetweenSamples (0.0 ms)
+[ RUN  ] RateTracker.Rolloff
+[  OK  ] RateTracker.Rolloff (0.1 ms)
+[ RUN  ] RateTracker.UnitSecondsAfterInitialValue
+[  OK  ] RateTracker.UnitSecondsAfterInitialValue (0.0 ms)
+[ RUN  ] RateTracker.LargeNumbers
+[  OK  ] RateTracker.LargeNumbers (0.0 ms)
+[ RUN  ] RateStatistics.ActiveWindowStartsAtTheFirstSample
+[  OK  ] RateStatistics.ActiveWindowStartsAtTheFirstSample (0.1 ms)
+[ RUN  ] RateStatistics.RestartsAfterMoreThanOneAndAHalfWindowsWithoutSamples
+[  OK  ] RateStatistics.RestartsAfterMoreThanOneAndAHalfWindowsWithoutSamples (0.1 ms)
+[ RUN  ] RateStatistics.KeepsTheWindowStartWhenTheLastSampleIsRecent
+[  OK  ] RateStatistics.KeepsTheWindowStartWhenTheLastSampleIsRecent (0.0 ms)
+[ RUN  ] EventBasedExponentialMovingAverage.NoValue
+[  OK  ] EventBasedExponentialMovingAverage.NoValue (0.0 ms)
+[ RUN  ] EventBasedExponentialMovingAverage.FirstValue
+[  OK  ] EventBasedExponentialMovingAverage.FirstValue (0.0 ms)
+[ RUN  ] EventBasedExponentialMovingAverage.Half
+[  OK  ] EventBasedExponentialMovingAverage.Half (0.0 ms)
+[ RUN  ] EventBasedExponentialMovingAverage.Same
+[  OK  ] EventBasedExponentialMovingAverage.Same (0.0 ms)
+[ RUN  ] EventBasedExponentialMovingAverage.Almost100
+[  OK  ] EventBasedExponentialMovingAverage.Almost100 (0.0 ms)
+[ RUN  ] EventBasedExponentialMovingAverage.AlmostSameTime
+[  OK  ] EventBasedExponentialMovingAverage.AlmostSameTime (0.0 ms)
+[ RUN  ] EventBasedExponentialMovingAverage.NonUniformSamplesHalftime100
+[  OK  ] EventBasedExponentialMovingAverage.NonUniformSamplesHalftime100 (0.1 ms)
+[ RUN  ] EventBasedExponentialMovingAverage.Reset
+[  OK  ] EventBasedExponentialMovingAverage.Reset (0.0 ms)
+[ RUN  ] EventBasedExponentialMovingAverage.SetHalfTime
+[  OK  ] EventBasedExponentialMovingAverage.SetHalfTime (0.0 ms)
+[ RUN  ] EventBasedExponentialMovingAverage.SimultaneousSamples
+[  OK  ] EventBasedExponentialMovingAverage.SimultaneousSamples (0.0 ms)
+[ RUN  ] Logging.DefaultsToWarningsAndAbove
+[  OK  ] Logging.DefaultsToWarningsAndAbove (0.1 ms)
+[ RUN  ] Logging.RuntimeLevelSelectsMessages
+[  OK  ] Logging.RuntimeLevelSelectsMessages (0.0 ms)
+[ RUN  ] Logging.ACompiledOutLevelIsNotSupportedAndChangesNothing
+[  OK  ] Logging.ACompiledOutLevelIsNotSupportedAndChangesNothing (0.0 ms)
+[ RUN  ] Logging.LongMessagesAreTruncated
+[  OK  ] Logging.LongMessagesAreTruncated (0.0 ms)
+[ RUN  ] Observability.CompiledFeaturesMatchTheBuild
+[  OK  ] Observability.CompiledFeaturesMatchTheBuild (0.0 ms)
+[ RUN  ] Nat.RulesMatchLibwebrtcNatTypes
+[  OK  ] Nat.RulesMatchLibwebrtcNatTypes (0.0 ms)
+[ RUN  ] Nat.Bindings
+[  OK  ] Nat.Bindings (0.5 ms)
+[ RUN  ] Nat.Filters
+[  OK  ] Nat.Filters (0.2 ms)
+[ RUN  ] Nat.UnsolicitedInboundIsDropped
+[  OK  ] Nat.UnsolicitedInboundIsDropped (0.0 ms)
+[ RUN  ] Nat.PortsAreHandedOutInOrder
+[  OK  ] Nat.PortsAreHandedOutInOrder (0.1 ms)
+[ RUN  ] Nat.BindingsNeverExpireByDefault
+[  OK  ] Nat.BindingsNeverExpireByDefault (0.1 ms)
+[ RUN  ] Nat.BindingTimesOutWithoutOutboundTraffic
+[  OK  ] Nat.BindingTimesOutWithoutOutboundTraffic (0.2 ms)
+[ RUN  ] Nat.InboundRefreshIsOptional
+[  OK  ] Nat.InboundRefreshIsOptional (0.1 ms)
+[ RUN  ] Nat.Hairpinning
+[  OK  ] Nat.Hairpinning (0.3 ms)
+[ RUN  ] SimNetwork.SameRealmNeedsNoNat
+[  OK  ] SimNetwork.SameRealmNeedsNoNat (0.1 ms)
+[ RUN  ] SimNetwork.NestedNats
+[  OK  ] SimNetwork.NestedNats (0.1 ms)
+[ RUN  ] SimNetwork.AccessLinksKeepNetworkLinkImpairments
+[  OK  ] SimNetwork.AccessLinksKeepNetworkLinkImpairments (0.2 ms)
+[ RUN  ] SimNetwork.RandomLossFollowsTheLinkConfig
+[  OK  ] SimNetwork.RandomLossFollowsTheLinkConfig (2.0 ms)
+[ RUN  ] SimNetwork.UnknownAddressesAreUnroutable
+[  OK  ] SimNetwork.UnknownAddressesAreUnroutable (0.1 ms)
+[ RUN  ] SimNetwork.BindingIsMadeWhenTheDatagramReachesTheNat
+[  OK  ] SimNetwork.BindingIsMadeWhenTheDatagramReachesTheNat (0.1 ms)
 
-14 tests run, 14 passed, 0 failed
+75 tests run, 75 passed, 0 failed

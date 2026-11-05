@@ -1,0 +1,48 @@
+[ RUN  ] PcSctpUtils.WriteParseOpenMessageWithOrderedReliable
+[  OK  ] PcSctpUtils.WriteParseOpenMessageWithOrderedReliable (1.0 ms)
+[ RUN  ] PcSctpUtils.WriteParseOpenMessageWithMaxRetransmitTime
+[  OK  ] PcSctpUtils.WriteParseOpenMessageWithMaxRetransmitTime (0.2 ms)
+[ RUN  ] PcSctpUtils.WriteParseOpenMessageWithMaxRetransmits
+[  OK  ] PcSctpUtils.WriteParseOpenMessageWithMaxRetransmits (0.0 ms)
+[ RUN  ] PcSctpUtils.WriteParseOpenMessageWithPriority
+[  OK  ] PcSctpUtils.WriteParseOpenMessageWithPriority (0.0 ms)
+[ RUN  ] PcSctpUtils.WriteParseAckMessage
+[  OK  ] PcSctpUtils.WriteParseAckMessage (0.1 ms)
+[ RUN  ] PcSctpUtils.TestIsOpenMessage
+[  OK  ] PcSctpUtils.TestIsOpenMessage (0.0 ms)
+[ RUN  ] PcSctpUtils.SidBasics
+[  OK  ] PcSctpUtils.SidBasics (0.0 ms)
+[ RUN  ] PcSctpUtils.TruncatedOpenRejected
+[  OK  ] PcSctpUtils.TruncatedOpenRejected (0.0 ms)
+[ RUN  ] PcSctpDataChannel.InternalInitClampsAndValidates
+[  OK  ] PcSctpDataChannel.InternalInitClampsAndValidates (0.2 ms)
+[ RUN  ] PcSctpDataChannel.SidAllocatorEvenOddByDtlsRole
+[  OK  ] PcSctpDataChannel.SidAllocatorEvenOddByDtlsRole (0.8 ms)
+[ RUN  ] PcSctpDataChannel.OpenerHandshake
+[  OK  ] PcSctpDataChannel.OpenerHandshake (0.8 ms)
+[ RUN  ] PcSctpDataChannel.AckerAndNegotiated
+[  OK  ] PcSctpDataChannel.AckerAndNegotiated (0.0 ms)
+[ RUN  ] PcSctpDataChannel.QueuedUntilObserver
+[  OK  ] PcSctpDataChannel.QueuedUntilObserver (0.8 ms)
+[ RUN  ] PcSctpDataChannel.CloseWaitsForBufferedData
+[  OK  ] PcSctpDataChannel.CloseWaitsForBufferedData (0.1 ms)
+[ RUN  ] PcSctpDataChannel.SendFailureClosesChannel
+[  OK  ] PcSctpDataChannel.SendFailureClosesChannel (0.0 ms)
+[ RUN  ] PcSctpDataChannel.ControllerGone
+[  OK  ] PcSctpDataChannel.ControllerGone (0.0 ms)
+[ RUN  ] PcDataChannels.InBandBothWays
+[  OK  ] PcDataChannels.InBandBothWays (53.4 ms)
+[ RUN  ] PcDataChannels.Negotiated
+[  OK  ] PcDataChannels.Negotiated (6.0 ms)
+[ RUN  ] PcDataChannels.PartialReliability
+[  OK  ] PcDataChannels.PartialReliability (42.0 ms)
+[ RUN  ] PcDataChannels.CloseBothSides
+[  OK  ] PcDataChannels.CloseBothSides (7.0 ms)
+[ RUN  ] PcDataChannels.BufferedAmountAndMaxMessageSize
+[  OK  ] PcDataChannels.BufferedAmountAndMaxMessageSize (339.5 ms)
+[ RUN  ] PcDataChannels.RuntimeSwitchOff
+[  OK  ] PcDataChannels.RuntimeSwitchOff (5.7 ms)
+[ RUN  ] PcDataChannels.TransportClosedClosesChannels
+[  OK  ] PcDataChannels.TransportClosedClosesChannels (5.1 ms)
+
+23 tests run, 23 passed, 0 failed

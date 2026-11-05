@@ -1,0 +1,36 @@
+[ RUN  ] SctpOverDtls.AssociationUp
+[  OK  ] SctpOverDtls.AssociationUp (6.6 ms)
+[ RUN  ] SctpOverDtls.MessagesByTypeOrderedAndUnordered
+[  OK  ] SctpOverDtls.MessagesByTypeOrderedAndUnordered (0.4 ms)
+[ RUN  ] SctpOverDtls.ReliableUnderLoss
+[  OK  ] SctpOverDtls.ReliableUnderLoss (1.4 ms)
+[ RUN  ] SctpOverDtls.MaxRetransmitsUnderLoss
+[  OK  ] SctpOverDtls.MaxRetransmitsUnderLoss (0.7 ms)
+[ RUN  ] SctpOverDtls.MaxLifetimeDuringOutage
+[  OK  ] SctpOverDtls.MaxLifetimeDuringOutage (0.3 ms)
+[ RUN  ] SctpOverDtls.StreamReset
+[sm E] /Users/danceone/job_interview/sm-wt-rec/src/sctp/dcsctp_transport.cc:198: DcSctpTransport10->ResetStream(sid=1): Stream is not open.
+[  OK  ] SctpOverDtls.StreamReset (0.3 ms)
+[ RUN  ] SctpOverDtls.StreamResetSimultaneous
+[  OK  ] SctpOverDtls.StreamResetSimultaneous (0.3 ms)
+[ RUN  ] SctpOverDtls.SendBufferFullThenReadyToSend
+[  OK  ] SctpOverDtls.SendBufferFullThenReadyToSend (104.8 ms)
+[ RUN  ] SctpOverDtls.MaxMessageSizeAndRestart
+[sm E] /Users/danceone/job_interview/sm-wt-rec/src/sctp/dcsctp_transport.cc:151: DcSctpTransport16->Start(local=5001, remote=5000): Can't change ports on already started transport.
+[sm E] /Users/danceone/job_interview/sm-wt-rec/src/sctp/sctp_transport.cc:88: Failed to push down SCTP parameters, closing.
+[  OK  ] SctpOverDtls.MaxMessageSizeAndRestart (2.1 ms)
+[ RUN  ] SctpOverDtls.SnapWithEarlyPackets
+[sm E] /Users/danceone/job_interview/sm-wt-rec/src/sctp/dcsctp_transport.cc:158: DcSctpTransport19->Start(): Can't change sctp-init on already started transport.
+[  OK  ] SctpOverDtls.SnapWithEarlyPackets (0.3 ms)
+[ RUN  ] SctpOverDtls.DtlsFailureClosesTransport
+[  OK  ] SctpOverDtls.DtlsFailureClosesTransport (0.2 ms)
+[ RUN  ] SctpDcSctpTransport.NotStarted
+[sm E] /Users/danceone/job_interview/sm-wt-rec/src/sctp/dcsctp_transport.cc:216: DcSctpTransport22->SendData(...): Transport is not started.
+[sm E] /Users/danceone/job_interview/sm-wt-rec/src/sctp/dcsctp_transport.cc:190: DcSctpTransport22->ResetStream(sid=1): Transport is not started.
+[  OK  ] SctpDcSctpTransport.NotStarted (0.0 ms)
+[ RUN  ] SctpDcSctpTransport.StartedWithoutTransport
+[sm E] /Users/danceone/job_interview/sm-wt-rec/src/sctp/dcsctp_transport.cc:198: DcSctpTransport23->ResetStream(sid=1): Stream is not open.
+[sm E] /Users/danceone/job_interview/sm-wt-rec/src/sctp/dcsctp_transport.cc:401: DcSctpTransport23->OnError(error=WRONG_SEQUENCE, message=Can't reset streams as the socket is not connected).
+[  OK  ] SctpDcSctpTransport.StartedWithoutTransport (0.0 ms)
+
+13 tests run, 13 passed, 0 failed

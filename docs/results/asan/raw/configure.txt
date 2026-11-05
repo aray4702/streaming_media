@@ -1,3 +1,30 @@
--- Configuring done (0.1s)
--- Generating done (0.1s)
--- Build files have been written to: /Users/danceone/job_interview/streaming_media/build-asan
+-- The CXX compiler identification is AppleClang 21.0.0.21000401
+-- Detecting CXX compiler ABI info
+-- Detecting CXX compiler ABI info - done
+-- Check for working CXX compiler: /usr/bin/c++ - skipped
+-- Detecting CXX compile features
+-- Detecting CXX compile features - done
+-- The OBJCXX compiler identification is AppleClang 21.0.0.21000401
+-- Detecting OBJCXX compiler ABI info
+-- Detecting OBJCXX compiler ABI info - done
+-- Check for working OBJCXX compiler: /usr/bin/c++ - skipped
+-- The C compiler identification is AppleClang 21.0.0.21000401
+-- Detecting C compiler ABI info
+-- Detecting C compiler ABI info - done
+-- Check for working C compiler: /usr/bin/cc - skipped
+-- Detecting C compile features
+-- Detecting C compile features - done
+-- Found Git: /usr/bin/git (found version "2.54.0 (Apple Git-157)")
+-- Fetching BoringSSL 5fbad2285b096858fc9afa3e4c949fde39452070
+-- The ASM compiler identification is AppleClang
+-- Found assembler: /usr/bin/cc
+-- Performing Test CMAKE_HAVE_LIBC_PTHREAD
+-- Performing Test CMAKE_HAVE_LIBC_PTHREAD - Success
+-- Found Threads: TRUE
+-- Fetching libsrtp 24b3bf8f19b6f5ab4cd2bcceb4f4064efca86fd5
+-- Fetching Mbed TLS 068ff080b369adfac81509f9b57b2afabaf82dc5
+-- Found Python3: /opt/homebrew/Frameworks/Python.framework/Versions/3.14/bin/python3.14 (found version "3.14.8") found components: Interpreter
+-- Fetching libopus 55513e81d8f606bd75d0ff773d2144e5f2a732f5
+-- Configuring done (17.7s)
+-- Generating done (0.3s)
+-- Build files have been written to: /Users/danceone/job_interview/sm-wt-rec/build-asan
