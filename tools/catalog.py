@@ -1319,7 +1319,7 @@ ALGORITHMS = [
     dict(id="6.3", slug="noise-suppression", title="Noise suppression",
          problems=["Background noise -> NS noise suppression (RNNoise-style ML in some builds)"],
          headers=["audio/ns.h"], unit=["Ns"], e2e=["E2E_NoiseSuppressor"],
-         bench=[],
+         bench=["audio/NoiseSuppressor_10ms", "audio/Q_NoiseSuppressor_7dB_snr"],
          scenario="Near-end speech in white noise at about 7 dB SNR through HPF -> NS; SNR against the clean "
                   "talker (passed through the same HPF) before and after.",
          notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#6-audio-quality) for the differences from libwebrtc. The capture chain runs libwebrtc's NS (`audio/ns.h`, kHigh); the library's STFT-Wiener suppressor (v1) was retired in #565. "
@@ -1353,7 +1353,7 @@ ALGORITHMS = [
          problems=["Volume too quiet, too loud, or clipping -> AGC2 automatic gain control, limiter, clipping predictor"],
          headers=["audio/agc2.h", "audio/agc2_rnn_vad.h", "audio/sinc_resampler.h", "audio/agc1.h", "audio/agc1_vad.h", "audio/agc_manager.h", "audio/clipping_predictor.h"], unit=["GainController2", "Agc2RnnVad", "Agc1", "Agc1VoiceActivity", "Agc1Manager", "Agc1CaptureLevels", "Agc1ClippingPredictor", "Agc1ClippingLevelBuffer"],
          e2e=["E2E_GainControl"],
-         bench=[],
+         bench=["audio/Agc1_10ms", "audio/Agc2_10ms", "audio/Q_Agc_quiet_then_loud_talker"],
          scenario="A quiet talker (~-33 dBFS) for 20 s, then a loud one (+20 dB), through AGC1 as a call runs it "
                   "and through AGC2; the quiet and loud talkers' levels, the noise in pauses and the peak are "
                   "compared with libwebrtc's on the same signal.",
@@ -1431,7 +1431,7 @@ ALGORITHMS = [
          problems=["Low-frequency rumble or DC offset -> high-pass filter"],
          headers=["audio/hpf.h", "audio/cascaded_biquad_filter.h"],
          unit=["Hpf", "CascadedBiquadFilter"], e2e=["E2E_HighPassFilter"],
-         bench=[],
+         bench=["audio/HighPassFilter_10ms"],
          scenario="A capture with 0.1 DC offset and 50 Hz hum through the high-pass filter; the DC and hum left "
                   "at the output, and the clean talker's level change, are measured.",
          notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#6-audio-quality) for the differences from libwebrtc. The capture chain runs libwebrtc's filter (`audio/hpf.h`); the library's 4th-order Butterworth (v1) was retired in #565.", verification="On the v1 filter (retired in #565): no defects found; its response matched 4th-order Butterworth. #239: "
@@ -1497,7 +1497,7 @@ ALGORITHMS = [
          problems=["Device sample-rate mismatch -> resampler"],
          headers=["audio/spl_resampler.h", "audio/push_resampler.h"],
          unit=["SplResampler", "PushResampler"], e2e=["E2E_Resampler"],
-         bench=[],
+         bench=["audio/Resampler_48k_to_16k_10ms", "audio/Resampler_44k1_to_48k_10ms", "audio/SplResampler_48k_to_16k_10ms"],
          scenario="44.1 kHz microphone -> 16 kHz processing (HPF) -> 48 kHz speaker with a 1 kHz tone, through "
                   "`PushResampler<float>`; "
                   "end-to-end SNR after fitting gain and phase, plus the output length.",
@@ -1540,7 +1540,7 @@ ALGORITHMS = [
                    "with a limiter so the sum doesn't clip (AudioMixerImpl, FrameCombiner)"],
          headers=["audio/audio_mixer.h"], unit=["AudioMixer", "FrameCombiner", "AudioFrameManipulator"],
          e2e=["E2E_AudioMixer"],
-         bench=[],
+         bench=["audio/Mixer_6sources_48k_10ms", "audio/Q_Mixer_5_loud_talkers"],
          scenario="Five talkers near full scale mixed as a group call's playout: the plain saturating sum flattens "
                   "790 peaks in 10 s, the mixer 2 (its limiter maps a peak to exactly full scale, as libwebrtc's), and "
                   "every talker, the two quietest included, is in the mix; talkers joining, leaving, muting and "
@@ -1759,7 +1759,7 @@ ALGORITHMS = [
          headers=["video/simulcast.h", "video/simulcast_rate_allocator.h", "rtp/simulcast_send_controller.h"],
          unit=["Simulcast", "EncoderStreamFactory", "SimulcastRateAllocator", "ScreenshareRateAllocation",
                "SimulcastSend"],
-         e2e=[], bench=[],
+         e2e=[], bench=["video/SimulcastRateAllocator_3layers_update", "rtp/SimulcastSend_3layers_frame"],
          scenario="A 720p camera sent as three layers (320x180, 640x360, 1280x720) on a 4 Mbps link that drops to "
                   "800 kbps, rises from 1 Mbps, or stays clean (`simulcast_*` scenarios); the receiver takes every "
                   "layer as an SFU does and one layer is measured (`simulcast_view`). The SFU pauses the top layer "
