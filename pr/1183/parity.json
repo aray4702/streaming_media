@@ -719,7 +719,7 @@
   {
    "scenario": "issue_536_loss20_av_sync",
    "metric": "sync.av_offset_p95_ms",
-   "sm": 354.763,
+   "sm": 354.767,
    "webrtc": 1172.84,
    "band": 652.427009233847,
    "direction": "ahead",
@@ -788,9 +788,9 @@
   {
    "scenario": "issue_536_reverse_outage_45s",
    "metric": "sync.av_offset_p95_ms",
-   "sm": 147.445,
-   "webrtc": 1595.04,
-   "band": 81.90846653429666,
+   "sm": 147.453,
+   "webrtc": 1595.93,
+   "band": 82.33248714814825,
    "direction": "ahead",
    "seeds_agree": 10,
    "seeds": 10,
@@ -950,7 +950,7 @@
   {
    "scenario": "issue_795_loss20_mouth_to_ear",
    "metric": "sync.av_offset_p95_ms",
-   "sm": 354.767,
+   "sm": 354.763,
    "webrtc": 1172.84,
    "band": 652.427009233847,
    "direction": "ahead",
