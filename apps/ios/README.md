@@ -18,6 +18,14 @@ rates, audio loss/jitter/concealment, video frames, DTLS and SRTP ciphers, and t
   (`pc::PeerEndpoint` over `apps/net` OS sockets, ICE with STUN/TURN, DTLS-SRTP, the RTP session's congestion control),
   Opus audio through the library's capture chain (HPF, AEC3, NS), and VideoToolbox H.264.
 
+## Group calls (LiveKit, C19)
+
+The controller also joins LiveKit rooms (`CallClientConfig::livekit`; see `apps/call/call_client.h` and
+[docs/deploy/livekit.md](../../docs/deploy/livekit.md)). It speaks LiveKit's protobuf signaling over WebSocket, takes
+its token from the signaling service's `/lk-token`, and publishes the microphone and camera. The app's screen has no
+Group button yet; C20 adds it with the grid. Receiving a group waits for C18 (multi-stream receive): until then the
+controller joins publish-only. `sm_call_smoke --livekit=...` exercises it from the command line.
+
 ## Build (unsigned)
 
 ```sh

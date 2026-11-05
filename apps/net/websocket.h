@@ -12,6 +12,7 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include "sm/p2p/socket_address.h"
@@ -59,8 +60,11 @@ class WebSocketClient {
 
   // Starts connecting; false if the host doesn't resolve or the socket can't be made.
   bool Connect(const Url& url);
-  // Queued until the handshake is done.
+  // A text message; queued until the handshake is done.
   void Send(std::string_view text);
+  // A binary message (LiveKit's protobuf signaling, C19); queued the same way. Received binary messages come out of
+  // TakeMessages as their bytes, like text ones.
+  void SendBinary(std::string_view data);
   // Connects, handshakes, reads and writes as far as it can without waiting; answers pings.
   void Poll();
   std::vector<std::string> TakeMessages();
@@ -77,6 +81,7 @@ class WebSocketClient {
   enum class State { kIdle, kConnecting, kHandshake, kOpen, kClosed };
   struct Tls;  // The TLS engine of a wss:// connection.
   void Fail();
+  void SendFrame(uint8_t opcode, std::string_view payload);
   void Flush();
   void ReadAvailable();
   void ParseFrames();
@@ -87,7 +92,7 @@ class WebSocketClient {
   std::vector<uint8_t> in_, out_;  // Plaintext.
   std::unique_ptr<Tls> tls_;
   std::vector<uint8_t> wire_;      // TLS records waiting for the socket.
-  std::vector<std::string> pending_;  // Sent before the handshake finished.
+  std::vector<std::pair<uint8_t, std::string>> pending_;  // Opcode and payload, sent before the handshake finished.
   std::string fragments_;
   std::vector<std::string> messages_;
 };
