@@ -25,6 +25,14 @@
 //   the render rate and freezes (WebRTC's definition: a frame interval above max(3 x mean, mean + 150 ms) of the
 //   preceding frames, as RTCInboundRtpStreamStats.freezeCount).
 //
+// - LiveKit (C19, #1164): `--livekit=ws[s]://HOST:PORT` joins the LiveKit room `--room` instead (call_client.h), with
+//   a token from `--token=http[s]://HOST:PORT/lk-token` (the signaling service; default: --signaling's host).
+//   `--livekit=auto` takes the URL /lk-token returns. `--peer=ID` is the identity (default native-<n>). It publishes
+//   the microphone (and with --video the camera) and, with `--subscribe`, subscribes to the room (one remote audio and
+//   video until C18). Its result needs the publisher connected and audio sent; received audio only with --subscribe.
+//
+//   sm_call_smoke --livekit=ws://127.0.0.1:7880 --token=http://127.0.0.1:8080/lk-token --room=team --video
+//
 // Prints the stats once a second, then one result line {"type":"call-result", ...} and `smoke: ok|FAILED`.
 // Exit status 0 when the call connected and received audio was played out.
 #include <algorithm>
@@ -32,6 +40,7 @@
 #include <cstdio>
 #include <cstring>
 #include <deque>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -230,11 +239,19 @@ int main(int argc, char** argv) {
   const char* usage =
       "usage: sm_call_smoke --signaling=ws[s]://HOST:PORT/ws [--room=R] [--seconds=S] [--turn=URL|none] "
       "[--ip=A.B.C.D] [--relay] [--turns=N] [--barge] [--no-talk] [--no-apm] [--ios-audio|--aec3] [--video] "
-      "[--label=TEXT]\n";
+      "[--label=TEXT]\n"
+      "       sm_call_smoke --livekit=ws[s]://HOST:PORT|auto [--token=http[s]://HOST:PORT/lk-token] [--peer=ID] "
+      "[--subscribe] [same options]\n";
+  std::string livekit, token_url, peer;
+  bool subscribe = false;
   for (int i = 1; i < argc; ++i) {
     const std::string a = argv[i];
     auto val = [&](const char* k) { return a.rfind(k, 0) == 0 ? a.substr(std::strlen(k)) : std::string(); };
     if (!val("--signaling=").empty()) signaling = val("--signaling=");
+    else if (!val("--livekit=").empty()) livekit = val("--livekit=");
+    else if (!val("--token=").empty()) token_url = val("--token=");
+    else if (!val("--peer=").empty()) peer = val("--peer=");
+    else if (a == "--subscribe") subscribe = true;
     else if (!val("--room=").empty()) room = val("--room=");
     else if (!val("--seconds=").empty()) seconds = std::atof(val("--seconds=").c_str());
     else if (!val("--turn=").empty()) turn = val("--turn=");
@@ -253,17 +270,31 @@ int main(int argc, char** argv) {
       return 2;
     }
   }
-  if (signaling.empty()) {
+  if (signaling.empty() && (livekit.empty() || token_url.empty())) {
     std::fprintf(stderr, "%s", usage);
     return 2;
   }
   cfg.room = room;
+  cfg.peer_id = peer;
   cfg.verbose = true;
-  apps::CallDriver app(signaling, cfg, turn);
+  std::unique_ptr<apps::CallDriver> driver;
+  if (!livekit.empty()) {
+    if (token_url.empty()) {  // The signaling service's /lk-token, next to its /ws.
+      const net::Url s = net::ParseUrl(signaling).value_or(net::Url{});
+      token_url = std::string(s.tls ? "https://" : "http://") + s.host + ":" + std::to_string(s.port) + "/lk-token";
+    }
+    cfg.livekit_subscribe = subscribe;
+    cfg.livekit_publish_video = video;
+    driver = std::make_unique<apps::CallDriver>(apps::LiveKitJoin{token_url, livekit == "auto" ? "" : livekit}, cfg, turn);
+  } else {
+    driver = std::make_unique<apps::CallDriver>(signaling, cfg, turn);
+  }
+  apps::CallDriver& app = *driver;
   app.client().SetVideoEnabled(video);
   Timestamp now = apps::WallNow();
   if (!app.Start(now)) {
-    std::fprintf(stderr, "cannot connect to %s\n", signaling.c_str());
+    std::fprintf(stderr, "cannot connect to %s%s%s\n", livekit.empty() ? signaling.c_str() : livekit.c_str(),
+                 app.error().empty() ? "" : ": ", app.error().c_str());
     return 1;
   }
   Conversation talk(max_turns, barge);
@@ -309,7 +340,10 @@ int main(int argc, char** argv) {
   const std::string stats = st.ToJson();
   std::printf("{\"type\":\"call-result\",\"client\":\"sm_call_smoke\",\"label\":%s,\"room\":%s,%s%s\"stats\":%s}\n",
               net::JsonEscape(label).c_str(), net::JsonEscape(room).c_str(), talk.Json().c_str(), v, stats.c_str());
-  const bool ok = st.state == apps::CallState::kConnected && st.audio_played_s > 1.0;
+  // A LiveKit call publishes: connected (the publisher connection) with audio sent; received audio only when it
+  // subscribed (C18 for more than the first offer's streams).
+  const bool ok = st.state == apps::CallState::kConnected &&
+                  (livekit.empty() || subscribe ? st.audio_played_s > 1.0 : st.audio_packets_sent > 50);
   std::printf("smoke: %s\n", ok ? "ok" : "FAILED");
   return ok ? 0 : 1;
 }

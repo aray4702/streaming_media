@@ -18,6 +18,12 @@ if(Python3_FOUND)
   add_test(NAME interop.WebApp.two_tabs COMMAND ${Python3_EXECUTABLE} ${SM_WEB_CALL})
   set_tests_properties(interop.WebApp.two_tabs PROPERTIES
     LABELS interop SKIP_RETURN_CODE 77 TIMEOUT 120 RESOURCE_LOCK sm_chrome)
+  # Group calls through a local LiveKit server (C19, #1164): two pages in Group mode; skipped without Chrome or
+  # livekit-server (SM_LIVEKIT_SERVER). The native LiveKit client's test is in apps/call.
+  set(SM_GROUP_CALL ${CMAKE_CURRENT_SOURCE_DIR}/web/test_group_call.py)
+  add_test(NAME interop.WebApp.group COMMAND ${Python3_EXECUTABLE} ${SM_GROUP_CALL})
+  set_tests_properties(interop.WebApp.group PROPERTIES
+    LABELS interop SKIP_RETURN_CODE 77 TIMEOUT 120 RESOURCE_LOCK sm_chrome)
   if(TARGET sm_interop_browser_peer)
     add_test(NAME interop.WebApp.native COMMAND ${Python3_EXECUTABLE} ${SM_WEB_CALL}
              --peer=$<TARGET_FILE:sm_interop_browser_peer>)

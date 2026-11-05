@@ -22,6 +22,10 @@ The peer that joins later sends the offer (to each peer already there).
 the credential `CreateTurnRestCredentials` makes from coturn's `static-auth-secret`. The secret never leaves the
 server. Without `TURN_SECRET` (or `TURN_URLS`), it returns the STUN URLs only.
 
+`GET /lk-token?room=R&identity=I[&subscribe=0]` returns `{"token","url","ttl"}`: a LiveKit access token for group
+calls through the LiveKit SFU, signed with `LIVEKIT_API_SECRET`. The secret never leaves the server. See
+[livekit.md](livekit.md) (C19, #1164).
+
 `POST /report` and `GET /report` are a test hook: the web app posts its call state with `?report=1`.
 
 ## Running it
@@ -36,6 +40,8 @@ Settings from the environment:
 | `TURN_SECRET` | none | coturn's `static-auth-secret` (with `use-auth-secret`, see [turn-server.md](turn-server.md)) |
 | `STUN_URLS` | Google's STUN | comma-separated |
 | `WEB_DIR` | `apps/web` | the web app's files |
+| `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET` | none | the LiveKit server's key pair, for `/lk-token` (without them it returns 503); see [livekit.md](livekit.md) |
+| `LIVEKIT_URL` | empty | the LiveKit URL `/lk-token` gives clients; empty: the page's origin (nginx routes `/rtc` to LiveKit) |
 
 ```sh
 PORT=8080 TURN_URLS=turn:turn.example.com:3478 TURN_SECRET=... python3 apps/signaling/server.py
@@ -51,5 +57,7 @@ to `/opt/streaming_media/apps`, put the variables in `/etc/streaming-media-signa
   notice, and `/turn` against `CreateTurnRestCredentials`'s output (`sm_turn_credentials`).
 - `interop.WebApp.two_tabs`: two headless Chrome processes load the web app and call each other through the service.
 - `interop.WebApp.native`: our endpoint (`sm_interop_browser_peer`) answers the web app through the service.
+- `interop.WebApp.group` and `interop.WebApp.group_native`: group calls through a local LiveKit server
+  ([livekit.md](livekit.md)); skipped without `livekit-server`.
 
 The Chrome tests are skipped, not failed, when Chrome is missing (`SM_CHROME` names it; `SM_BROWSER_REQUIRED=1` fails instead).

@@ -6,11 +6,16 @@ this file: no third-party dependency to install next to coturn).
 
   WS  /ws    JSON messages (protocol: docs/deploy/signaling.md); relayed ones get "from"
   GET /turn  {"urls","username","credential","ttl"} from TURN_SECRET (coturn use-auth-secret)
+  GET /lk-token?room=R&identity=I[&subscribe=0]
+             {"token","url","ttl"}: a LiveKit access token to join room R as I (C19, docs/deploy/livekit.md),
+             signed with LIVEKIT_API_SECRET; the secret never leaves the server
   GET /*     the web app's files (apps/web), `index.html` for `/`
 
 Config from the environment: PORT (default 8080), HOST (default 0.0.0.0),
 TURN_URLS (comma separated; default none), TURN_SECRET (the shared secret; without it
-/turn returns STUN only), STUN_URLS (default stun:stun.l.google.com:19302), WEB_DIR.
+/turn returns STUN only), STUN_URLS (default stun:stun.l.google.com:19302), WEB_DIR,
+LIVEKIT_API_KEY and LIVEKIT_API_SECRET (the LiveKit server's key pair; without them /lk-token returns 503),
+LIVEKIT_URL (optional: the LiveKit URL clients connect to, returned with the token; empty: this service's origin).
 """
 
 import asyncio
@@ -19,6 +24,7 @@ import hashlib
 import hmac
 import json
 import os
+import re
 import struct
 import sys
 import time
@@ -29,6 +35,8 @@ TTL = 86400
 GUID = b'258EAFA5-E914-47DA-95CA-C5AB0DC85B11'
 DEFAULT_WEB_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'web')
 TYPES = {'.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css'}
+LK_TTL = 3600  # LiveKit tokens: one hour to join; LiveKit itself refreshes a joined client's token (refresh_token).
+LK_NAME = re.compile(r'[A-Za-z0-9_-][A-Za-z0-9_.-]{0,63}')  # Room codes and identities (fullmatch).
 
 
 def turn_response(secret, urls, stun_urls, peer_id='web', now=None):
@@ -42,6 +50,40 @@ def turn_response(secret, urls, stun_urls, peer_id='web', now=None):
     mac = hmac.new(secret.encode(), username.encode(), hashlib.sha1).digest()
     return {'urls': ice + list(urls), 'username': username,
             'credential': base64.b64encode(mac).decode(), 'ttl': TTL}
+
+
+def _b64url(data):
+    return base64.urlsafe_b64encode(data).rstrip(b'=').decode()
+
+
+def livekit_token(api_key, api_secret, room, identity, now=None, ttl=LK_TTL, subscribe=True):
+    """A LiveKit access token, an HS256 JWT as livekit/protocol's auth.AccessToken makes it: `iss` the API key, `sub`
+    the identity, `nbf`/`exp`, and the `video` grant (VideoGrant) to join `room`, publish and (unless not
+    `subscribe`) subscribe."""
+    now = int(now if now is not None else time.time())
+    header = {'alg': 'HS256', 'typ': 'JWT'}
+    claims = {'iss': api_key, 'sub': identity, 'name': identity, 'nbf': now, 'exp': now + ttl,
+              'video': {'roomJoin': True, 'room': room, 'canPublish': True, 'canSubscribe': bool(subscribe),
+                        'canPublishData': True}}
+    signing = (_b64url(json.dumps(header, separators=(',', ':')).encode()) + '.' +
+               _b64url(json.dumps(claims, separators=(',', ':')).encode()))
+    sig = hmac.new(api_secret.encode(), signing.encode(), hashlib.sha256).digest()
+    return signing + '.' + _b64url(sig)
+
+
+def livekit_token_response(api_key, api_secret, url, query, now=None):
+    """GET /lk-token: (status, body). 400 for a missing or malformed room or identity, 503 without a key pair.
+    `subscribe=0` asks for a publish-only grant (canSubscribe false): LiveKit then makes the publisher connection the
+    primary one and offers no subscriber connection, which a client that only publishes needs (the native client
+    until C18)."""
+    room, identity = query.get('room', [''])[0], query.get('identity', [''])[0]
+    subscribe = query.get('subscribe', ['1'])[0] != '0'
+    if not LK_NAME.fullmatch(room) or not LK_NAME.fullmatch(identity):
+        return 400, {'error': 'room and identity: 1-64 characters of A-Z a-z 0-9 _ - . (not starting with .)'}
+    if not api_key or not api_secret:
+        return 503, {'error': 'LiveKit is not configured on this server'}
+    return 200, {'token': livekit_token(api_key, api_secret, room, identity, now, subscribe=subscribe),
+                 'url': url or '', 'ttl': LK_TTL}
 
 
 class WebSocket:
@@ -99,8 +141,10 @@ class WebSocket:
 
 
 class Service:
-    def __init__(self, turn_urls=(), turn_secret='', stun_urls=('stun:stun.l.google.com:19302',), web_dir=None):
+    def __init__(self, turn_urls=(), turn_secret='', stun_urls=('stun:stun.l.google.com:19302',), web_dir=None,
+                 livekit_key='', livekit_secret='', livekit_url=''):
         self.turn_urls, self.turn_secret, self.stun_urls = list(turn_urls), turn_secret, list(stun_urls)
+        self.livekit_key, self.livekit_secret, self.livekit_url = livekit_key, livekit_secret, livekit_url
         self.web_dir = os.path.abspath(web_dir or DEFAULT_WEB_DIR)
         self.rooms = {}  # code -> {peer id -> WebSocket}
         self.ai_servers = set()  # sockets that sent {"type":"register-ai"}
@@ -150,6 +194,12 @@ class Service:
             query = urllib.parse.parse_qs(url.query)
             peer = ''.join(c for c in query.get('peer', ['web'])[0] if c.isalnum() or c in '-_')[:32] or 'web'
             return 200, js, json.dumps(turn_response(self.turn_secret, self.turn_urls, self.stun_urls, peer)).encode()
+        if url.path == '/lk-token':
+            if method != 'GET':
+                return 405, js, b'{}'
+            code, out = livekit_token_response(self.livekit_key, self.livekit_secret, self.livekit_url,
+                                               urllib.parse.parse_qs(url.query))
+            return code, js, json.dumps(out).encode()
         if url.path == '/report':
             if method == 'POST':
                 try:
@@ -221,7 +271,8 @@ async def serve():
     svc = Service([u for u in os.environ.get('TURN_URLS', '').split(',') if u.strip()],
                   os.environ.get('TURN_SECRET', ''),
                   [u for u in os.environ.get('STUN_URLS', 'stun:stun.l.google.com:19302').split(',') if u.strip()],
-                  os.environ.get('WEB_DIR'))
+                  os.environ.get('WEB_DIR'), os.environ.get('LIVEKIT_API_KEY', ''),
+                  os.environ.get('LIVEKIT_API_SECRET', ''), os.environ.get('LIVEKIT_URL', ''))
     await svc.start(os.environ.get('HOST', '0.0.0.0'), int(os.environ.get('PORT', '8080')))
     print('signaling on port %d' % svc.port, flush=True)
     await asyncio.Event().wait()

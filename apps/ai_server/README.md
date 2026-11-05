@@ -23,3 +23,4 @@ out/native/apps/ai_server/sm_ai_server --signaling=ws://HOST:8080/ws --metrics=c
   `conv.response_delay_ms` and `conv.barge_in_stop_ms` as the server sees them, and the user's speech concealed.
 - **Test:** `e2e.AiServer` calls it with a native endpoint through an in-test stub of the signaling protocol and
   through `apps/signaling/server.py` (skipped without python3).
+- **Group calls (LiveKit, C19 #1164):** not yet. The server answers one-to-one `ai-` rooms only. Joining a LiveKit room as a participant (C20) can reuse the native LiveKit client in `apps/call` (`CallClientConfig::livekit`, `livekit_proto.h`; [docs/deploy/livekit.md](../../docs/deploy/livekit.md)), once C18 lets it receive several streams.

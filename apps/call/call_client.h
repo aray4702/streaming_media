@@ -32,6 +32,23 @@
 //   device then runs VoiceProcessingIO's processing (sm::device EchoCanceller::kSystem, its AGC on as
 //   voice_processing_audio_unit.mm checks it).
 // - Live stats (C8): Session::GetStats and pc::GetConnectionStats once a second, summarized (CallStats).
+// - LiveKit (C19, #1164; docs/deploy/livekit.md), with `livekit` set: the call is a LiveKit room instead. The host
+//   connects the WebSocket to livekit::JoinPath (apps/call/livekit_proto.h) with a token from the signaling service's
+//   /lk-token, sends what `send_signal` gives it as binary frames and hands every frame it receives to OnSignal.
+//   LiveKit gives every client two peer connections, as its SDKs have them:
+//   - the publisher (`ep_`): after the JoinResponse, AddTrackRequest for the microphone and the camera (their cids are
+//     the a=msid track ids), then, once both are published (TrackPublishedResponse), our offer; the server's answer
+//     and its trickled candidates (target PUBLISHER) complete it. The JoinResponse's ICE servers (the host's coturn)
+//     are added to /turn's. Pings (ping_req) every ping_interval keep the session.
+//   - the subscriber (`sub_`): the server offers it (data channels, then the subscribed tracks) and we answer
+//     (target SUBSCRIBER); its audio and video are what plays and renders. The endpoint takes one offer with at
+//     most one audio and one video section; the server's renegotiations (each participant who joins or publishes
+//     later) and several remote streams need C18 (multi-stream receive, #1160), and so does LiveKit's first
+//     subscriber offer when it carries only data channels (the endpoint needs an audio or video section). Until
+//     then `livekit_subscribe` is off by default: the client asks /lk-token for a publish-only grant (subscribe=0,
+//     no canSubscribe) and joins with auto_subscribe=0, so LiveKit makes the publisher connection the primary one
+//     and opens no subscriber connection.
+//   Hangup sends a LeaveRequest. A server leave ends the call.
 //
 // Threads: the call runs on the host's call thread (Start, OnSignal, Step, Wait, Hangup, SetTurnResponse). The device
 // side may come from other threads: PushCapturedAudio and PullPlayout (the audio thread), PushCameraFrame (the camera
@@ -102,6 +119,12 @@ struct CallClientConfig {
   // (PeerConnection sets the allocator's candidate filter to CF_RELAY).
   bool relay_only = false;
   bool verbose = false;          // Log to stderr.
+  // LiveKit (C19, above): the signaling is LiveKit's (binary protobuf messages), not the service's JSON.
+  bool livekit = false;
+  // Subscribe to the room's tracks (the join's auto_subscribe). Off: publish only (until C18, above).
+  bool livekit_subscribe = false;
+  bool livekit_publish_video = true;  // Publish a camera track (else the microphone only).
+  int livekit_video_width = 640, livekit_video_height = 360;  // The camera size announced in AddTrackRequest.
 };
 
 // The capture chain of libwebrtc's iOS client (#1124): WebRtcVoiceEngine::ApplyOptions under WEBRTC_IOS sets
@@ -139,8 +162,17 @@ struct CallStats {
   double audio_allocation_kbps = 0;  // The congestion controller's audio allocation (with overhead).
   int video_send_rotation = 0, video_recv_rotation = 0;  // Degrees clockwise: sent and received in CVO.
   std::string ended_reason;
+  // LiveKit (C19): the room, the other participants, our published tracks and the subscriber connection's state.
+  std::string livekit_room;
+  int livekit_participants = -1;  // Others in the room; -1: not a LiveKit call.
+  int livekit_published = 0;
+  std::string livekit_subscriber;
+  double livekit_signal_rtt_ms = -1;  // ping_req / pong_resp
   std::string Text() const;  // Multi-line, for the UI.
   std::string ToJson() const;
+
+ private:
+  std::string LiveKitJson() const;
 };
 
 class CallClient {
@@ -196,6 +228,15 @@ class CallClient {
   void AddCandidate(std::map<std::string, std::string>& m, Timestamp now);
   void Audio(Timestamp now);
   void UpdateStats(Timestamp now);
+  // LiveKit (C19).
+  struct LiveKit;
+  void OnLiveKit(const std::string& bytes, Timestamp now);
+  void LiveKitPublish(Timestamp now);
+  void LiveKitSubscriberOffer(const std::string& sdp, uint32_t id, Timestamp now);
+  void LiveKitTrickle(const std::string& candidate_init, bool subscriber, Timestamp now);
+  void MakeSubscriber(Timestamp now);
+  // The endpoint whose audio plays and whose video renders: the subscriber with LiveKit, else the one call.
+  pc::PeerEndpoint* receiver() const;
 
   CallClientConfig config_;
   std::function<void(const std::string&)> send_signal_;
@@ -211,6 +252,10 @@ class CallClient {
   std::unique_ptr<AudioProcessor> apm_;
   std::unique_ptr<Video> video_;
   std::unique_ptr<pc::PeerEndpoint> ep_;
+  // LiveKit: the subscriber connection, its allocator, and the session's state.
+  std::unique_ptr<p2p::BasicPortAllocator> sub_allocator_;
+  std::unique_ptr<pc::PeerEndpoint> sub_;
+  std::unique_ptr<LiveKit> lk_;
   std::string remote_;
   std::vector<std::map<std::string, std::string>> pending_candidates_;
   std::atomic<CallState> state_{CallState::kIdle};
