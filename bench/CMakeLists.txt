@@ -24,12 +24,34 @@ endif()
 if(SM_WITH_RTP)
   list(APPEND SM_BENCH_SOURCES rtp_bench.cc)
 endif()
-# Connectivity (sm::p2p, not in the sm::sm umbrella yet): STUN (#986).
+# Connectivity (sm::p2p, not in the sm::sm umbrella yet): STUN (#986), ports, connections, allocation, the ICE
+# controller and agent, ICE-lite, TURN and TCP framing (sections 1.1-1.9). SDP and offer/answer (1.10, 1.11) need
+# sm::pc_sdp and the endpoint (1.12) sm::pc_endpoint, both on sm::tls: not in the Wasm build.
 list(APPEND SM_BENCH_SOURCES p2p_bench.cc)
+if(TARGET sm::pc_sdp)
+  list(APPEND SM_BENCH_SOURCES pc_sdp_bench.cc)
+endif()
+if(TARGET sm::pc_endpoint)
+  list(APPEND SM_BENCH_SOURCES pc_endpoint_bench.cc)
+endif()
 
 add_executable(sm_bench ${SM_BENCH_SOURCES})
 target_link_libraries(sm_bench PRIVATE sm_bench_framework sm::sm sm::p2p)
 sm_configure_target(sm_bench)
+if(TARGET sm::p2p_tls)
+  # STUN's crypto hooks on sm::tls, as an application installs them.
+  target_link_libraries(sm_bench PRIVATE sm::p2p_tls)
+  target_compile_definitions(sm_bench PRIVATE SM_BENCH_STUN_CRYPTO_TLS=1)
+else()
+  # Without TLS (Wasm): the unit tests' test-only HMAC-SHA1, MD5 and SHA-256.
+  target_sources(sm_bench PRIVATE ${PROJECT_SOURCE_DIR}/tests/unit/p2p/test_crypto.cc)
+endif()
+if(TARGET sm::pc_sdp)
+  target_link_libraries(sm_bench PRIVATE sm::pc_sdp)
+endif()
+if(TARGET sm::pc_endpoint)
+  target_link_libraries(sm_bench PRIVATE sm::pc_endpoint)
+endif()
 if(EMSCRIPTEN)
   # Let --json=<path> write to the real file system when run under Node.
   target_link_options(sm_bench PRIVATE -sNODERAWFS=1)
