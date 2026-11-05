@@ -53,7 +53,7 @@ A gap is a metric whose means differ by more than the band, in either direction:
 | issue_536_loss20_av_sync | `video.e2e_delay_p95_ms` | 512 | 1776 | ±1002 | ahead | 10/10 | #536, #729 (closed, no note: #24, #37) |
 | issue_536_reverse_outage_45s | `audio.jb_delay_p95_ms` | 221 | 1978 | ±98.9 | ahead | 10/10 | #536, #729 (closed, no note: #63, #476) |
 | issue_536_reverse_outage_45s | `audio.mouth_to_ear_p95_ms` | 312 | 2070 | ±104 | ahead | 10/10 | #536, #729 (closed, no note: #63, #476) |
-| issue_536_reverse_outage_45s | `sync.av_offset_p95_ms` | 147 | 1596 | ±82.3 | ahead | 10/10 | #536, #729 |
+| issue_536_reverse_outage_45s | `sync.av_offset_p95_ms` | 147 | 1595 | ±81.9 | ahead | 10/10 | #536, #729 |
 | issue_536_reverse_outage_45s | `video.e2e_delay_p95_ms` | 324 | 2307 | ±115 | ahead | 10/10 | #536, #729 (closed, no note: #24, #37) |
 | issue_5_keyframe_flush | `cc.max_settle_ms` | 1300 | 14990 | ±750 | ahead | 10/10 | **none** (closed, no note: #15, #48, #61, #20) |
 | issue_5_keyframe_flush | `cc.utilization_pct` | 82.8 | 54.1 | ±4.1 | ahead | 10/10 | **none** (closed, no note: #19, #15, #48, #12, #61) |
