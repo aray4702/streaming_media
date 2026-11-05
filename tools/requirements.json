@@ -563,6 +563,22 @@
    "cost": ""
   },
   {
+   "id": "F6.13",
+   "kind": "library",
+   "area": "Audio quality (APM)",
+   "catalog": "6.13",
+   "title": "Receive-side audio mixing (group calls)",
+   "acceptance": "(1) AudioMixerImpl, FrameCombiner (with AGC2's Limiter), DefaultOutputRateCalculator and audio_frame_manipulator are ported from reference/modules/audio_mixer/ with api/audio/audio_mixer.h's Source interface. (2) Defaults as M157: the limiter on (AudioMixerImpl::Create()), every unmuted source mixed. (3) AudioMixer.*, FrameCombiner.*, AudioFrameManipulator.* (ports of the libwebrtc unit tests) and E2E_AudioMixer.* pass, and sm_mixer_compare is bit-exact with libwebrtc's AudioMixerImpl. (4) The group-call playout in apps/call uses it. (5) No open req:F6.13 item.",
+   "status": "open",
+   "evidence": "#1175: the port (src/audio/audio_mixer.cc), its unit and e2e tests, and sm_mixer_compare (bit-exact on 8 scenarios on macOS arm64). M157 has no 3-loudest selection (the issue's wording); whether to deviate is the Owner's call on #1175. The apps/call playout still sums until it is switched (C20, #1174).",
+   "verification": "",
+   "start": "2026-11-04",
+   "end": "",
+   "depends_on": [],
+   "cost": "",
+   "note": "Added as open by the Fixer for #1175 (window subagent, 2026-11-04); the Owner decides its status and placement."
+  },
+  {
    "id": "F7.1",
    "kind": "library",
    "area": "Video quality and processing",

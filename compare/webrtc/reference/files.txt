@@ -493,3 +493,16 @@ common_video/bitrate_adjuster.cc
 sdk/objc/native/src/audio/audio_device_ios.mm
 sdk/objc/native/src/audio/voice_processing_audio_unit.mm
 sdk/objc/components/capturer/RTCCameraVideoCapturer.m
+# Receive-side audio mixer for group calls (#1175): the mixer API, the audio frame it mixes, channel remixing and
+# the int16 down-mix. modules/audio_mixer/ itself is a whole directory in fetch.sh.
+api/audio/audio_mixer.h
+api/audio/audio_frame.h
+api/audio/audio_frame.cc
+api/audio/audio_view.h
+api/audio/channel_layout.h
+api/audio/channel_layout.cc
+audio/utility/channel_mixer.h
+audio/utility/channel_mixer.cc
+audio/utility/channel_mixing_matrix.h
+audio/utility/channel_mixing_matrix.cc
+common_audio/audio_util.cc

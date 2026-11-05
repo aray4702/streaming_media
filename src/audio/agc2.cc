@@ -34,12 +34,17 @@ void FixedDigitalLevelEstimator::SetSamplesPerChannel(int samples_per_channel) {
   samples_in_sub_frame_ = samples_per_channel / kSubFramesInFrame;
 }
 
-std::array<float, kSubFramesInFrame> FixedDigitalLevelEstimator::ComputeLevel(std::span<const float> frame) {
-  // Max envelope without smoothing.
+std::array<float, kSubFramesInFrame> FixedDigitalLevelEstimator::ComputeLevel(std::span<const float> frame,
+                                                                             int num_channels) {
+  // Max envelope without smoothing, over every channel.
   std::array<float, kSubFramesInFrame> envelope{};
-  for (int sub_frame = 0; sub_frame < kSubFramesInFrame; ++sub_frame) {
-    for (int i = 0; i < samples_in_sub_frame_; ++i) {
-      envelope[sub_frame] = std::max(envelope[sub_frame], std::abs(frame[sub_frame * samples_in_sub_frame_ + i]));
+  const size_t channel_size = frame.size() / static_cast<size_t>(num_channels);
+  for (int ch = 0; ch < num_channels; ++ch) {
+    const std::span<const float> channel = frame.subspan(static_cast<size_t>(ch) * channel_size, channel_size);
+    for (int sub_frame = 0; sub_frame < kSubFramesInFrame; ++sub_frame) {
+      for (int i = 0; i < samples_in_sub_frame_; ++i) {
+        envelope[sub_frame] = std::max(envelope[sub_frame], std::abs(channel[sub_frame * samples_in_sub_frame_ + i]));
+      }
     }
   }
   // Envelope increases happen one step earlier so the gain decrease doesn't
@@ -161,15 +166,20 @@ void ComputePerSampleSubframeFactors(const std::array<float, kSubFramesInFrame +
 
 Limiter::Limiter(int samples_per_channel) : level_estimator_(samples_per_channel) {}
 
-void Limiter::Process(std::span<float> frame) {
-  const auto level_estimate = level_estimator_.ComputeLevel(frame);
+void Limiter::Process(std::span<float> frame, int num_channels) {
+  const auto level_estimate = level_estimator_.ComputeLevel(frame, num_channels);
   scaling_factors_[0] = last_scaling_factor_;
   std::transform(level_estimate.begin(), level_estimate.end(), scaling_factors_.begin() + 1,
                  [this](float x) { return interp_gain_curve_.LookUpGainToApply(x); });
-  std::span<float> per_sample(per_sample_scaling_factors_.data(), frame.size());
+  const size_t samples_per_channel = frame.size() / static_cast<size_t>(num_channels);
+  std::span<float> per_sample(per_sample_scaling_factors_.data(), samples_per_channel);
   ComputePerSampleSubframeFactors(scaling_factors_, per_sample);
-  for (size_t j = 0; j < frame.size(); ++j) {
-    frame[j] = std::clamp(frame[j] * per_sample[j], kMinFloatS16Value, kMaxFloatS16Value);
+  // ScaleSamples: the same factors on every channel.
+  for (size_t ch = 0; ch < static_cast<size_t>(num_channels); ++ch) {
+    float* channel = frame.data() + ch * samples_per_channel;
+    for (size_t j = 0; j < samples_per_channel; ++j) {
+      channel[j] = std::clamp(channel[j] * per_sample[j], kMinFloatS16Value, kMaxFloatS16Value);
+    }
   }
   last_scaling_factor_ = scaling_factors_.back();
 }

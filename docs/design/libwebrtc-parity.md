@@ -268,7 +268,7 @@ control, high-pass filter, voice activity, transient suppression), `common_audio
 `audio/audio_level.*`, `modules/audio_coding/codecs/cng/`, `audio/channel_send.cc`. Every row that needs one
 of them says "file needed" and is listed in the open questions.
 
-**Where it runs.** The eleven modules in `src/audio/` (6.1 to 6.9, 6.11, 6.12) are used by their unit, e2e and bench
+**Where it runs.** (The receive-side mixer, 6.13, is in 6.4 below.) The eleven modules in `src/audio/` (6.1 to 6.9, 6.11, 6.12) are used by their unit, e2e and bench
 tests only. Neither the test bench call (`testbench/call.cc`) nor the comparison harness
 (`compare/webrtc/webrtc_call.cc`) processes audio samples: both send libopus 55513e81's packets every 20 ms
 (the bench since #457) and measure the receive side; the bench's decoder is a model. The harness registers only the transport-cc extension, so the audio-level
@@ -322,6 +322,32 @@ double-talk test instead of AEC3's matched-filter delay estimate and adaptive fi
 3. **Add to #57:** `modules/audio_processing/` (aec3, ns, agc2, `high_pass_filter.*`, transient, vad),
    `common_audio/` (resampler, vad), `audio/audio_level.*`, `audio/channel_send.cc`,
    `modules/audio_coding/codecs/cng/`, `call/bitrate_allocator.cc`.
+
+### 6.4 Receive-side mixing for group calls (`AudioMixerImpl`, `src/audio/audio_mixer.cc`, #1175)
+
+Reference files: `modules/audio_mixer/` (`audio_mixer_impl.*`, `frame_combiner.*`,
+`default_output_rate_calculator.*`, `audio_frame_manipulator.*`, `output_rate_calculator.h`, their unit tests),
+`api/audio/audio_mixer.h`, `api/audio/audio_frame.*`, `audio/utility/audio_frame_operations.*`,
+`audio/utility/channel_mixer.*`, `channel_mixing_matrix.*`, `common_audio/audio_util.cc`, and the callers
+`audio/channel_receive.cc` (`GetAudioFrameWithInfo`, `PreferredSampleRate`) and `media/engine/webrtc_voice_engine.cc`
+(`AudioMixerImpl::Create()` unless the app injects a mixer). The mixer was removed in #27 under "one-to-one calls";
+the group calls of the Owner's decision on #1160 bring it back.
+
+**M157 mixes every unmuted source.** `AudioMixerImpl::GetAudioFromSources` adds every source whose
+`GetAudioFrameWithInfo` returns `kNormal`; there is no `kMaximumAmountOfMixedAudioSources` (3 loudest) selection and
+no ramp-in/out of sources in M157 (both were in older releases; `audio_frame_manipulator.cc` keeps `Ramp` and
+`AudioMixerCalculateEnergy`, which the M157 mixer doesn't call). Selecting the 3 loudest would be a deviation from
+M157 and needs an Owner decision (#1175).
+
+| Our module | libwebrtc | Difference | Status | Issue |
+|---|---|---|---|---|
+| `AudioMixerImpl` | `audio_mixer_impl.cc` | Same order per `Mix`: preferred rates, output rate, one frame from every source at that rate, `kNormal` frames to the combiner, `number_of_streams` = every registered source. No mutex or reference counting (the library is single-threaded; the caller serializes calls). The `WebRTC.Audio.AudioMixer.NewHighestSourceCount` histogram is the `max_source_count` metric. | ported | #1175 |
+| `FrameCombiner` | `frame_combiner.cc` | Same: at most one registered source copies the frame (or mutes the output); otherwise a FloatS16 sum of up to 8 channels and 480 samples per channel, AGC2's `Limiter` when `use_limiter` (the default), `FloatS16ToS16`; timestamp and NTP time the minimum, elapsed time the maximum, packet infos the union. The limiter is the library's AGC2 port, now multi-channel as libwebrtc's (peak over channels, one gain for all). Bit-exact with libwebrtc's prebuilt mixer on 8 scenarios (`sm_mixer_compare`). | ported | #1175 |
+| `DefaultOutputRateCalculator` | `default_output_rate_calculator.cc` | Same: highest preferred rate rounded up to 8, 16, 32 or 48 kHz; 48 kHz with no source. | ported | #1175 |
+| `RemixFrame` | `audio_frame_manipulator.cc`, `audio_frame_operations.cc`, `channel_mixer.cc` | Mono and stereo as libwebrtc (`AudioFrameOperations` down-mix with an int32 sum and truncating division, in-place up-mix), and `ChannelMixer`'s VoIP case (mono into N >= 3: front left and right). The rest of `ChannelMixer` (other layouts with more than two channels) is not ported: such a frame is left out of the mix and counted in `remix_unsupported`. A call's Opus streams are mono or stereo. | ported (mono/stereo); multichannel layouts not ported | #1175 |
+
+**Where it runs.** Not in the test bench or `sm_compare` (one-to-one calls). The group-call client's playout
+(`apps/call`, C20) is meant to use it in place of its saturating sum; see #1175 for the state of that change.
 
 ## 7. Video quality and processing
 

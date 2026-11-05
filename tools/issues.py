@@ -295,6 +295,14 @@ upper ones and merges them again.
 
 The split has to keep the bands apart (so the suppression of one band does not leak into another as aliasing) and
 put the signal back together at its own level without audible artefacts, with as little added delay as possible.""",
+    "6.13": """\
+In a group call every other participant arrives as its own audio stream, but the speaker plays one. The receiver has
+to mix the streams into one 10 ms frame at a time, at a rate that loses none of them, even as participants join,
+leave, mute or run at different sample rates.
+
+Adding the streams is not enough: two or three people talking at once, or one loud talker over others, push the sum
+past full scale, and a plain saturating sum flattens every peak into audible distortion. libwebrtc sums in floating
+point and runs AGC2's limiter over the mix, which turns the gain down smoothly just before the peaks would clip.""",
     # ------------------------------------------------------------------ 7
     "7.1": """\
 When a frame cannot be decoded, the receiver keeps showing the last good picture, and the user sees frozen

@@ -41,6 +41,8 @@ DIRS=(
   modules/third_party/fft
   modules/audio_processing/capture_levels_adjuster
   common_audio/third_party/spl_sqrt_floor
+  # Group calls (#1175): the receive-side mixer, AudioMixerImpl and FrameCombiner.
+  modules/audio_mixer
   # Milestone 3, connectivity (#944): ICE, STUN, TURN and DTLS (p2p), and data channels (dcSCTP).
   p2p
   net/dcsctp
