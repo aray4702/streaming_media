@@ -56,7 +56,7 @@ list(TRANSFORM SM_COMPARE_TLS_SOURCES PREPEND ${SM_ROOT}/src/tls/)
 # Same test bench sources as sm_testbench_lib (testbench/CMakeLists.txt); ice_transport.cc without SM_TESTBENCH_ICE: `transport ice`
 # scenarios run as direct calls here, and say `compare off` (#1087).
 add_library(sm_all STATIC ${SM_SOURCES} ${SM_COMPARE_TLS_SOURCES} ${SM_ROOT}/testbench/scenario.cc
-            ${SM_ROOT}/testbench/call.cc ${SM_ROOT}/testbench/turn_detector.cc ${SM_ROOT}/testbench/ai_source.cc
+            ${SM_ROOT}/testbench/call.cc ${SM_ROOT}/testbench/sfu.cc ${SM_ROOT}/testbench/turn_detector.cc ${SM_ROOT}/testbench/ai_source.cc
             ${SM_ROOT}/testbench/ice_transport.cc)
 target_include_directories(sm_all PUBLIC ${SM_ROOT}/include ${SM_ROOT}/testbench)
 target_include_directories(sm_all SYSTEM PRIVATE ${WEBRTC_DIR}/include/third_party/boringssl/src/include)

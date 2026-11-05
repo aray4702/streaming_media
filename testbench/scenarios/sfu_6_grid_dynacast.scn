@@ -1,0 +1,17 @@
+name sfu_6_grid_dynacast
+describe Group call of 6 through the simulated SFU (C21, #1180) shown as a grid: every receiver asks for the middle layer (LiveKit's adaptive stream by tile size), so dynacast pauses each publisher's top layer and the uplinks carry two layers (#1173, #1178)
+duration 30s
+call sfu 6
+compare off  # sm_compare runs one-way calls only: libwebrtc's side has no SFU (C21)
+sfu_max_layer 1
+at 0s capacity=5000kbps delay=15ms queue=200ms
+reverse at 0s capacity=25000kbps delay=15ms queue=200ms
+# Seeds 1-5 (C21): nobody asks for the top layer, so no publisher sends it, and each uplink carries about 1 Mbps
+# instead of about 3.4 Mbps; every receiver gets the middle layer (360p) of every sender, smoothly.
+expect p1.publish_layer2_kbps < 1
+expect p6.publish_layer2_kbps < 1
+expect p1.upload_kbps < 1300
+expect p6.upload_kbps < 1300
+expect p3.recv_height_mean >= 300
+expect p3.recv_height_mean <= 360
+expect sfu.freeze_count <= 2
