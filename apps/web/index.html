@@ -34,7 +34,9 @@
   fps, codec); joins and leaves are logged under the grid. Mute, Video (the camera) and Hang up; n/6 in the room.
   report=1 posts report.group: per remote participant the received audio and video, its audio level, speaking, mic
   and camera state and stats; this page's own state; the active speakers, every speaker seen, who joined and left
-  since this page joined and the room's count. For the tests:
+  since this page joined and the room's count. For the real group call (C21, tools/real_group_call.py) each received
+  participant also carries its video freezes, loss and jitter buffer delays and the subscriber's RTT, and sending.layers
+  this page's simulcast layers (outbound-rtp: bytes sent, size, fps, active, qualityLimitationReason). For the tests:
     mic=0       join with the microphone published but muted (Mute unmutes it);
     cam=0       join with the camera off (Video starts it);
     leave=<s>   leave the room (as Hang up does) s seconds after joining;
@@ -396,13 +398,22 @@ function closeGroup() {
 function addTrackStats(s, rep) {
   const byId = {}; rep.forEach(r => { byId[r.id] = r; });
   rep.forEach(r => {
+    // The jitter buffer's mean delay per emitted sample or frame, in ms (C21: tools/real_group_call.py).
+    const jb = r.jitterBufferEmittedCount ? Math.round(1000 * r.jitterBufferDelay / r.jitterBufferEmittedCount) : 0;
     if (r.type === 'inbound-rtp' && r.kind === 'audio') {
       s.audioBytesIn += r.bytesReceived || 0; s.audioPacketsLost += r.packetsLost || 0;
       s.audioPacketsReceived += r.packetsReceived || 0; s.audioJitterMs = Math.round((r.jitter || 0) * 10000) / 10;
+      s.audioJitterBufferMs = jb;
     } else if (r.type === 'inbound-rtp' && r.kind === 'video') {
       s.videoFrames += r.framesDecoded || 0; s.videoWidth = r.frameWidth || s.videoWidth;
       s.videoHeight = r.frameHeight || s.videoHeight; s.videoFps = r.framesPerSecond || 0;
       const c = byId[r.codecId]; if (c) s.videoCodec = c.mimeType;
+      s.videoBytesIn = r.bytesReceived || 0; s.videoPacketsLost = r.packetsLost || 0;
+      s.videoFreezes = r.freezeCount || 0; s.videoFreezeMs = Math.round(1000 * (r.totalFreezesDuration || 0));
+      s.videoJitterBufferMs = jb;
+    } else if (r.type === 'transport' && byId[r.selectedCandidatePairId]) {
+      const pair = byId[r.selectedCandidatePairId];
+      if (pair.currentRoundTripTime != null) s.rttMs = Math.round(1000 * pair.currentRoundTripTime);
     } else if (r.type === 'outbound-rtp' && r.kind === 'audio') {
       s.audioBytesOut += r.bytesSent || 0;
     } else if (r.type === 'outbound-rtp' && r.kind === 'video') {
@@ -412,6 +423,9 @@ function addTrackStats(s, rep) {
         s.videoWidth = r.frameWidth || 0; s.videoHeight = r.frameHeight || 0; s.videoFps = r.framesPerSecond || 0;
       }
       const c = byId[r.codecId]; if (c) s.videoCodec = c.mimeType;
+      (s.layers = s.layers || []).push({rid: r.rid || '', active: r.active !== false, bytesSent: r.bytesSent || 0,
+        width: r.frameWidth || 0, height: r.frameHeight || 0, fps: r.framesPerSecond || 0,
+        qualityLimitation: r.qualityLimitationReason || '', encoder: r.encoderImplementation || ''});
     }
   });
 }
@@ -472,6 +486,10 @@ async function groupReport() {
                                                           maxBitrate: e.maxBitrate || 0}));
     out.sending.codec = (p.codecs && p.codecs[0] && p.codecs[0].mimeType) || '';
   }
+  // Per simulcast layer (outbound-rtp): bytes sent, size, fps, active and the quality limitation (C21).
+  out.sending.layers = mine.layers || [];
+  out.sending.audioBytesOut = mine.audioBytesOut;
+  out.sending.videoBytesOut = mine.videoBytesOut;
   out.connection = G.room.state;
   out.identity = lp.identity || myId;
   out.micMuted = micMuted(lp);
