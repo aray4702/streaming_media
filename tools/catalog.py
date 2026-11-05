@@ -1893,7 +1893,8 @@ ALGORITHMS = [
          problems=["Receiver and sender reports, RTT and feedback -> one RTCP engine per session",
                    "Early feedback (NACK, PLI, FIR, loss notification, transport-cc, REMB) -> sent at once, one datagram per libwebrtc send call"],
          headers=["rtp/rtcp_engine.h", "rtp/rtcp_sdes_bye.h"], unit=["RtcpEngine", "RtcpSdesBye"], e2e=["E2E_RtpSession"],
-         bench=[],
+         bench=["rtp/SdesCname_SerializeParse", "rtp/Bye_SerializeParse", "rtp/RtcpEngine_CompoundReportBuildAndParse",
+                "rtp/RtcpEngine_NackPliFeedbackBuildAndParse"],
          scenario="Two sessions exchange bytes over sim::NetworkLink (tests/e2e/rtp_session_e2e_test.cc): reports "
                   "flow in both directions at the scheduled intervals, RTT is measured from SR and RR, and feedback "
                   "requests reach the module that acts on them.",
@@ -1938,7 +1939,7 @@ ALGORITHMS = [
          problems=["Packetization, sequence numbers, RTX history and RED -> RtpSender",
                    "Pacing, transport-wide sequence numbers and congestion control hand-off -> SendSideController"],
          headers=["rtp/rtp_sender.h", "rtp/send_side_controller.h"], unit=["RtpSender", "SendSideController"],
-         e2e=["E2E_RtpSender"], bench=[],
+         e2e=["E2E_RtpSender"], bench=["rtp/RtpSender_SendVideoFramePaced"],
          scenario="Frames go through RtpSender and SendSideController over sim::NetworkLink; the test checks the "
                   "packet bytes, retransmission on NACK, pacing and that the transport-cc feedback drives the "
                   "target rate.",
@@ -1988,7 +1989,7 @@ ALGORITHMS = [
     dict(id="9.3", slug="rtp-receiver", title="RTP receiver",
          problems=["Parsing, demultiplexing and repair on the receive path -> RtpReceiver",
                    "Frame assembly, keyframe requests and playout scheduling -> RtpReceiver"],
-         headers=["rtp/rtp_receiver.h"], unit=["RtpReceiver"], e2e=["E2E_RtpReceiver"], bench=[],
+         headers=["rtp/rtp_receiver.h"], unit=["RtpReceiver"], e2e=["E2E_RtpReceiver"], bench=["rtp/RtpReceiver_ReceivePacket"],
          scenario="Video and audio streams over lossy, reordering links: RTX, FEC and NACK recover packets, the "
                   "packet buffer releases decodable frames, and audio is unwrapped from RED into the jitter buffer.",
          notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#9-rtp-session-layer) for the differences from libwebrtc. Frame ids and dependencies come from sequence numbers rather than a descriptor (design 6.4). LNTF is "
@@ -2016,7 +2017,8 @@ ALGORITHMS = [
                       "(docs/results/472-h264-receive-switches-trial.md)."),
     dict(id="9.4", slug="session", title="RTP session facade",
          problems=["Wiring the building blocks by hand -> one rtp::Session per endpoint of a one-to-one call"],
-         headers=["rtp/session.h", "rtp/call_stats.h"], unit=["Session", "SessionMultiStream", "CallStats"], e2e=["E2E_RtpSession"], bench=[],
+         headers=["rtp/session.h", "rtp/call_stats.h"], unit=["Session", "SessionMultiStream", "CallStats"], e2e=["E2E_RtpSession"],
+         bench=["rtp/Session_VideoFrameEndToEnd", "rtp/Q_Session_Video_5pct_loss"],
          scenario="The test bench runs a full call through two rtp::Session objects, and every packet crosses "
                   "sim::NetworkLink as bytes. The whole scenario suite is the end-to-end test.",
          notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#9-rtp-session-layer) for the differences from libwebrtc. Pull-based: every output is a Take*() call, so the order of effects is fixed. The app keeps the "
@@ -2034,7 +2036,8 @@ ALGORITHMS = [
                       "recorded by ctest and CI; tools/run_all.sh does not run these suites yet."),
     dict(id="9.5", slug="h264", title="H.264 packetization (RFC 6184) and fake encoder",
          problems=["Video payload format on the wire -> H.264 packetization-mode 1: single NAL, STAP-A, FU-A; mode 0: single NAL units"],
-         headers=["rtp/h264.h", "rtp/fake_h264.h", "rtp/sps_vui_rewriter.h"], unit=["H264", "SpsVuiRewriter"], e2e=["E2E_RtpSession"], bench=[],
+         headers=["rtp/h264.h", "rtp/fake_h264.h", "rtp/sps_vui_rewriter.h"], unit=["H264", "SpsVuiRewriter"], e2e=["E2E_RtpSession"],
+         bench=["rtp/H264_Keyframe1080p_PacketizeDepacketize", "rtp/H264_DeltaFrame1080p_PacketizeDepacketize"],
          scenario="The test bench's encoder model emits SPS, PPS and IDR on keyframes and one slice on delta "
                   "frames; the packetizer splits them, the depacketizer rebuilds the access unit.",
          notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#9-rtp-session-layer) for the differences from libwebrtc. Follows libwebrtc's RtpPacketizerH264 and VideoRtpDepacketizerH264 (checked by the interop test "
@@ -2148,7 +2151,8 @@ MILESTONE3 = [
         "Requirement C3 part 3. A `UDPPort` gathers a host candidate; a `StunPort` also asks the STUN server for its "
         "server-reflexive address and checks the answer against libwebrtc's address-family and priority rules.",
         "Cases ported from `port_unittest.cc`, `stun_port_unittest.cc`, `candidate_unittest.cc`, `socket_address_unittest.cc` and "
-        "`network_unittest.cc` (parity 10.3 lists those not ported); counts are in the Test methods section. PRs #1020, #1010."),
+        "`network_unittest.cc` (parity 10.3 lists those not ported); counts are in the Test methods section. PRs #1020, #1010.",
+        bench=["p2p/UdpPort_GatherHostAndSrflx"]),
     _m3("1.3", "connections", "Connections: candidate-pair checks",
         "Choosing a working path -> a connection per candidate pair, with STUN pings, nomination and consent freshness (RFC 7675)",
         ["p2p/connection.h", "p2p/connection_info.h", "p2p/stun_request.h"],
@@ -2160,7 +2164,8 @@ MILESTONE3 = [
         "Requirement C3 part 4. Ping intervals, RTT estimation, the writable/receiving timeouts and the consent "
         "checks follow `connection.cc` and `p2p_constants.h`.",
         "The cases of `connection_unittest` and the connection tests of `port_unittest.cc` pass (`unit.P2pConnection`, "
-        "`unit.P2pConnectionCall`); PR #1021."),
+        "`unit.P2pConnectionCall`); PR #1021.",
+        bench=["p2p/Connection_CheckRoundTrip"]),
     _m3("1.4", "port-allocation", "Port allocation",
         "Gathering candidates on every interface -> network enumeration and a port allocator that opens ports as networks "
         "appear: UDP, server-reflexive, relay and ICE-TCP (RFC 6544) host candidates",
@@ -2183,6 +2188,7 @@ MILESTONE3 = [
         "one). The ICE comparison runs both stacks with TCP candidates on and with UDP blocked "
         "(`unit.P2pIceCompare` `TcpOnlyPathConnectsAsLibwebrtc`): the same values as libwebrtc M157 on every seed. "
         "PRs #1025, #1030 and #1155 (#1151).",
+        bench=["p2p/PortAllocator_GatherSession"],
         other_tests="`sm_ice_compare`'s ICE-TCP table (UDP blocked at one or both endpoints; #1151)."),
     _m3("1.5", "ice-controller", "The ICE controller",
         "Deciding which pair to ping, use and switch to -> libwebrtc's `BasicIceController` and the wrapping active controller",
@@ -2197,7 +2203,8 @@ MILESTONE3 = [
         "Requirement C3 part 6.",
         "`ice_controller_test.cc` is `basic_ice_controller_unittest`'s cases on the emulated clock; PR #1028. "
         "`unit.P2pIceCompare` and `unit.P2pIceCompareTls` compare connection time, the pair chosen and recovery after a network change "
-        "with libwebrtc's ICE where the compare build is present."),
+        "with libwebrtc's ICE where the compare build is present.",
+        bench=["p2p/IceController_SortPingPrune"]),
     _m3("1.6", "ice-agent", "The ICE agent (P2PTransportChannel)",
         "One transport per media bundle that finds, checks and keeps a path -> `P2PTransportChannel`",
         ["p2p/p2p_transport_channel.h", "p2p/ice_agent_interface.h", "p2p/ice_transport_internal.h", "p2p/transport_description.h",
@@ -2222,6 +2229,7 @@ MILESTONE3 = [
         "`NoPairOfLocalRelayCandidateWithRemoteMdnsCandidate` at the TURN port) pass on the emulated network, and "
         "`interop.Browser.mdns_chrome_offers` connects headless Chrome, with its mDNS obfuscation on, host to host to "
         "our endpoint (skipped where `.local` names don't resolve).",
+        bench=["p2p/IceAgent_ConnectBehindNats", "p2p/IceAgent_SendPacket"],
         other_tests="`interop.Browser.mdns_chrome_offers` (`tests/interop/browser`, `--mdns`); `unit.OsDnsResolver` "
         "(`tests/unit/net/os_dns_resolver_test.cc`)."),
     _m3("1.7", "ice-lite", "ICE-lite for the AI server",
@@ -2233,7 +2241,8 @@ MILESTONE3 = [
         "`p2p/base/ice_lite_agent.{h,cc}`, `p2p/test/fake_ice_lite_agent`",
         ["10.12"],
         "Requirement C3 part 7.",
-        "The cases of `ice_lite_agent_unittest` and a full-versus-lite call over the emulated network pass; PR #1045."),
+        "The cases of `ice_lite_agent_unittest` and a full-versus-lite call over the emulated network pass; PR #1045.",
+        bench=["p2p/IceLite_FullAgentConnects"]),
     _m3("1.8", "turn-client", "TURN client (UDP, TCP, TLS)",
         "Peers behind symmetric NATs or firewalls -> relay candidates through a TURN server on UDP, TCP or TLS (port 443)",
         ["p2p/turn_port.h", "sim/turn_server.h"],
@@ -2247,6 +2256,7 @@ MILESTONE3 = [
         "`turn_port_unittest.cc` and `turn_server_unittest.cc` cases on the emulated network, over all three transports. "
         "`interop.Coturn` runs the client against coturn 4.6.1 (UDP, TCP and TLS, each with long-term and REST credentials: "
         "6 cases; skipped where coturn is not installed). `fuzz.turn` replays the TURN fuzz corpus. PRs #1041, #1049, #1052.",
+        bench=["p2p/TurnPort_AllocateUdp", "p2p/TurnPort_ChannelDataRelay"],
         other_tests="`interop.Coturn` (6 cases, `tests/interop/coturn_test.cc`); `sm_ice_compare` through the emulated TURN server (PRs #1056, #1066)."),
     _m3("1.9", "tcp-sockets", "TCP packet sockets",
         "Networks that block UDP -> ICE and TURN over TCP: RFC 4571 framing of packets on a stream",
@@ -2261,6 +2271,7 @@ MILESTONE3 = [
         "the framing classes are ports.",
         "`async_tcp_socket_unittest.cc` and `async_stun_tcp_socket_unittest.cc` cases; the stream-in-pieces fuzz target "
         "`tcp_framing` (corpus replayed as `fuzz.tcp_framing`). PR #1040 (#1034).",
+        bench=["p2p/TcpSocket_Rfc4571Framing", "p2p/TcpSocket_StunChannelDataFraming"],
         extra_files=[]),
     _m3("1.10", "sdp", "SDP model and parse/write",
         "Describing a call to a peer, a browser included -> the session description model and SDP text in both directions",
@@ -2280,6 +2291,7 @@ MILESTONE3 = [
         "`SerializeDeserializeWithHostnameCandidate`; #1152); `fuzz/sdp_parser_fuzzer.cc` (after "
         "libwebrtc's `sdp_parser_fuzzer.cc`) checks that a write/parse/write round trip is stable (`fuzz.sdp_parser`). "
         "PR #1073.",
+        bench=["p2p/Sdp_ParseChromeOffer", "p2p/Sdp_WriteChromeOffer"],
         extra_files=[]),
     _m3("1.11", "offer-answer", "Offer/answer generation",
         "Agreeing on codecs, extensions and transports -> JSEP offers and answers for Opus, H.264, RTX, transport-cc and the data section",
@@ -2291,7 +2303,8 @@ MILESTONE3 = [
         "`pc/media_session.{h,cc}`, `pc/codec_vendor.{h,cc}`, `pc/payload_type_suggester`, `p2p/base/transport_description_factory.{h,cc}`",
         ["10.18"],
         "Requirement C6 part 2.",
-        "The cases of `media_session_unittest.cc` and `transport_description_factory_unittest.cc` that apply to the subset. PR #1084."),
+        "The cases of `media_session_unittest.cc` and `transport_description_factory_unittest.cc` that apply to the subset. PR #1084.",
+        bench=["p2p/OfferAnswer_CreateOfferAndAnswer"]),
     _m3("1.12", "endpoint", "The endpoint (PeerEndpoint)",
         "Setting up a whole call from SDP -> one object that applies descriptions and wires ICE, DTLS-SRTP, RTP and data "
         "channels; and receiving a group call from an SFU on one connection, with tracks added and removed by renegotiation",
@@ -2315,6 +2328,7 @@ MILESTONE3 = [
         "`tests/interop/browser` (a call with headless Chrome; `multistream_chrome_offers`: Chrome sends 10 tracks in "
         "three offers). PRs #1089, #1093; C18's PR.",
         e2e=["E2E_MultiStream"],
+        bench=["p2p/Endpoint_CallSetup"],
         other_tests="`tests/interop/browser` (a call with headless Chrome, a data channel message each way; Chrome sending "
                     "5 participants' audio and video on one connection, renegotiating as they join and leave)."),
 
