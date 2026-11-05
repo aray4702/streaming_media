@@ -984,7 +984,7 @@ StreamConfigs MakeStreamConfigs(const Scenario& s, int sr, DataRate audio_wire_r
   // The bench's H.264 stream has no picture id, so with NACK on libwebrtc sends
   // no video FEC (ShouldDisableRedAndUlpfec) and neither does the session.
   video_cfg.deliver_bitstream = false;  // The bench has no decoder.
-  if (s.simulcast > 1 && !s.two_way && !s.mesh) {
+  if (s.simulcast > 1 && !s.two_way) {
     // One stream per layer, each with its SSRC, RTX SSRC and RID (C17).
     for (int i = 0; i < s.simulcast; ++i) {
       rtp::VideoStreamConfig l = video_cfg;
@@ -1027,7 +1027,7 @@ rtp::SessionConfig MakeSessionConfig(const Scenario& s, EventLog& events, uint32
   c.local_ssrc = rtcp_ssrc;
   c.cname = cname;
   c.extensions.Register(1, sync::uri::kTransportCc);
-  if (s.simulcast > 1 && !s.two_way && !s.mesh) {
+  if (s.simulcast > 1 && !s.two_way) {
     // The layers name themselves by RID (C17), as sm_compare's libwebrtc side registers the same ids.
     c.extensions.Register(kRidExtId, sync::uri::kRid);
     c.extensions.Register(kRepairedRidExtId, sync::uri::kRepairedRid);
