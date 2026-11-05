@@ -89,5 +89,26 @@ stream changes; the 200-seed means are the measure, and they were level before a
 `simulcast_clean_link`, `simulcast_capacity_drop`, `simulcast_capacity_drop_low_layer`, `simulcast_ramp_up` on 10
 seeds: 0 gaps before and after. Single-stream (the same link without `simulcast`) is unchanged by construction.
 
-The scenario suite against the baseline (`tools/testbench_compare.py`, seed 1): only the five simulcast scenarios
-change; the table is in the PR.
+The scenario suite against the baseline (`tools/testbench_compare.py --markdown`, seed 1, macOS arm64; every other
+scenario is byte-identical):
+
+| scenario | metric | baseline | result | status |
+|---|---|---|---|---|
+| issue_1171_simulcast_random_loss | (new scenario) | - | - | new |
+| simulcast_capacity_drop | audio.late_discards | 41 | 38 | improved |
+| simulcast_capacity_drop | repair.overhead_pct | 5.017 | 3.295 | improved |
+| simulcast_capacity_drop_low_layer | audio.late_discards | 41 | 38 | improved |
+| simulcast_ramp_up | audio.late_discards | 16 | 25 | REGRESSED |
+| simulcast_ramp_up | audio.mouth_to_ear_p95_ms | 163.6 | 186.5 | REGRESSED |
+| simulcast_ramp_up | cc.send_over_target_p95_pct | 6.272 | 7.858 | REGRESSED |
+| simulcast_ramp_up | video.delay_jitter_buffer_p95_ms | 15.53 | 37.5 | REGRESSED |
+| simulcast_ramp_up | video.e2e_delay_p95_ms | 66.22 | 88.95 | REGRESSED |
+| simulcast_ramp_up | video.longest_freeze_ms | 32.78 | 11.05 | improved |
+
+The `simulcast_ramp_up` regressions are seed 1's: the padding now resends the layer that last sent, so the packets
+on the 1 Mbps link before the rise change and seed 1's delays with them. On its 10 seeds the means move toward
+libwebrtc's (ours before -> after, libwebrtc): `video.e2e_delay_p95_ms` 67.7 -> 71.6 (71.7),
+`audio.mouth_to_ear_p95_ms` 193.2 -> 191.5 (190.0), `video.longest_freeze_ms` 28.5 -> 27.7 (24.3),
+`audio.jb_delay_p95_ms` 127 -> 124 (123). `simulcast_capacity_drop`: `repair.overhead_pct` 5.9 -> 5.6 (5.6),
+`audio.mouth_to_ear_p95_ms` 613.9 -> 603.0 (602.9), `video.e2e_delay_p95_ms` 79.7 -> 82.3 (79.6, within its band).
+None of the four has a gap on 10 seeds before or after.
