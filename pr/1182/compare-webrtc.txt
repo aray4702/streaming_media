@@ -408,8 +408,8 @@ issue_1171_simulcast_random_loss - Simulcast send (C17,
   audio.concealed_pct                     0.4          0.4  =
   audio.interruptions                       0            0  =
   audio.longest_interruption_ms          26.1         39.8  =
-  audio.mouth_to_ear_p95_ms               276          275  =
-  audio.jb_delay_p95_ms                   175          178  =
+  audio.mouth_to_ear_p95_ms               275          275  =
+  audio.jb_delay_p95_ms                   174          178  =
   video.freeze_count                      1.5          1.3  =
   video.freeze_total_ms                   358          308  =
   video.longest_freeze_ms                 230          181  =
@@ -420,7 +420,7 @@ issue_1171_simulcast_random_loss - Simulcast send (C17,
   video.time_to_first_frame_ms            336          340  =
   video.avg_kbps                         2349         2346  =
   video.keyframe_requests                   0            0  =
-  sync.av_offset_p95_ms                  97.9          106  =
+  sync.av_offset_p95_ms                  98.4          106  =
   cc.utilization_pct                     90.7         90.7  =
   cc.queue_p95_ms                        41.0         35.8  =
   cc.max_settle_ms                        210          220  =
@@ -731,7 +731,7 @@ issue_124_burst_loss_v2 - 3% loss in bursts of ~6 packets, 2 Mbps, every v2 swit
   metric                                   sm       webrtc  better
   audio.concealed_pct                     1.4          1.4  =
   audio.interruptions                       0            0  =
-  audio.longest_interruption_ms            99         98.7  =
+  audio.longest_interruption_ms          98.9         98.7  =
   audio.mouth_to_ear_p95_ms               305          298  =
   audio.jb_delay_p95_ms                   195          188  =
   video.freeze_count                      1.5          1.6  =
@@ -4080,8 +4080,8 @@ issue_410_queue_sample_phase - Audio-only call on an idle 200 kbps link: the bot
   audio.concealed_pct                     0.5          0.5  =
   audio.interruptions                       0            0  =
   audio.longest_interruption_ms          64.2         64.2  =
-  audio.mouth_to_ear_p95_ms               180          180  =
-  audio.jb_delay_p95_ms                   131          131  =
+  audio.mouth_to_ear_p95_ms               179          179  =
+  audio.jb_delay_p95_ms                   130          130  =
   cc.utilization_pct                     85.3         85.3  =
   cc.queue_p95_ms                           0            0  =
   cc.max_settle_ms                       4400         4400  =
@@ -5635,7 +5635,7 @@ issue_524_av_sync_off - clean_link with lip sync off (issue
 
 issue_533_opus_decoder_frame_older_than_window - Audio call over a link whose jitter is a 2 s standard deviation: some packets arrive more than 5 s late
   metric                                   sm       webrtc  better
-  audio.concealed_pct                    28.9         28.9  =
+  audio.concealed_pct                    29.0         28.9  =
   audio.interruptions                     6.6          6.6  =
   audio.longest_interruption_ms           389          389  =
   audio.mouth_to_ear_p95_ms              4785         4791  =
@@ -5745,7 +5745,7 @@ issue_536_reverse_outage_45s - forward link healthy, feedback path down for 45 s
   video.time_to_first_frame_ms            206          206  =
   video.avg_kbps                          527          520  =
   video.keyframe_requests                   0            0  =
-  sync.av_offset_p95_ms                   147         1595  sm
+  sync.av_offset_p95_ms                   147         1596  sm
   cc.utilization_pct                     62.1         61.3  =
   cc.queue_p95_ms                        39.4         40.6  =
   cc.max_settle_ms                        300          300  =
@@ -6044,11 +6044,11 @@ issue_5_adjuster_default - EncoderBitrateAdjuster on by default as in libwebrtc 
   audio.concealed_pct                     0.5          0.5  =
   audio.interruptions                       0            0  =
   audio.longest_interruption_ms          51.1         51.1  =
-  audio.mouth_to_ear_p95_ms               494          494  =
-  audio.jb_delay_p95_ms                   295          295  =
+  audio.mouth_to_ear_p95_ms               495          495  =
+  audio.jb_delay_p95_ms                   296          296  =
   video.freeze_count                        0            0  =
   video.freeze_total_ms                     0            0  =
-  video.longest_freeze_ms                13.7         13.4  =
+  video.longest_freeze_ms                16.1         15.7  =
   video.pause_count                         0            0  =
   video.pause_total_ms                      0            0  =
   video.render_fps                       29.8         29.8  =
@@ -7074,8 +7074,8 @@ issue_773_neteq_flush_reset - Audio-only call: 20 s of 2.5 s jitter without reor
   audio.concealed_pct                    13.0         13.0  =
   audio.interruptions                     6.5          6.5  =
   audio.longest_interruption_ms          2486         2488  =
-  audio.mouth_to_ear_p95_ms              9482         9481  =
-  audio.jb_delay_p95_ms                  2288         2287  =
+  audio.mouth_to_ear_p95_ms              9482         9480  =
+  audio.jb_delay_p95_ms                  2288         2286  =
   cc.utilization_pct                     86.1         86.1  =
   cc.queue_p95_ms                           0            0  =
   cc.max_settle_ms                        100          100  =
@@ -7870,7 +7870,7 @@ issue_893_overshoot_seed9 - issue_466_overshoot_very_low_capacity with seed 9: t
   video.time_to_first_frame_ms           1080         1080  =
   video.avg_kbps                         34.5         34.9  =
   video.keyframe_requests                 5.9          5.9  =
-  sync.av_offset_p95_ms                  6713         6340  webrtc
+  sync.av_offset_p95_ms                  6713         6339  webrtc
   cc.utilization_pct                     98.3         98.3  =
   cc.queue_p95_ms                         284          284  =
   cc.max_settle_ms                      40000        40000  =
@@ -8020,8 +8020,8 @@ issue_911_host_rtt_10s - issue_451_host_rtt_near_limit's call with a large but d
   audio.concealed_pct                     1.3          1.3  =
   audio.interruptions                     0.3          0.3  =
   audio.longest_interruption_ms           114          114  =
-  audio.mouth_to_ear_p95_ms               732          749  =
-  audio.jb_delay_p95_ms                   440          441  =
+  audio.mouth_to_ear_p95_ms               731          749  =
+  audio.jb_delay_p95_ms                   439          441  =
   video.freeze_count                      2.6          2.3  =
   video.freeze_total_ms                  1061          983  =
   video.longest_freeze_ms                 572          595  =
@@ -8074,8 +8074,8 @@ issue_921_host_rtt_under_limit - issue_451_host_rtt_near_limit's call with the l
   audio.concealed_pct                     1.3          1.3  =
   audio.interruptions                     0.3          0.3  =
   audio.longest_interruption_ms           114          114  =
-  audio.mouth_to_ear_p95_ms               732          749  =
-  audio.jb_delay_p95_ms                   440          441  =
+  audio.mouth_to_ear_p95_ms               731          749  =
+  audio.jb_delay_p95_ms                   439          441  =
   video.freeze_count                      2.6          2.3  =
   video.freeze_total_ms                  1061          983  =
   video.longest_freeze_ms                 572          595  =
