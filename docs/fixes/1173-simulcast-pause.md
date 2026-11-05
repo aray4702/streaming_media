@@ -77,7 +77,24 @@ off for simulcast.
 | 4 | 19.87 | 2 | 560.6 | 1631 | 0 |
 | 5 | 19.87 | 2 | 558.5 | 1627 | 0 |
 
-Without the pause the top layer runs 30 fps at about 2450 kbps (`simulcast_clean_link`) and the middle layer stays
-at its 500 kbps target. The scenario suite against the baseline is unchanged (no other scenario pauses a layer by
-signaling; the default path changes only when an encoding's active state changes). libwebrtc's values for the new
-scenario come from this PR's `compare-webrtc` run.
+Against libwebrtc (`sm_compare --seeds=5` on macOS arm64 with the prebuilt M157, mean of seeds 1-5):
+
+| metric | this library | libwebrtc M157 |
+|---|---|---|
+| `simulcast.layer2_fps` | 19.9 | 19.9 |
+| `simulcast.layer2_kbps` | 1633.9 | 1635.8 |
+| `simulcast.layer2_keyframes` | 2 | 2 |
+| `simulcast.layer1_kbps` | 557.0 | 557.4 |
+| `simulcast.layer1_keyframes` | 3 | 3 |
+| `simulcast.layer0_keyframes` | 4 | 4 |
+| `simulcast.total_kbps` | 2340.2 | 2342.7 |
+| `cc.goodput_kbps` | 2502.2 | 2504.9 |
+
+`tools/parity_report.py`: 0 gaps on `issue_1173_simulcast_pause` and on the four `simulcast_*` scenarios (5 seeds).
+The keyframe counts match too: libwebrtc keys every layer when the top one comes back (one more keyframe on layers
+0 and 1) and none when it goes.
+
+Without the pause the top layer runs 30 fps at about 2460 kbps (`simulcast_clean_link`) and the middle layer stays
+at its 500 kbps target. The scenario suite against the baseline: 0 regressions, 0 improvements (no other scenario
+pauses a layer by signaling; the default path changes only when an encoding's active state changes); the new
+scenario's baseline is added.

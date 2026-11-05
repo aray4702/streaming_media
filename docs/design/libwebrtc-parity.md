@@ -1333,6 +1333,9 @@ layers' state as libwebrtc's `AssociateTransceiver` does for an existing transce
 the active streams (720p with the top layer paused: max 900 kbps), and `RequiresEncoderReset` re-initializes the
 encoder only when a stream comes back (every layer's next frame a keyframe), not when one goes. The RTP modules stay
 active, as `RtpVideoSender` keeps them without the video-layers-allocation extension (not negotiated by default).
+`issue_1173_simulcast_pause` (the SFU pauses the top layer from 10 to 20 s; `sm_compare` reconfigures libwebrtc's
+`VideoSendStream` with the layer inactive) has no gap: top layer 19.9 fps and 2 keyframes on both, middle layer 557 kbps
+on both.
 
 `sm_compare` runs libwebrtc's `VideoSendStream` with three SSRCs, RTX SSRCs and RIDs and its own
 `SimulcastEncoderAdapter` over the shared encoder model (one per layer, drawing from one generator in layer order, as
