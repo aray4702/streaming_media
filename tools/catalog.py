@@ -1893,7 +1893,8 @@ ALGORITHMS = [
          problems=["Receiver and sender reports, RTT and feedback -> one RTCP engine per session",
                    "Early feedback (NACK, PLI, FIR, loss notification, transport-cc, REMB) -> sent at once, one datagram per libwebrtc send call"],
          headers=["rtp/rtcp_engine.h", "rtp/rtcp_sdes_bye.h"], unit=["RtcpEngine", "RtcpSdesBye"], e2e=["E2E_RtpSession"],
-         bench=[],
+         bench=["rtp/SdesCname_SerializeParse", "rtp/Bye_SerializeParse", "rtp/RtcpEngine_CompoundReportBuildAndParse",
+                "rtp/RtcpEngine_NackPliFeedbackBuildAndParse"],
          scenario="Two sessions exchange bytes over sim::NetworkLink (tests/e2e/rtp_session_e2e_test.cc): reports "
                   "flow in both directions at the scheduled intervals, RTT is measured from SR and RR, and feedback "
                   "requests reach the module that acts on them.",
@@ -1938,7 +1939,7 @@ ALGORITHMS = [
          problems=["Packetization, sequence numbers, RTX history and RED -> RtpSender",
                    "Pacing, transport-wide sequence numbers and congestion control hand-off -> SendSideController"],
          headers=["rtp/rtp_sender.h", "rtp/send_side_controller.h"], unit=["RtpSender", "SendSideController"],
-         e2e=["E2E_RtpSender"], bench=[],
+         e2e=["E2E_RtpSender"], bench=["rtp/RtpSender_SendVideoFramePaced"],
          scenario="Frames go through RtpSender and SendSideController over sim::NetworkLink; the test checks the "
                   "packet bytes, retransmission on NACK, pacing and that the transport-cc feedback drives the "
                   "target rate.",
@@ -1988,7 +1989,7 @@ ALGORITHMS = [
     dict(id="9.3", slug="rtp-receiver", title="RTP receiver",
          problems=["Parsing, demultiplexing and repair on the receive path -> RtpReceiver",
                    "Frame assembly, keyframe requests and playout scheduling -> RtpReceiver"],
-         headers=["rtp/rtp_receiver.h"], unit=["RtpReceiver"], e2e=["E2E_RtpReceiver"], bench=[],
+         headers=["rtp/rtp_receiver.h"], unit=["RtpReceiver"], e2e=["E2E_RtpReceiver"], bench=["rtp/RtpReceiver_ReceivePacket"],
          scenario="Video and audio streams over lossy, reordering links: RTX, FEC and NACK recover packets, the "
                   "packet buffer releases decodable frames, and audio is unwrapped from RED into the jitter buffer.",
          notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#9-rtp-session-layer) for the differences from libwebrtc. Frame ids and dependencies come from sequence numbers rather than a descriptor (design 6.4). LNTF is "
@@ -2016,7 +2017,8 @@ ALGORITHMS = [
                       "(docs/results/472-h264-receive-switches-trial.md)."),
     dict(id="9.4", slug="session", title="RTP session facade",
          problems=["Wiring the building blocks by hand -> one rtp::Session per endpoint of a one-to-one call"],
-         headers=["rtp/session.h", "rtp/call_stats.h"], unit=["Session", "SessionMultiStream", "CallStats"], e2e=["E2E_RtpSession"], bench=[],
+         headers=["rtp/session.h", "rtp/call_stats.h"], unit=["Session", "SessionMultiStream", "CallStats"], e2e=["E2E_RtpSession"],
+         bench=["rtp/Session_VideoFrameEndToEnd", "rtp/Q_Session_Video_5pct_loss"],
          scenario="The test bench runs a full call through two rtp::Session objects, and every packet crosses "
                   "sim::NetworkLink as bytes. The whole scenario suite is the end-to-end test.",
          notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#9-rtp-session-layer) for the differences from libwebrtc. Pull-based: every output is a Take*() call, so the order of effects is fixed. The app keeps the "
@@ -2034,7 +2036,8 @@ ALGORITHMS = [
                       "recorded by ctest and CI; tools/run_all.sh does not run these suites yet."),
     dict(id="9.5", slug="h264", title="H.264 packetization (RFC 6184) and fake encoder",
          problems=["Video payload format on the wire -> H.264 packetization-mode 1: single NAL, STAP-A, FU-A; mode 0: single NAL units"],
-         headers=["rtp/h264.h", "rtp/fake_h264.h", "rtp/sps_vui_rewriter.h"], unit=["H264", "SpsVuiRewriter"], e2e=["E2E_RtpSession"], bench=[],
+         headers=["rtp/h264.h", "rtp/fake_h264.h", "rtp/sps_vui_rewriter.h"], unit=["H264", "SpsVuiRewriter"], e2e=["E2E_RtpSession"],
+         bench=["rtp/H264_Keyframe1080p_PacketizeDepacketize", "rtp/H264_DeltaFrame1080p_PacketizeDepacketize"],
          scenario="The test bench's encoder model emits SPS, PPS and IDR on keyframes and one slice on delta "
                   "frames; the packetizer splits them, the depacketizer rebuilds the access unit.",
          notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#9-rtp-session-layer) for the differences from libwebrtc. Follows libwebrtc's RtpPacketizerH264 and VideoRtpDepacketizerH264 (checked by the interop test "
