@@ -151,6 +151,7 @@ VideoSendId Session::AddVideoSend(const VideoStreamConfig& v) {
   c.max_payload_size = v.max_payload_size;  // Sized per frame from the header (SendVideo).
   c.rtx_ssrc = v.rtx_ssrc;
   c.rtx_payload_type = v.rtx_payload_type;
+  c.rid = v.rid;
   const uint16_t rtx_initial_seq = c.rtx.initial_seq;
   c.rtx = v.rtx;
   c.rtx.initial_seq = rtx_initial_seq;

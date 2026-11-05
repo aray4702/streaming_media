@@ -117,6 +117,9 @@ class ExtensionAccessor {
   // with another length.
   bool SetRaw(RtpPacket& p, const char* uri, std::vector<uint8_t> data) const;
   std::optional<std::vector<uint8_t>> GetRaw(const RtpPacket& p, const char* uri) const;
+  // Drops the element of `uri` from the packet (RTPSender::CopyHeaderAndExtensionsToRtxPacket leaves
+  // the RID out of an RTX packet); the others keep their form. False if the packet has none.
+  bool Remove(RtpPacket& p, const char* uri) const;
 
  private:
   const ExtensionMap& map_;

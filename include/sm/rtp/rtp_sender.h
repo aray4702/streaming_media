@@ -95,6 +95,13 @@ struct RtpSenderConfig {
   // AcknowledgeMid() when the peer has answered. Needs the extension mapped.
   std::string mid;
   int mid_packets = 0;
+  // RID (RFC 8852 RtpStreamId) of a simulcast layer (C17, issue #1162), as RTPSender's rid_
+  // (RtpRtcpInterface::Configuration::rid; AttachMidAndRid, rtp_sender.cc:797-825): written on
+  // the media packets until a report block acks the media SSRC, and as the repaired RID
+  // (RepairedRtpStreamId) on the RTX packets (resends and payload padding) until one acks the RTX
+  // SSRC; an RTX packet never carries the media RID. Empty: no RID (a single stream). Needs the
+  // extensions mapped; at most 16 characters (RtpStreamId::kMaxValueSizeBytes).
+  std::string rid;
   const sync::ExtensionMap* extensions = nullptr;  // Not owned; must outlive the sender.
 
   EventSink* events = nullptr;
@@ -111,6 +118,8 @@ struct RtpSenderStats {
   uint64_t payload_padding_packets = 0;  // RTX payload padding (GeneratePadding), a subset of padding_packets.
   uint64_t nacks_without_rtx = 0;
   uint64_t mid_packets = 0;
+  uint64_t rid_packets = 0;           // Media packets carrying the RID.
+  uint64_t repaired_rid_packets = 0;  // RTX packets carrying the repaired RID.
   uint64_t audio_level_packets = 0;
   uint64_t video_orientation_packets = 0;  // Packets carrying the CVO extension.
   uint64_t abs_capture_time_packets = 0;   // Packets carrying the absolute capture time extension.
@@ -240,14 +249,16 @@ class RtpSender : public MetricsSource {
   size_t PaddingFecPacketHeaderSize() const;
   // RTPSender::RtxPacketOverhead (rtp_sender.cc:564-595): the room a media packet leaves for its
   // RTX resend, 0 without an RTX SSRC. kRtxHeaderSize (2, the original sequence number), plus,
-  // while the media SSRC has been acked and the RTX SSRC not yet, the MID extension's room
-  // (2 + its length; this sender has no RID) and 3 bytes for rounding the extensions up to 4.
+  // while the media SSRC has been acked and the RTX SSRC not yet, the MID and repaired RID
+  // extensions' room (2 + each length) and 3 bytes for rounding the extensions up to 4.
   size_t RtxPacketOverhead() const;
   // RTPSender::ExpectedPerPacketOverhead, the max_media_packet_header_ of UpdateHeaderSizes
   // (rtp_sender.cc:537-540, :736-786): the fixed header plus the registered non-volatile extensions of
   // kVideoExtensionSizes or kAudioExtensionSizes (IsNonVolatile, :116-140): transport-cc,
   // abs-send-time, the audio level on audio, and MID at its largest (RtpMid::kMaxValueSizeBytes, 16)
-  // while the media SSRC, or the RTX SSRC, has not been acked; plus kRtxHeaderSize (2) with an RTX
+  // while the media SSRC, or the RTX SSRC, has not been acked; with a RID, the RID at its largest
+  // (16) while the media SSRC has not been acked, else the repaired RID while the RTX SSRC has not;
+  // plus kRtxHeaderSize (2) with an RTX
   // SSRC. RtpVideoSender::OnBitrateUpdated takes it as the packet overhead of its overhead rate
   // (rtp_video_sender.cc:869-882; issue #577).
   size_t ExpectedPerPacketOverhead() const;
@@ -337,6 +348,10 @@ class RtpSender : public MetricsSource {
   void SetAbsoluteCaptureTime(RtpPacket& p, const sync::AbsoluteCaptureTime& a);
   // Header size of a media packet with the extensions every packet carries, plus CVO and the
   // absolute capture time when given (rtp_sender_video.cc:717, "set them").
+  // AttachMidAndRid(/*rtx=*/true) for a packet built on the RTX SSRC from a stored media packet: the
+  // copied RID is dropped (CopyHeaderAndExtensionsToRtxPacket skips it) and the repaired RID is
+  // written while the RTX SSRC has not been acked.
+  void AttachRtxRid(RtpPacket& p);
   size_t HeaderSizeWith(std::optional<video::Rotation> rotation,
                         const std::optional<sync::AbsoluteCaptureTime>& abs_capture_time) const;
 

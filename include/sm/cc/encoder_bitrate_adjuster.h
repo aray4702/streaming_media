@@ -40,6 +40,7 @@
 #include <cstdint>
 #include <deque>
 #include <optional>
+#include <vector>
 
 #include "sm/core/metrics.h"
 #include "sm/core/units.h"
@@ -159,6 +160,38 @@ class EncoderBitrateAdjuster : public MetricsSource {
   double last_fps_ = 0;
   double link_factor_ = 1.0, media_factor_ = 1.0;
   DataRate adjusted_;
+};
+
+// libwebrtc's EncoderBitrateAdjuster for simulcast (C17, issue #1162): one overshoot detector and one media rate
+// tracker per simulcast layer with one temporal layer each (the encoders report fps_allocation {100%} per stream,
+// as SimulcastEncoderAdapter::GetEncoderInfo copies it from each encoder), a frame count since the layout changed
+// shared by all layers, and the link headroom shared among the layers in proportion to the overshoot each wants
+// (AdjustRateAllocation). Each layer's minimum (the codec minimum or the stream's, the larger) holds its rate.
+class SimulcastEncoderBitrateAdjuster : public MetricsSource {
+ public:
+  // `min_bitrates`: per layer, max(codec minBitrate, the stream's minBitrate) for an active stream, else zero.
+  SimulcastEncoderBitrateAdjuster(EncoderBitrateAdjusterConfig cfg, std::vector<DataRate> min_bitrates);
+  // AdjustRateAllocation: `targets` per layer (zero: the layer is off); `bandwidth_allocation` is the link share
+  // of the whole stream. Returns the adjusted rate per layer.
+  std::vector<DataRate> AdjustRates(const std::vector<DataRate>& targets, DataRate bandwidth_allocation,
+                                    double framerate_fps, Timestamp now);
+  void OnEncodedFrame(size_t layer, DataSize size, Timestamp now);
+  // A frame the frame dropper dropped: every detector and tracker sees an empty frame.
+  void OnFrameDropped(Timestamp now);
+  const std::vector<DataRate>& adjusted() const { return adjusted_; }
+  void ExportMetrics(MetricsWriter& w) const override;
+
+ private:
+  struct Layer {
+    std::optional<EncoderOvershootDetector> detector;
+    std::optional<RateUtilizationTracker> tracker;
+    DataRate min;
+    double link_factor = 1.0, media_factor = 1.0;
+  };
+  EncoderBitrateAdjusterConfig cfg_;
+  std::vector<Layer> layers_;
+  size_t frames_since_layout_change_ = 0;
+  std::vector<DataRate> adjusted_;
 };
 
 }  // namespace sm::cc

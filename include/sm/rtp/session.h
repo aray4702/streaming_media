@@ -190,6 +190,12 @@ struct VideoStreamConfig {
   uint8_t payload_type = 96;
   std::optional<uint32_t> rtx_ssrc;
   uint8_t rtx_payload_type = 97;
+  // Send side: the RID of this simulcast layer (C17, issue #1162; RtpSenderConfig::rid): RtpStreamId on
+  // the media SSRC, RepairedRtpStreamId on the RTX SSRC, each until a report block acks the SSRC. A
+  // simulcast stream is one AddVideoSend per layer, lowest first, each with its own SSRC, RTX SSRC and
+  // RID (RtpVideoSender's one RTP module per layer); rtp::SimulcastSendController drives them. Empty:
+  // no RID.
+  std::string rid;
   loss::RtxConfig rtx;
   // Video RED+ULPFEC (RFC 2198, RFC 5109) requested, on the media SSRC with
   // `ulpfec`'s payload types. Whether it runs is VideoFecEnabled(): it is off
@@ -485,6 +491,7 @@ class Session : public MetricsSource {
   // Starts the session before the first encode decision, and starts the sent frame rate at the
   // first captured frame (VideoSendController::OnCapturedFrame).
   friend class VideoSendController;
+  friend class SimulcastSendController;
   // SendStatisticsProxy::OnIncomingFrame (send_statistics_proxy.cc:1251-1255): the sent frame rate
   // starts at the first incoming frame rather than at the first encoded one.
   void OnIncomingVideoFrame(Timestamp now);

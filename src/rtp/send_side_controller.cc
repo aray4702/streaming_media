@@ -196,6 +196,8 @@ void SendSideController::Start(Timestamp now) {
 
 void SendSideController::RegisterVideo(Timestamp now) {
   rates_time_ = now;
+  // GetAllocationConfig: pad_up_bitrate_bps is 0 while disable_padding_, else max_padding_bitrate_.
+  video_alloc_cfg_.pad_up = video_disable_padding_ ? DataRate::Zero() : cfg_.video_pad_up;
   allocator_.AddObserver("video", video_alloc_cfg_, video_observer_);
   video_registered_ = true;
   NotifyAllocationLimits(now);
@@ -273,6 +275,14 @@ void SendSideController::OnVideoEncoderReconfigured(Timestamp now) {
   // rtp_sender_video.cc:248-258), so the reallocation's RtpVideoSender::OnBitrateUpdated reads its
   // overhead (issue #945: issue_24_timing_v2_default seed 1 at 6.033 s, post-encode overhead 1640 vs 1880 bps).
   pending_reconfigure_ = true;
+}
+
+void SendSideController::SetVideoAllocationLimits(DataRate min, DataRate max, DataRate pad_up) {
+  cfg_.video_min = min;
+  cfg_.video_max = max;
+  cfg_.video_pad_up = pad_up;
+  video_alloc_cfg_.min = min;
+  video_alloc_cfg_.max = max;
 }
 
 void SendSideController::RunPendingReconfigure(Timestamp now) {
