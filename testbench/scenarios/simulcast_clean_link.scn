@@ -1,0 +1,14 @@
+name simulcast_clean_link
+describe Simulcast send (C17, #1162): three layers (320x180, 640x360, 1280x720) of a 720p camera on a 4 Mbps link, 25 ms one-way; the receiver takes every layer as an SFU does and the top layer is measured
+duration 30s
+simulcast 3
+at 0s capacity=4000kbps delay=25ms queue=300ms
+# Every layer runs the whole call; the top layer at its 2.5 Mbps maximum once the estimate covers all three.
+expect video.freeze_count == 0
+expect video.render_fps >= 29
+expect audio.interruptions == 0
+expect simulcast.layer0_fps >= 29
+expect simulcast.layer1_fps >= 29
+expect simulcast.layer2_fps >= 29
+expect simulcast.layer2_kbps > 2000
+expect video.e2e_delay_p95_ms < 100

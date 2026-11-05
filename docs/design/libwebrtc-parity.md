@@ -1240,6 +1240,45 @@ Differences:
 | `TCPPortNotDiscardedIfBoundToTemporaryIP` | IPv6 temporary address | Not run | The emulated network is IPv4 and `Network` keeps plain addresses (10.10, 10.14) |
 | `NotifyClosedForTest` | Closes the socket from the test | The far end closes it (the server port deleted) | Not in the library's socket interface |
 
+### 10.23 Simulcast send (C17, #1162)
+
+Group calls go through an SFU (Owner, #1160), so the sender sends up to three layers of one video track. Ported:
+`video/config/simulcast.{h,cc}` and the simulcast path of `video/config/encoder_stream_factory.cc`
+(`sm/video/simulcast.h`: the bitrate tables by resolution, `LimitSimulcastLayerCount` with the 0.1 round-up ratio,
+1/2 resolution steps on a normalized size, `scale_resolution_down_by`, `OverrideStreamSettings`, the top layer's boost
+to the stream maximum, the legacy screenshare layers); `modules/video_coding/utility/simulcast_rate_allocator.{h,cc}`
+and `simulcast_utility.{h,cc}` (`sm/video/simulcast_rate_allocator.h`); the multi-layer half of
+`video/encoder_bitrate_adjuster.cc` (`cc::SimulcastEncoderBitrateAdjuster`: a detector and a media-rate tracker per
+layer, one layout-change count, the link headroom shared by wanted overshoot); `VideoSendStreamImpl`'s allocation
+limits for several streams (`rtp::SimulcastAllocationLimitsFor`: min the first stream's, max the sum of the active
+streams' maximums, pad-up from `CalculateMaxPadBitrateBps`, 1370 kbps for 720p); `VideoStreamEncoder` with a
+`SimulcastEncoderAdapter` (`rtp::SimulcastSendController`: a layer below 1 kbps paused and not encoded, a layer coming
+back keys every active layer, `EncoderRtcpFeedback`'s PLI on any layer keying every layer at most every 300 ms, or one
+layer with per-layer PLI, the whole-frame drops in `VideoStreamEncoder`'s order); RID and repaired RID on the wire
+(`RTPSender::AttachMidAndRid`: the RID until a report block acks the SSRC, RRID on RTX until the RTX SSRC is acked,
+their room in `RtxPacketOverhead` and `ExpectedPerPacketOverhead`); an RTCP sender per layer (each layer's SRs, as
+`RtpVideoSender`'s module per stream); and in `PrioritizedPacketQueue` the round robin between the SSRCs of a level
+and the keyframe flush of the keyframe's own SSRC and RTX SSRC (`HasKeyframePackets(ssrc)`,
+`RemovePacketsForSsrc`), which a single stream never needed. The endpoint offers `a=rid:<rid> send` and
+`a=simulcast:send` with no SSRCs, generates the layers' SSRCs and RTX SSRCs when the answer is applied
+(`BaseChannel::UpdateLocalStreams_w`) and applies the answer's layer states (`SimulcastIsRejected`,
+`DisableSimulcastInSender`, `UpdateSimulcastLayerStatusInSender`).
+
+`sm_compare` runs libwebrtc's `VideoSendStream` with three SSRCs, RTX SSRCs and RIDs and its own
+`SimulcastEncoderAdapter` over the shared encoder model (one per layer, drawing from one generator in layer order, as
+the test bench), and a receive stream per layer, as an SFU receives every layer. On the four `simulcast_*` scenarios
+(clean link, a drop to 800 kbps with the top or the bottom layer measured, a rise from 1 Mbps) there is no gap on 10
+seeds, and none on 20 for `simulcast_capacity_drop_low_layer`. Differences:
+
+| Item | libwebrtc M157 | This library | Why |
+|---|---|---|---|
+| Reference source | `media/engine/simulcast_encoder_adapter.cc` | Ported from its header (in the prebuilt), `VideoStreamEncoder`, `EncoderRtcpFeedback` and the comparison | Not in `compare/webrtc/reference/` (asked on #1162); `VideoCodecInitializer::SetupCodec` is reconstructed the same way |
+| CPU adaptation with simulcast | `EncodeUsageResource` runs (quality scaling is off for more than one active layer) | Not run; `sm_compare` runs libwebrtc's simulcast without adaptation too | Remaining work (#1162); the encoder model takes no CPU time unless `encode_delay` |
+| Per-layer frame rate | `FramerateController` for a layer whose `max_framerate` is below the input's | Not ported | Remaining work; every layer runs at the input rate by default |
+| Temporal layers, `scale_resolution_down_to`, scalability modes | Supported | Not ported (one temporal layer per layer, H.264) | Remaining work |
+| Several video streams' FEC | One `FecControllerDefault` for the stream | One per layer | Off beside NACK for H.264 (`ShouldDisableRedAndUlpfec`) |
+| Random loss (`3%`, 100 ms RTT, top layer measured) | longest freeze 181 ms, count 1.3 (10 seeds) | 312 ms, 2.0 | Open on #1162; no such scenario is in the suite until it is found |
+
 ## Open questions for the Owner
 
 **Audit #891:** all settled. 1 and 2 as marked. 3-6: the files are in `reference/` (`bitrate_allocator.cc`, `transport_feedback_adapter.*`, `rtp_sender.cc`, `red/`, `neteq/`, `api/neteq/neteq.h`, the section 8 files, `frame_decode_timing.*`, `video_receive_stream2.cc`, `api/video_codecs/`), except those on #900; `relative_arrival_delay_tracker.*` is not needed: the 4.4 rows read the relative delay from `packet_arrival_history.cc` and `delay_manager.cc`, which are. 7 and 8: the Owner's A on #566 (removed or kept as the library's audio processing).

@@ -1,0 +1,12 @@
+name simulcast_ramp_up
+describe Simulcast send (C17, #1162): a 1 Mbps link (two layers fit, not the top one) rises to 4 Mbps at 10 s; the top layer comes on once the estimate covers its 1.2 x minimum on top of the lower targets; the top layer is measured
+duration 30s
+simulcast 3
+at 0s capacity=1000kbps delay=25ms queue=300ms
+at 10s capacity=4000kbps
+# The top layer starts some seconds after the capacity rises (libwebrtc 16-17.5 s on seeds 1-10, as here).
+expect video.time_to_first_frame_ms > 10000
+expect video.time_to_first_frame_ms < 20000
+expect simulcast.layer0_fps >= 29
+expect video.freeze_count == 0
+expect audio.interruptions == 0

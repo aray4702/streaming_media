@@ -347,6 +347,13 @@ a talking head at 300 kbps looks fine at 640x360, while a busy scene at the same
 reports how hard it is quantizing (QP). A consistently high QP means the picture is blocky and a lower resolution
 would look better; a consistently low QP means bits are to spare and resolution could rise. QP is noisy from frame to
 frame, its scale differs per codec, and decisions must not oscillate.""",
+    "7.9": """\
+In a group call through an SFU every receiver gets the sender's video over its own link: a phone on cellular and a
+desktop on fibre want very different bitrates, and the SFU cannot re-encode. One stream at one rate either starves the
+fast receivers or freezes the slow ones. The sender therefore sends the track as several independent layers at
+different resolutions and rates, each on its own SSRC and named by a RID, and the SFU forwards a layer per receiver. The
+sender's own uplink still has one estimate: the layers must share it, the expensive top layer must turn off cleanly
+when the uplink drops and come back without oscillating, and a layer that comes back needs a keyframe.""",
     # ------------------------------------------------------------------ 8
     "8.1": """\
 Each RTP stream has its own timestamp clock with a random starting value (48 kHz for Opus audio, 90 kHz for video),

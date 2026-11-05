@@ -1718,6 +1718,34 @@ ALGORITHMS = [
                       "(`OnFrame`), then `DropDueToSize` and `OnMaybeEncodeFrame`, the outage pause "
                       "(`EncoderPaused`) and the frame dropper. `issue_84_quality_scaling_720p_low_rate` and "
                       "`issue_84_quality_scaling_rate_rise` lock in the behaviour."),
+    dict(id="7.9", slug="simulcast-send", title="Simulcast send",
+         problems=["Heterogeneous receivers in group calls -> Simulcast and SVC; the SFU forwards a matching layer per receiver"],
+         headers=["video/simulcast.h", "video/simulcast_rate_allocator.h", "rtp/simulcast_send_controller.h"],
+         unit=["Simulcast", "EncoderStreamFactory", "SimulcastRateAllocator", "ScreenshareRateAllocation",
+               "SimulcastSend"],
+         e2e=[], bench=[],
+         scenario="A 720p camera sent as three layers (320x180, 640x360, 1280x720) on a 4 Mbps link that drops to "
+                  "800 kbps, rises from 1 Mbps, or stays clean (`simulcast_*` scenarios); the receiver takes every "
+                  "layer as an SFU does and one layer is measured (`simulcast_view`).",
+         notes="C17 (issue #1162; Owner decision #1160: group calls through a LiveKit SFU). See the "
+               "[libwebrtc parity inventory](../../design/libwebrtc-parity.md#1023-simulcast-send-c17-1162) for the "
+               "differences from libwebrtc. `video/config/simulcast.cc` and the simulcast path of "
+               "`encoder_stream_factory.cc` give the layers (the bitrate table by resolution, the layer count limited by "
+               "resolution, 1/2 resolution steps), `simulcast_rate_allocator.cc` splits the target (layers on lowest "
+               "first while the target covers their minimums, with the 1.2 hysteresis for one that was off; the rest "
+               "to the top layer), `rtp::SimulcastSendController` runs VideoStreamEncoder with a "
+               "SimulcastEncoderAdapter (one encoder per layer, a paused layer below 1 kbps, a keyframe on every layer "
+               "when one comes back, PLI on any layer keys every layer), the session sends each layer on its SSRC "
+               "with its RID (repaired RID on RTX) and SRs, and the endpoint offers a=rid/a=simulcast.",
+         verification="Unit tests port `simulcast_unittest.cc`, the applicable `encoder_stream_factory_unittest.cc` "
+                      "cases and `simulcast_rate_allocator_unittest.cc`; `SimulcastSend.*` checks RID/RRID on the wire, "
+                      "the allocation limits (720p: min 30, max 3400, pad-up 1370 kbps) and the adapter rules; "
+                      "`PcPeerEndpoint.Simulcast*` the offer and the SFU's answer. `sm_compare` runs libwebrtc's "
+                      "VideoSendStream with three SSRCs and RIDs and its SimulcastEncoderAdapter over the shared encoder "
+                      "model: the four `simulcast_*` scenarios have no gap on 10 seeds (and "
+                      "`simulcast_capacity_drop_low_layer` none on 20). Two fixes it needed beyond the port: the "
+                      "pacer's round robin between SSRCs and its per-SSRC keyframe flush (`PrioritizedPacketQueue`), "
+                      "and SRs per layer (without them layers 1-2 had no RTT and resent more)."),
     # ------------------------------------------------------------------ 8
     dict(id="8.1", slug="rtp-to-ntp", title="RTP -> NTP mapping",
          problems=["Lip-sync (A/V sync) -> RTCP Sender Reports map the RTP timestamp to NTP wallclock"],
