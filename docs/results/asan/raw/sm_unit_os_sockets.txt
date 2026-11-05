@@ -1,0 +1,6 @@
+[ RUN  ] OsSockets.DatagramArrivingDuringTheWaitIsStampedWhenRead
+[  OK  ] OsSockets.DatagramArrivingDuringTheWaitIsStampedWhenRead (33.8 ms)
+[ RUN  ] OsSockets.ArrivalSpacingFollowsTheSender
+[  OK  ] OsSockets.ArrivalSpacingFollowsTheSender (41.5 ms)
+
+2 tests run, 2 passed, 0 failed

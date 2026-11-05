@@ -1,0 +1,940 @@
+[ RUN  ] P2pConnection.ForgetLearnedState
+[  OK  ] P2pConnection.ForgetLearnedState (18.1 ms)
+[ RUN  ] P2pConnection.ForgetLearnedStateDiscardsPendingPings
+[  OK  ] P2pConnection.ForgetLearnedStateDiscardsPendingPings (1.1 ms)
+[ RUN  ] P2pConnection.ForgetLearnedStateDoesNotTriggerStateChange
+[  OK  ] P2pConnection.ForgetLearnedStateDoesNotTriggerStateChange (0.4 ms)
+[ RUN  ] P2pConnection.SendReceiveGoogDelta
+[  OK  ] P2pConnection.SendReceiveGoogDelta (0.5 ms)
+[ RUN  ] P2pConnection.SendGoogDeltaNoReply
+[  OK  ] P2pConnection.SendGoogDeltaNoReply (0.6 ms)
+[ RUN  ] P2pConnection.TooBigDeltaIsNotSent
+[  OK  ] P2pConnection.TooBigDeltaIsNotSent (0.5 ms)
+[ RUN  ] P2pConnection.Nomination
+[  OK  ] P2pConnection.Nomination (0.8 ms)
+[ RUN  ] P2pConnection.RoundTripTime
+[  OK  ] P2pConnection.RoundTripTime (1.7 ms)
+[ RUN  ] P2pConnection.BindingRequestAttributes
+[  OK  ] P2pConnection.BindingRequestAttributes (0.6 ms)
+[ RUN  ] P2pConnection.NetworkCostChange
+[  OK  ] P2pConnection.NetworkCostChange (0.5 ms)
+[ RUN  ] P2pConnection.NetworkInfoAttribute
+[  OK  ] P2pConnection.NetworkInfoAttribute (0.4 ms)
+[ RUN  ] P2pConnection.Priority
+[  OK  ] P2pConnection.Priority (0.7 ms)
+[ RUN  ] P2pConnection.LoopbackCall
+[  OK  ] P2pConnection.LoopbackCall (0.8 ms)
+[ RUN  ] P2pConnection.IceRoleConflict
+[  OK  ] P2pConnection.IceRoleConflict (0.5 ms)
+[ RUN  ] P2pConnection.ErrorResponses
+[  OK  ] P2pConnection.ErrorResponses (0.7 ms)
+[ RUN  ] P2pConnection.BadIntegrityAndRemoteUsername
+[  OK  ] P2pConnection.BadIntegrityAndRemoteUsername (0.9 ms)
+[ RUN  ] P2pConnection.BindingIndication
+[  OK  ] P2pConnection.BindingIndication (0.1 ms)
+[ RUN  ] P2pConnection.WritableState
+[  OK  ] P2pConnection.WritableState (1.8 ms)
+[ RUN  ] P2pConnection.WritableStateWithConfiguredThreshold
+[  OK  ] P2pConnection.WritableStateWithConfiguredThreshold (0.7 ms)
+[ RUN  ] P2pConnection.TimeoutForNeverWritable
+[  OK  ] P2pConnection.TimeoutForNeverWritable (0.5 ms)
+[ RUN  ] P2pConnection.ConnectionDead
+[  OK  ] P2pConnection.ConnectionDead (0.1 ms)
+[ RUN  ] P2pConnection.ConnectionDeadWithDeadConnectionTimeout
+[  OK  ] P2pConnection.ConnectionDeadWithDeadConnectionTimeout (0.2 ms)
+[ RUN  ] P2pConnection.ConnectionDeadOutstandingPing
+[  OK  ] P2pConnection.ConnectionDeadOutstandingPing (0.2 ms)
+[ RUN  ] P2pConnection.ReceivingTimeout
+[  OK  ] P2pConnection.ReceivingTimeout (0.1 ms)
+[ RUN  ] P2pConnection.PortTimeoutAfterConnectionDestroyed
+[  OK  ] P2pConnection.PortTimeoutAfterConnectionDestroyed (0.3 ms)
+[ RUN  ] P2pConnection.AddConnectionWithSameAddress
+[  OK  ] P2pConnection.AddConnectionWithSameAddress (0.1 ms)
+[ RUN  ] P2pConnection.LocalPeerReflexiveFromResponse
+[  OK  ] P2pConnection.LocalPeerReflexiveFromResponse (0.3 ms)
+[ RUN  ] P2pConnection.RemotePeerReflexiveFromCheck
+[  OK  ] P2pConnection.RemotePeerReflexiveFromCheck (0.4 ms)
+[ RUN  ] P2pConnection.GoogPing
+[  OK  ] P2pConnection.GoogPing (1.4 ms)
+[ RUN  ] P2pConnection.CheckSentOnceAndTimesOut
+[  OK  ] P2pConnection.CheckSentOnceAndTimesOut (0.4 ms)
+[ RUN  ] P2pConnection.SendData
+[  OK  ] P2pConnection.SendData (0.1 ms)
+[ RUN  ] P2pConnectionCall.ConnectsOverEmulatedNetwork
+[  OK  ] P2pConnectionCall.ConnectsOverEmulatedNetwork (7.9 ms)
+[ RUN  ] P2pConnectionCall.StaysWritableWithLoss
+[  OK  ] P2pConnectionCall.StaysWritableWithLoss (190.2 ms)
+[ RUN  ] P2pConnectionCall.OutageLosesConsent
+[  OK  ] P2pConnectionCall.OutageLosesConsent (27.1 ms)
+[ RUN  ] P2pIceCompare.NatMatrixMatchesLibwebrtc
+[  OK  ] P2pIceCompare.NatMatrixMatchesLibwebrtc (444.7 ms)
+[ RUN  ] P2pIceCompare.ScenariosRunAndAreDeterministic
+[  OK  ] P2pIceCompare.ScenariosRunAndAreDeterministic (122.0 ms)
+[ RUN  ] P2pIceCompare.RecoversAfterNetworkChange
+[  OK  ] P2pIceCompare.RecoversAfterNetworkChange (1159.8 ms)
+[ RUN  ] P2pIceCompare.ChecksMatchLibwebrtc
+[  OK  ] P2pIceCompare.ChecksMatchLibwebrtc (1289.5 ms)
+[ RUN  ] P2pIceCompare.RelayScenariosConnectThroughTurn
+[  OK  ] P2pIceCompare.RelayScenariosConnectThroughTurn (2611.0 ms)
+[ RUN  ] P2pIceCompare.RelayMatchesLibwebrtc
+[  OK  ] P2pIceCompare.RelayMatchesLibwebrtc (2425.9 ms)
+[ RUN  ] P2pIceCompare.TcpRelayMatchesLibwebrtc
+[  OK  ] P2pIceCompare.TcpRelayMatchesLibwebrtc (1919.0 ms)
+[ RUN  ] P2pIceCompare.TcpOnlyPathConnectsAsLibwebrtc
+[  OK  ] P2pIceCompare.TcpOnlyPathConnectsAsLibwebrtc (594.9 ms)
+[ RUN  ] P2pIceCredentialsIterator.GetEmpty
+[  OK  ] P2pIceCredentialsIterator.GetEmpty (0.0 ms)
+[ RUN  ] P2pIceCredentialsIterator.GetOne
+[  OK  ] P2pIceCredentialsIterator.GetOne (0.0 ms)
+[ RUN  ] P2pIceCredentialsIterator.GetTwo
+[  OK  ] P2pIceCredentialsIterator.GetTwo (0.1 ms)
+[ RUN  ] P2pWrappingActiveIceController.CreateLegacyIceControllerFromFactory
+[  OK  ] P2pWrappingActiveIceController.CreateLegacyIceControllerFromFactory (0.3 ms)
+[ RUN  ] P2pWrappingActiveIceController.PassthroughIceControllerInterface
+[  OK  ] P2pWrappingActiveIceController.PassthroughIceControllerInterface (1.3 ms)
+[ RUN  ] P2pWrappingActiveIceController.HandlesImmediateSwitchRequest
+[  OK  ] P2pWrappingActiveIceController.HandlesImmediateSwitchRequest (0.1 ms)
+[ RUN  ] P2pWrappingActiveIceController.HandlesImmediateSortAndSwitchRequest
+[  OK  ] P2pWrappingActiveIceController.HandlesImmediateSortAndSwitchRequest (0.1 ms)
+[ RUN  ] P2pWrappingActiveIceController.HandlesSortAndSwitchRequest
+[  OK  ] P2pWrappingActiveIceController.HandlesSortAndSwitchRequest (0.1 ms)
+[ RUN  ] P2pWrappingActiveIceController.StartPingingAfterSortAndSwitch
+[  OK  ] P2pWrappingActiveIceController.StartPingingAfterSortAndSwitch (0.1 ms)
+[ RUN  ] P2pWrappingActiveIceController.ControlledSidePrunesOnlyWhenNominated
+[  OK  ] P2pWrappingActiveIceController.ControlledSidePrunesOnlyWhenNominated (0.0 ms)
+[ RUN  ] P2pIceConfig.DefaultsAndValidation
+[  OK  ] P2pIceConfig.DefaultsAndValidation (0.1 ms)
+[ RUN  ] P2pBasicIceController.SortPrefersWritableThenPriority
+[  OK  ] P2pBasicIceController.SortPrefersWritableThenPriority (0.4 ms)
+[ RUN  ] P2pBasicIceController.ReceivingSwitchingDelay
+[  OK  ] P2pBasicIceController.ReceivingSwitchingDelay (0.4 ms)
+[ RUN  ] P2pBasicIceController.SwitchesForRttImprovementOnly
+[  OK  ] P2pBasicIceController.SwitchesForRttImprovementOnly (0.1 ms)
+[ RUN  ] P2pBasicIceController.NoSwitchToCostlierNetworkUnlessReceiving
+[  OK  ] P2pBasicIceController.NoSwitchToCostlierNetworkUnlessReceiving (0.2 ms)
+[ RUN  ] P2pBasicIceController.VpnPreference
+[  OK  ] P2pBasicIceController.VpnPreference (0.4 ms)
+[ RUN  ] P2pBasicIceController.ControlledSidePrefersNominated
+[  OK  ] P2pBasicIceController.ControlledSidePrefersNominated (0.1 ms)
+[ RUN  ] P2pBasicIceController.PingOrder
+[  OK  ] P2pBasicIceController.PingOrder (0.7 ms)
+[ RUN  ] P2pBasicIceController.PingIntervals
+[  OK  ] P2pBasicIceController.PingIntervals (0.3 ms)
+[ RUN  ] P2pBasicIceController.BackupPingInterval
+[  OK  ] P2pBasicIceController.BackupPingInterval (0.4 ms)
+[ RUN  ] P2pBasicIceController.PruneConnections
+[  OK  ] P2pBasicIceController.PruneConnections (0.2 ms)
+[ RUN  ] P2pBasicIceController.UseCandidateAttribute
+[  OK  ] P2pBasicIceController.UseCandidateAttribute (0.1 ms)
+[ RUN  ] P2pBasicIceController.InitialSelectDampening
+[  OK  ] P2pBasicIceController.InitialSelectDampening (0.1 ms)
+[ RUN  ] P2pIceLite.AgentNeverPingsOrNominates
+[  OK  ] P2pIceLite.AgentNeverPingsOrNominates (4.5 ms)
+[ RUN  ] P2pIceLite.FullAgentConnectsThroughEachNat
+[  OK  ] P2pIceLite.FullAgentConnectsThroughEachNat (16.3 ms)
+[ RUN  ] P2pIceLite.ServerWaitsForTheClientsChecks
+[  OK  ] P2pIceLite.ServerWaitsForTheClientsChecks (18.1 ms)
+[ RUN  ] P2pIceLite.ReconnectsAfterClientNetworkChange
+[  OK  ] P2pIceLite.ReconnectsAfterClientNetworkChange (27.0 ms)
+[ RUN  ] P2pTransportChannelMultihomed.TestBasic
+[  OK  ] P2pTransportChannelMultihomed.TestBasic (6.4 ms)
+[ RUN  ] P2pTransportChannelMultihomed.TestFailoverControlledSide
+[  OK  ] P2pTransportChannelMultihomed.TestFailoverControlledSide (11.6 ms)
+[ RUN  ] P2pTransportChannelMultihomed.TestFailoverControllingSide
+[  OK  ] P2pTransportChannelMultihomed.TestFailoverControllingSide (12.2 ms)
+[ RUN  ] P2pTransportChannelMultihomed.TestIceRenomination
+[  OK  ] P2pTransportChannelMultihomed.TestIceRenomination (28.2 ms)
+[ RUN  ] P2pTransportChannelMultihomed.TestConnectionSwitchDampeningControlledSide
+[  OK  ] P2pTransportChannelMultihomed.TestConnectionSwitchDampeningControlledSide (5.1 ms)
+[ RUN  ] P2pTransportChannelMultihomed.TestConnectionSwitchDampeningControllingSide
+[  OK  ] P2pTransportChannelMultihomed.TestConnectionSwitchDampeningControllingSide (3.0 ms)
+[ RUN  ] P2pTransportChannelMultihomed.TestRemoteFailover
+[  OK  ] P2pTransportChannelMultihomed.TestRemoteFailover (40.6 ms)
+[ RUN  ] P2pTransportChannelMultihomed.TestPreferWifiToWifiConnection
+[  OK  ] P2pTransportChannelMultihomed.TestPreferWifiToWifiConnection (1.8 ms)
+[ RUN  ] P2pTransportChannelMultihomed.TestPreferWifiOverCellularNetwork
+[  OK  ] P2pTransportChannelMultihomed.TestPreferWifiOverCellularNetwork (1.3 ms)
+[ RUN  ] P2pTransportChannelMultihomed.TestPingBackupConnectionRate
+[  OK  ] P2pTransportChannelMultihomed.TestPingBackupConnectionRate (5.0 ms)
+[ RUN  ] P2pTransportChannelMultihomed.TestStableWritableRate
+[  OK  ] P2pTransportChannelMultihomed.TestStableWritableRate (7.0 ms)
+[ RUN  ] P2pTransportChannelMultihomed.TestGetState
+[  OK  ] P2pTransportChannelMultihomed.TestGetState (2.1 ms)
+[ RUN  ] P2pTransportChannelMultihomed.TestNetworkBecomesInactive
+[  OK  ] P2pTransportChannelMultihomed.TestNetworkBecomesInactive (33.3 ms)
+[ RUN  ] P2pTransportChannelMultihomed.TestContinualGatheringOnNewInterface
+[  OK  ] P2pTransportChannelMultihomed.TestContinualGatheringOnNewInterface (7.5 ms)
+[ RUN  ] P2pTransportChannelMultihomed.TestSwitchLinksViaContinualGathering
+[  OK  ] P2pTransportChannelMultihomed.TestSwitchLinksViaContinualGathering (20.8 ms)
+[ RUN  ] P2pTransportChannelMultihomed.TestRestoreBackupConnection
+[  OK  ] P2pTransportChannelMultihomed.TestRestoreBackupConnection (7.8 ms)
+[ RUN  ] P2pTransportChannelMultihomed.TestVpnDefault
+[  OK  ] P2pTransportChannelMultihomed.TestVpnDefault (2.3 ms)
+[ RUN  ] P2pTransportChannelMultihomed.TestVpnPreferVpn
+[  OK  ] P2pTransportChannelMultihomed.TestVpnPreferVpn (16.2 ms)
+[ RUN  ] P2pTransportChannelMultihomed.TestVpnAvoidVpn
+[  OK  ] P2pTransportChannelMultihomed.TestVpnAvoidVpn (16.4 ms)
+[ RUN  ] P2pTransportChannelMultihomed.TestVpnNeverVpn
+[  OK  ] P2pTransportChannelMultihomed.TestVpnNeverVpn (30.0 ms)
+[ RUN  ] P2pTransportChannelMultihomed.TestVpnOnlyVpn
+[  OK  ] P2pTransportChannelMultihomed.TestVpnOnlyVpn (30.4 ms)
+[ RUN  ] P2pTransportChannelMultihomed.FirewallBlackholesOneInterface
+[  OK  ] P2pTransportChannelMultihomed.FirewallBlackholesOneInterface (1.0 ms)
+[ RUN  ] P2pIceConfig.FromRtcConfigurationDefaults
+[  OK  ] P2pIceConfig.FromRtcConfigurationDefaults (0.2 ms)
+[ RUN  ] P2pIceConfig.FromRtcConfigurationFields
+[  OK  ] P2pIceConfig.FromRtcConfigurationFields (0.8 ms)
+[ RUN  ] P2pIceConfig.ChannelTakesRtcConfiguration
+[  OK  ] P2pIceConfig.ChannelTakesRtcConfiguration (0.2 ms)
+[ RUN  ] P2pTransportChannelPing.TestTriggeredChecks
+[  OK  ] P2pTransportChannelPing.TestTriggeredChecks (0.8 ms)
+[ RUN  ] P2pTransportChannelPing.TestAllConnectionsPingedSufficiently
+[  OK  ] P2pTransportChannelPing.TestAllConnectionsPingedSufficiently (2.0 ms)
+[ RUN  ] P2pTransportChannelPing.TestStunPingIntervals
+[  OK  ] P2pTransportChannelPing.TestStunPingIntervals (22.8 ms)
+[ RUN  ] P2pTransportChannelPing.PingingStartedAsSoonAsPossible
+[  OK  ] P2pTransportChannelPing.PingingStartedAsSoonAsPossible (0.7 ms)
+[ RUN  ] P2pTransportChannelPing.TestNoTriggeredChecksWhenWritable
+[  OK  ] P2pTransportChannelPing.TestNoTriggeredChecksWhenWritable (0.3 ms)
+[ RUN  ] P2pTransportChannelPing.TestFailedConnectionNotPingable
+[  OK  ] P2pTransportChannelPing.TestFailedConnectionNotPingable (0.3 ms)
+[ RUN  ] P2pTransportChannelPing.TestSignalStateChanged
+[  OK  ] P2pTransportChannelPing.TestSignalStateChanged (0.2 ms)
+[ RUN  ] P2pTransportChannelPing.TestAddRemoteCandidateWithVariousUfrags
+[  OK  ] P2pTransportChannelPing.TestAddRemoteCandidateWithVariousUfrags (1.6 ms)
+[ RUN  ] P2pTransportChannelPing.ConnectionResurrection
+[  OK  ] P2pTransportChannelPing.ConnectionResurrection (0.7 ms)
+[ RUN  ] P2pTransportChannelPing.TestReceivingStateChange
+[  OK  ] P2pTransportChannelPing.TestReceivingStateChange (6.7 ms)
+[ RUN  ] P2pTransportChannelPing.TestSelectConnectionBeforeNomination
+[  OK  ] P2pTransportChannelPing.TestSelectConnectionBeforeNomination (0.9 ms)
+[ RUN  ] P2pTransportChannelPing.TestPingOnNomination
+[  OK  ] P2pTransportChannelPing.TestPingOnNomination (0.7 ms)
+[ RUN  ] P2pTransportChannelPing.TestPingOnSwitch
+[  OK  ] P2pTransportChannelPing.TestPingOnSwitch (0.6 ms)
+[ RUN  ] P2pTransportChannelPing.TestPingOnSelected
+[  OK  ] P2pTransportChannelPing.TestPingOnSelected (0.4 ms)
+[ RUN  ] P2pTransportChannelPing.TestSelectConnectionFromUnknownAddress
+[  OK  ] P2pTransportChannelPing.TestSelectConnectionFromUnknownAddress (1.0 ms)
+[ RUN  ] P2pTransportChannelPing.TestSelectConnectionBasedOnMediaReceived
+[  OK  ] P2pTransportChannelPing.TestSelectConnectionBasedOnMediaReceived (0.9 ms)
+[ RUN  ] P2pTransportChannelPing.TestControlledAgentDataReceivingTakesHigherPrecedenceThanPriority
+[  OK  ] P2pTransportChannelPing.TestControlledAgentDataReceivingTakesHigherPrecedenceThanPriority (0.5 ms)
+[ RUN  ] P2pTransportChannelPing.TestControlledAgentNominationTakesHigherPrecedenceThanDataReceiving
+[  OK  ] P2pTransportChannelPing.TestControlledAgentNominationTakesHigherPrecedenceThanDataReceiving (0.7 ms)
+[ RUN  ] P2pTransportChannelPing.TestControlledAgentSelectsConnectionWithHigherNomination
+[  OK  ] P2pTransportChannelPing.TestControlledAgentSelectsConnectionWithHigherNomination (0.7 ms)
+[ RUN  ] P2pTransportChannelPing.TestEstimatedDisconnectedTime
+[  OK  ] P2pTransportChannelPing.TestEstimatedDisconnectedTime (2.7 ms)
+[ RUN  ] P2pTransportChannelPing.TestControlledAgentIgnoresSmallerNomination
+[  OK  ] P2pTransportChannelPing.TestControlledAgentIgnoresSmallerNomination (0.6 ms)
+[ RUN  ] P2pTransportChannelPing.TestControlledAgentWriteStateTakesHigherPrecedenceThanNomination
+[  OK  ] P2pTransportChannelPing.TestControlledAgentWriteStateTakesHigherPrecedenceThanNomination (0.5 ms)
+[ RUN  ] P2pTransportChannelPing.TestAddRemoteCandidateWithAddressReuse
+[  OK  ] P2pTransportChannelPing.TestAddRemoteCandidateWithAddressReuse (0.4 ms)
+[ RUN  ] P2pTransportChannelPing.TestSameAddressCandidateDoesNotReplaceSelectedConnection
+[  OK  ] P2pTransportChannelPing.TestSameAddressCandidateDoesNotReplaceSelectedConnection (0.4 ms)
+[ RUN  ] P2pTransportChannelPing.TestDontPruneWhenWeak
+[  OK  ] P2pTransportChannelPing.TestDontPruneWhenWeak (37.2 ms)
+[ RUN  ] P2pTransportChannelPing.TestDontPruneHighPriorityConnections
+[  OK  ] P2pTransportChannelPing.TestDontPruneHighPriorityConnections (5.4 ms)
+[ RUN  ] P2pTransportChannelPing.TestGetState
+[  OK  ] P2pTransportChannelPing.TestGetState (0.6 ms)
+[ RUN  ] P2pTransportChannelPing.TestConnectionPrunedAgain
+[  OK  ] P2pTransportChannelPing.TestConnectionPrunedAgain (11.8 ms)
+[ RUN  ] P2pTransportChannelPing.TestStopPortAllocatorSessions
+[  OK  ] P2pTransportChannelPing.TestStopPortAllocatorSessions (1.0 ms)
+[ RUN  ] P2pTransportChannelPing.TestIceRoleUpdatedOnRemovedPort
+[  OK  ] P2pTransportChannelPing.TestIceRoleUpdatedOnRemovedPort (0.3 ms)
+[ RUN  ] P2pTransportChannelPing.TestIceRoleUpdatedOnPortAfterIceRestart
+[  OK  ] P2pTransportChannelPing.TestIceRoleUpdatedOnPortAfterIceRestart (0.4 ms)
+[ RUN  ] P2pTransportChannelPing.TestPortDestroyedAfterTimeoutAndPruned
+[  OK  ] P2pTransportChannelPing.TestPortDestroyedAfterTimeoutAndPruned (40.4 ms)
+[ RUN  ] P2pTransportChannelPing.TestMaxOutstandingPingsFieldTrial
+[  OK  ] P2pTransportChannelPing.TestMaxOutstandingPingsFieldTrial (2.1 ms)
+[ RUN  ] P2pTransportChannelPing.InitialLastPingSent
+[  OK  ] P2pTransportChannelPing.InitialLastPingSent (0.0 ms)
+[ RUN  ] P2pTransportChannelPing.TestInitialSelectDampening0
+[  OK  ] P2pTransportChannelPing.TestInitialSelectDampening0 (0.4 ms)
+[ RUN  ] P2pTransportChannelPing.TestInitialSelectDampening
+[  OK  ] P2pTransportChannelPing.TestInitialSelectDampening (1.0 ms)
+[ RUN  ] P2pTransportChannelPing.TestInitialSelectDampeningPingReceived
+[  OK  ] P2pTransportChannelPing.TestInitialSelectDampeningPingReceived (1.0 ms)
+[ RUN  ] P2pTransportChannelPing.TestInitialSelectDampeningBoth
+[  OK  ] P2pTransportChannelPing.TestInitialSelectDampeningBoth (1.0 ms)
+[ RUN  ] P2pTransportChannelPing.TestForgetLearnedState
+[  OK  ] P2pTransportChannelPing.TestForgetLearnedState (0.5 ms)
+[ RUN  ] P2pTransportChannel.IceCredentialsChanged
+[  OK  ] P2pTransportChannel.IceCredentialsChanged (0.0 ms)
+[ RUN  ] P2pTransportChannel.DefaultConfig
+[  OK  ] P2pTransportChannel.DefaultConfig (1.5 ms)
+[ RUN  ] P2pTransportChannel.OpenToOpenConnectsAndSendsData
+[  OK  ] P2pTransportChannel.OpenToOpenConnectsAndSendsData (5.7 ms)
+[ RUN  ] P2pTransportChannel.GetStats
+[  OK  ] P2pTransportChannel.GetStats (4.0 ms)
+[ RUN  ] P2pTransportChannel.ConnectsThroughNats
+[  OK  ] P2pTransportChannel.ConnectsThroughNats (24.6 ms)
+[ RUN  ] P2pTransportChannel.PeerReflexiveCandidateBeforeSignaling
+[  OK  ] P2pTransportChannel.PeerReflexiveCandidateBeforeSignaling (2.1 ms)
+[ RUN  ] P2pTransportChannel.PeerReflexiveRemoteCandidateIsSanitized
+[  OK  ] P2pTransportChannel.PeerReflexiveRemoteCandidateIsSanitized (1.6 ms)
+[ RUN  ] P2pTransportChannel.RemoteCandidatesWithoutUfragPwd
+[  OK  ] P2pTransportChannel.RemoteCandidatesWithoutUfragPwd (4.4 ms)
+[ RUN  ] P2pTransportChannel.HandleUfragPwdChange
+[  OK  ] P2pTransportChannel.HandleUfragPwdChange (19.5 ms)
+[ RUN  ] P2pTransportChannel.IncomingOnlyBlocked
+[  OK  ] P2pTransportChannel.IncomingOnlyBlocked (3.2 ms)
+[ RUN  ] P2pTransportChannel.IncomingOnlyOpen
+[  OK  ] P2pTransportChannel.IncomingOnlyOpen (1.8 ms)
+[ RUN  ] P2pTransportChannel.TestIceRoleConflict
+[  OK  ] P2pTransportChannel.TestIceRoleConflict (7.2 ms)
+[ RUN  ] P2pTransportChannel.TestIceConfigWillPassDownToPort
+[  OK  ] P2pTransportChannel.TestIceConfigWillPassDownToPort (1.8 ms)
+[ RUN  ] P2pTransportChannel.TestDefaultDscpValue
+[  OK  ] P2pTransportChannel.TestDefaultDscpValue (0.1 ms)
+[ RUN  ] P2pTransportChannel.TestUsingPooledSessionAfterDoneGathering
+[  OK  ] P2pTransportChannel.TestUsingPooledSessionAfterDoneGathering (4.8 ms)
+[ RUN  ] P2pTransportChannel.TestUsingPooledSessionBeforeDoneGathering
+[  OK  ] P2pTransportChannel.TestUsingPooledSessionBeforeDoneGathering (3.7 ms)
+[ RUN  ] P2pTransportChannel.DeleteConnectionsIfAllWriteTimedout
+[  OK  ] P2pTransportChannel.DeleteConnectionsIfAllWriteTimedout (47.1 ms)
+[ RUN  ] P2pTransportChannel.AddRemoteCandidateWithVariousUfrags
+[  OK  ] P2pTransportChannel.AddRemoteCandidateWithVariousUfrags (0.3 ms)
+[ RUN  ] P2pTransportChannel.TestContinualGathering
+[  OK  ] P2pTransportChannel.TestContinualGathering (1.9 ms)
+[ RUN  ] P2pTransportChannel.TestStopPortAllocatorSessions
+[  OK  ] P2pTransportChannel.TestStopPortAllocatorSessions (1.7 ms)
+[ RUN  ] P2pTransportChannel.HostnameCandidateIsResolved
+[  OK  ] P2pTransportChannel.HostnameCandidateIsResolved (0.8 ms)
+[ RUN  ] P2pTransportChannel.HostnameCandidateResolutionResults
+[  OK  ] P2pTransportChannel.HostnameCandidateResolutionResults (0.5 ms)
+[ RUN  ] P2pTransportChannel.HostnameCandidateDroppedWithoutResolverFactory
+[  OK  ] P2pTransportChannel.HostnameCandidateDroppedWithoutResolverFactory (0.3 ms)
+[ RUN  ] P2pTransportChannel.HostnameCandidateNotResolvedWhenRelayOnly
+[  OK  ] P2pTransportChannel.HostnameCandidateNotResolvedWhenRelayOnly (0.2 ms)
+[ RUN  ] P2pTransportChannel.ChannelDestroyedWhileResolving
+[  OK  ] P2pTransportChannel.ChannelDestroyedWhileResolving (0.3 ms)
+[ RUN  ] P2pTransportChannel.ResolvedHostnameCandidateIsPairedByPriority
+[  OK  ] P2pTransportChannel.ResolvedHostnameCandidateIsPairedByPriority (0.3 ms)
+[ RUN  ] P2pTransportChannel.CanConnectWithHostCandidateWithMdnsName
+[  OK  ] P2pTransportChannel.CanConnectWithHostCandidateWithMdnsName (1.7 ms)
+[ RUN  ] P2pTransportChannel.CannotConnectToMdnsHostCandidateWithoutResolver
+[  OK  ] P2pTransportChannel.CannotConnectToMdnsHostCandidateWithoutResolver (0.4 ms)
+[ RUN  ] P2pTransportChannel.PeerReflexiveCandidateBeforeSignalingWithMdnsName
+[  OK  ] P2pTransportChannel.PeerReflexiveCandidateBeforeSignalingWithMdnsName (1.5 ms)
+[ RUN  ] P2pTransportChannel.PeerReflexiveCandidateDuringResolvingHostCandidateWithMdnsName
+[  OK  ] P2pTransportChannel.PeerReflexiveCandidateDuringResolvingHostCandidateWithMdnsName (1.4 ms)
+[ RUN  ] P2pTransportChannel.ResolvedMdnsCandidateSanitizedInSelectedPairAndStats
+[  OK  ] P2pTransportChannel.ResolvedMdnsCandidateSanitizedInSelectedPairAndStats (1.4 ms)
+[ RUN  ] P2pTransportChannel.RemoteMdnsCandidatesSanitizedInStats
+[  OK  ] P2pTransportChannel.RemoteMdnsCandidatesSanitizedInStats (0.5 ms)
+[ RUN  ] DtlsUtils.ClassifiesByFirstByte
+[  OK  ] DtlsUtils.ClassifiesByFirstByte (0.2 ms)
+[ RUN  ] DtlsUtils.PacketStashAdd
+[  OK  ] DtlsUtils.PacketStashAdd (0.3 ms)
+[ RUN  ] DtlsUtils.PacketStashAddIfUnique
+[  OK  ] DtlsUtils.PacketStashAddIfUnique (0.0 ms)
+[ RUN  ] DtlsUtils.PacketStashPrune
+[  OK  ] DtlsUtils.PacketStashPrune (0.5 ms)
+[ RUN  ] DtlsUtils.PacketStashPruneSize
+[  OK  ] DtlsUtils.PacketStashPruneSize (0.0 ms)
+[ RUN  ] DtlsUtils.PacketStashPruneSome
+[  OK  ] DtlsUtils.PacketStashPruneSome (0.0 ms)
+[ RUN  ] P2pIpAddress.ParsesAndPrintsV4
+[  OK  ] P2pIpAddress.ParsesAndPrintsV4 (0.2 ms)
+[ RUN  ] P2pIpAddress.ParsesAndPrintsV6
+[  OK  ] P2pIpAddress.ParsesAndPrintsV6 (0.2 ms)
+[ RUN  ] P2pIpAddress.Classes
+[  OK  ] P2pIpAddress.Classes (0.1 ms)
+[ RUN  ] P2pIpAddress.Normalizing
+[  OK  ] P2pIpAddress.Normalizing (0.2 ms)
+[ RUN  ] P2pIpAddress.Ordering
+[  OK  ] P2pIpAddress.Ordering (0.0 ms)
+[ RUN  ] P2pSocketAddress.ParsePrintCompare
+[  OK  ] P2pSocketAddress.ParsePrintCompare (0.3 ms)
+[ RUN  ] P2pSocketAddress.Hostnames
+[  OK  ] P2pSocketAddress.Hostnames (0.1 ms)
+[ RUN  ] EmulatedSockets.BindsEphemeralPortsInOrder
+[  OK  ] EmulatedSockets.BindsEphemeralPortsInOrder (0.0 ms)
+[ RUN  ] EmulatedSockets.BindsTheFirstFreePortInARange
+[  OK  ] EmulatedSockets.BindsTheFirstFreePortInARange (0.0 ms)
+[ RUN  ] EmulatedSockets.SendsAndReceivesWithLinkDelay
+[  OK  ] EmulatedSockets.SendsAndReceivesWithLinkDelay (0.5 ms)
+[ RUN  ] EmulatedSockets.AccessLinkSizeIncludesHeaders
+[  OK  ] EmulatedSockets.AccessLinkSizeIncludesHeaders (0.1 ms)
+[ RUN  ] EmulatedSockets.ErrorsAndDrops
+[  OK  ] EmulatedSockets.ErrorsAndDrops (0.2 ms)
+[ RUN  ] EmulatedSockets.BindingThroughEachNatType
+[  OK  ] EmulatedSockets.BindingThroughEachNatType (1.5 ms)
+[ RUN  ] P2pPortAllocator.Defaults
+[  OK  ] P2pPortAllocator.Defaults (0.0 ms)
+[ RUN  ] P2pPortAllocator.CreateSession
+[  OK  ] P2pPortAllocator.CreateSession (0.0 ms)
+[ RUN  ] P2pPortAllocator.SetConfigurationUpdatesIceServersAndPool
+[  OK  ] P2pPortAllocator.SetConfigurationUpdatesIceServersAndPool (0.2 ms)
+[ RUN  ] P2pPortAllocator.TakePooledSession
+[  OK  ] P2pPortAllocator.TakePooledSession (0.1 ms)
+[ RUN  ] P2pPortAllocator.RestrictIceCredentialsChange
+[  OK  ] P2pPortAllocator.RestrictIceCredentialsChange (0.0 ms)
+[ RUN  ] P2pPortAllocator.SanitizeCandidate
+[  OK  ] P2pPortAllocator.SanitizeCandidate (0.2 ms)
+[ RUN  ] P2pBasicPortAllocator.Basic
+[  OK  ] P2pBasicPortAllocator.Basic (0.2 ms)
+[ RUN  ] P2pBasicPortAllocator.IgnoreOnlyLoopbackNetworkByDefault
+[  OK  ] P2pBasicPortAllocator.IgnoreOnlyLoopbackNetworkByDefault (0.6 ms)
+[ RUN  ] P2pBasicPortAllocator.IgnoreNetworksAccordingToIgnoreMask
+[  OK  ] P2pBasicPortAllocator.IgnoreNetworksAccordingToIgnoreMask (0.2 ms)
+[ RUN  ] P2pBasicPortAllocator.VpnPreference
+[  OK  ] P2pBasicPortAllocator.VpnPreference (0.3 ms)
+[ RUN  ] P2pBasicPortAllocator.CostlyNetworksDisabled
+[  OK  ] P2pBasicPortAllocator.CostlyNetworksDisabled (1.6 ms)
+[ RUN  ] P2pBasicPortAllocator.EthernetKeptWhenCostlyNetworksDisabledAndVpnPresent
+[  OK  ] P2pBasicPortAllocator.EthernetKeptWhenCostlyNetworksDisabledAndVpnPresent (0.1 ms)
+[ RUN  ] P2pBasicPortAllocator.MaxIpv6NetworksLimit
+[  OK  ] P2pBasicPortAllocator.MaxIpv6NetworksLimit (1.0 ms)
+[ RUN  ] P2pBasicPortAllocator.EnableIPv6Addresses
+[  OK  ] P2pBasicPortAllocator.EnableIPv6Addresses (0.6 ms)
+[ RUN  ] P2pBasicPortAllocator.LoopbackNetworkInterface
+[  OK  ] P2pBasicPortAllocator.LoopbackNetworkInterface (0.1 ms)
+[ RUN  ] P2pBasicPortAllocator.GetAllPortsWithMinimumStepDelay
+[  OK  ] P2pBasicPortAllocator.GetAllPortsWithMinimumStepDelay (1.1 ms)
+[ RUN  ] P2pBasicPortAllocator.GetAllPortsWithOneSecondStepDelay
+[  OK  ] P2pBasicPortAllocator.GetAllPortsWithOneSecondStepDelay (0.5 ms)
+[ RUN  ] P2pBasicPortAllocator.ConcurrentSessionsDoNotDuplicatePorts
+[  OK  ] P2pBasicPortAllocator.ConcurrentSessionsDoNotDuplicatePorts (1.8 ms)
+[ RUN  ] P2pBasicPortAllocator.SameNetworkDownAndUpWhenSessionNotStopped
+[  OK  ] P2pBasicPortAllocator.SameNetworkDownAndUpWhenSessionNotStopped (1.3 ms)
+[ RUN  ] P2pBasicPortAllocator.SameNetworkDownAndUpWhenSessionStopped
+[  OK  ] P2pBasicPortAllocator.SameNetworkDownAndUpWhenSessionStopped (0.6 ms)
+[ RUN  ] P2pBasicPortAllocator.StopGettingPorts
+[  OK  ] P2pBasicPortAllocator.StopGettingPorts (0.4 ms)
+[ RUN  ] P2pBasicPortAllocator.ClearGettingPorts
+[  OK  ] P2pBasicPortAllocator.ClearGettingPorts (0.4 ms)
+[ RUN  ] P2pBasicPortAllocator.GetAllPortsPortRange
+[  OK  ] P2pBasicPortAllocator.GetAllPortsPortRange (0.2 ms)
+[ RUN  ] P2pBasicPortAllocator.GetAllPortsNoAdapters
+[  OK  ] P2pBasicPortAllocator.GetAllPortsNoAdapters (0.2 ms)
+[ RUN  ] P2pBasicPortAllocator.DisableAllPorts
+[  OK  ] P2pBasicPortAllocator.DisableAllPorts (0.1 ms)
+[ RUN  ] P2pBasicPortAllocator.GetAllPortsNoUdpSockets
+[  OK  ] P2pBasicPortAllocator.GetAllPortsNoUdpSockets (0.1 ms)
+[ RUN  ] P2pBasicPortAllocator.GetAllPortsNoUdpSocketsNoTcpListen
+[  OK  ] P2pBasicPortAllocator.GetAllPortsNoUdpSocketsNoTcpListen (0.1 ms)
+[ RUN  ] P2pBasicPortAllocator.CandidatePriorityOfMultipleInterfaces
+[  OK  ] P2pBasicPortAllocator.CandidatePriorityOfMultipleInterfaces (0.2 ms)
+[ RUN  ] P2pBasicPortAllocator.SessionUsesOwnCandidateFilter
+[  OK  ] P2pBasicPortAllocator.SessionUsesOwnCandidateFilter (0.5 ms)
+[ RUN  ] P2pBasicPortAllocator.CandidateFilterWithHostOnly
+[  OK  ] P2pBasicPortAllocator.CandidateFilterWithHostOnly (0.4 ms)
+[ RUN  ] P2pBasicPortAllocator.CandidateFilterWithReflexiveOnly
+[  OK  ] P2pBasicPortAllocator.CandidateFilterWithReflexiveOnly (0.4 ms)
+[ RUN  ] P2pBasicPortAllocator.CandidateFilterWithReflexiveOnlyAndNoNat
+[  OK  ] P2pBasicPortAllocator.CandidateFilterWithReflexiveOnlyAndNoNat (0.4 ms)
+[ RUN  ] P2pBasicPortAllocator.SharedSocketWithoutNat
+[  OK  ] P2pBasicPortAllocator.SharedSocketWithoutNat (0.4 ms)
+[ RUN  ] P2pBasicPortAllocator.SharedSocketWithNat
+[  OK  ] P2pBasicPortAllocator.SharedSocketWithNat (0.5 ms)
+[ RUN  ] P2pBasicPortAllocator.NonSharedSocketWithNat
+[  OK  ] P2pBasicPortAllocator.NonSharedSocketWithNat (0.5 ms)
+[ RUN  ] P2pBasicPortAllocator.NetworkPermissionBlocked
+[  OK  ] P2pBasicPortAllocator.NetworkPermissionBlocked (0.2 ms)
+[ RUN  ] P2pBasicPortAllocator.SetCandidateFilterAfterCandidatesGathered
+[  OK  ] P2pBasicPortAllocator.SetCandidateFilterAfterCandidatesGathered (0.5 ms)
+[ RUN  ] P2pBasicPortAllocator.WiderFilterResurfacesCandidates
+[  OK  ] P2pBasicPortAllocator.WiderFilterResurfacesCandidates (0.5 ms)
+[ RUN  ] P2pBasicPortAllocator.SetStunKeepaliveIntervalForPorts
+[  OK  ] P2pBasicPortAllocator.SetStunKeepaliveIntervalForPorts (0.4 ms)
+[ RUN  ] P2pBasicPortAllocator.TurnServerAsStunServer
+[  OK  ] P2pBasicPortAllocator.TurnServerAsStunServer (0.2 ms)
+[ RUN  ] P2pBasicPortAllocator.SelectIPv6Networks
+[  OK  ] P2pBasicPortAllocator.SelectIPv6Networks (0.0 ms)
+[ RUN  ] P2pBasicPortAllocator.PortsTakeSessionSettings
+[  OK  ] P2pBasicPortAllocator.PortsTakeSessionSettings (0.2 ms)
+[ RUN  ] P2pBasicPortAllocator.RegatherOnFailedNetworks
+[  OK  ] P2pBasicPortAllocator.RegatherOnFailedNetworks (0.4 ms)
+[ RUN  ] P2pBasicPortAllocator.RegatherOnFailedNetworksKeepsNetworksWithConnections
+[  OK  ] P2pBasicPortAllocator.RegatherOnFailedNetworksKeepsNetworksWithConnections (0.6 ms)
+[ RUN  ] P2pBasicPortAllocator.PrunedPortsAreDestroyed
+[  OK  ] P2pBasicPortAllocator.PrunedPortsAreDestroyed (0.2 ms)
+[ RUN  ] P2pNetworkManager.MergeSortAndPreferences
+[  OK  ] P2pNetworkManager.MergeSortAndPreferences (0.4 ms)
+[ RUN  ] P2pNetworkManager.AnyAddressNetworksAndDefaultLocalAddress
+[  OK  ] P2pNetworkManager.AnyAddressNetworksAndDefaultLocalAddress (0.2 ms)
+[ RUN  ] P2pBasicPortAllocator.NetworkChangeDuringGathering
+[  OK  ] P2pBasicPortAllocator.NetworkChangeDuringGathering (0.8 ms)
+[ RUN  ] P2pBasicPortAllocator.NetworkWithConnectionIsNotFailed
+[  OK  ] P2pBasicPortAllocator.NetworkWithConnectionIsNotFailed (0.5 ms)
+[ RUN  ] P2pPortAllocator.ConfigureAsPeerConnection
+[  OK  ] P2pPortAllocator.ConfigureAsPeerConnection (0.0 ms)
+[ RUN  ] P2pCandidate.TypeNamesAndPreferences
+[  OK  ] P2pCandidate.TypeNamesAndPreferences (0.2 ms)
+[ RUN  ] P2pCandidate.AttributeAndEquivalence
+[  OK  ] P2pCandidate.AttributeAndEquivalence (0.2 ms)
+[ RUN  ] P2pCandidate.PrflxFoundationIsCrcOfId
+[  OK  ] P2pCandidate.PrflxFoundationIsCrcOfId (0.1 ms)
+[ RUN  ] P2pCandidate.FoundationIsKeyedHashOfTypeBaseAndProtocol
+[  OK  ] P2pCandidate.FoundationIsKeyedHashOfTypeBaseAndProtocol (0.3 ms)
+[ RUN  ] P2pNetwork.CostPrecedenceAndBestIp
+[  OK  ] P2pNetwork.CostPrecedenceAndBestIp (0.2 ms)
+[ RUN  ] P2pPort.ComputeCandidatePriority
+[  OK  ] P2pPort.ComputeCandidatePriority (1.2 ms)
+[ RUN  ] P2pPort.CandidatesCarryPortAndNetworkFields
+[  OK  ] P2pPort.CandidatesCarryPortAndNetworkFields (0.2 ms)
+[ RUN  ] P2pPort.FoundationDiffersByType
+[  OK  ] P2pPort.FoundationDiffersByType (0.1 ms)
+[ RUN  ] P2pPort.SetIceParameters
+[  OK  ] P2pPort.SetIceParameters (0.2 ms)
+[ RUN  ] P2pPort.EmptyCredentialsGetRandomOnes
+[  OK  ] P2pPort.EmptyCredentialsGetRandomOnes (0.0 ms)
+[ RUN  ] P2pPort.SupportsProtocol
+[  OK  ] P2pPort.SupportsProtocol (0.0 ms)
+[ RUN  ] P2pPort.HandleStunMessage
+[  OK  ] P2pPort.HandleStunMessage (0.3 ms)
+[ RUN  ] P2pPort.HandleStunMessageBadUsername
+[  OK  ] P2pPort.HandleStunMessageBadUsername (0.5 ms)
+[ RUN  ] P2pPort.HandleStunMessageBadMessageIntegrity
+[  OK  ] P2pPort.HandleStunMessageBadMessageIntegrity (0.2 ms)
+[ RUN  ] P2pPort.HandleStunMessageBadFingerprint
+[  OK  ] P2pPort.HandleStunMessageBadFingerprint (0.2 ms)
+[ RUN  ] P2pPort.UnknownComprehensionRequiredAttributeInRequest
+[  OK  ] P2pPort.UnknownComprehensionRequiredAttributeInRequest (0.3 ms)
+[ RUN  ] P2pPort.UnknownComprehensionRequiredAttributeInResponseOrIndication
+[  OK  ] P2pPort.UnknownComprehensionRequiredAttributeInResponseOrIndication (0.1 ms)
+[ RUN  ] P2pPort.HandleStunBindingIndication
+[  OK  ] P2pPort.HandleStunBindingIndication (0.0 ms)
+[ RUN  ] P2pPort.GoogPing
+[  OK  ] P2pPort.GoogPing (0.2 ms)
+[ RUN  ] P2pPort.UnknownAddressSignalNeedsIceRole
+[  OK  ] P2pPort.UnknownAddressSignalNeedsIceRole (0.5 ms)
+[ RUN  ] P2pPort.IceRoleConflict
+[  OK  ] P2pPort.IceRoleConflict (1.1 ms)
+[ RUN  ] P2pPort.LoopbackIsNoConflict
+[  OK  ] P2pPort.LoopbackIsNoConflict (0.1 ms)
+[ RUN  ] P2pPort.UsernameHelpers
+[  OK  ] P2pPort.UsernameHelpers (0.2 ms)
+[ RUN  ] P2pPort.IsCompatibleAddress
+[  OK  ] P2pPort.IsCompatibleAddress (0.1 ms)
+[ RUN  ] P2pPort.TimeoutIfNotKeptAlive
+[  OK  ] P2pPort.TimeoutIfNotKeptAlive (0.0 ms)
+[ RUN  ] P2pPort.NotTimeoutUntilPruned
+[  OK  ] P2pPort.NotTimeoutUntilPruned (0.2 ms)
+[ RUN  ] P2pStunPort.PrepareAddress
+[  OK  ] P2pStunPort.PrepareAddress (0.3 ms)
+[ RUN  ] P2pStunPort.ServerReflexiveThroughEachNatType
+[  OK  ] P2pStunPort.ServerReflexiveThroughEachNatType (1.5 ms)
+[ RUN  ] P2pStunPort.TwoCandidatesWithTwoServersAcrossSymmetricNat
+[  OK  ] P2pStunPort.TwoCandidatesWithTwoServersAcrossSymmetricNat (0.4 ms)
+[ RUN  ] P2pStunPort.NoDuplicatedAddressWithTwoServers
+[  OK  ] P2pStunPort.NoDuplicatedAddressWithTwoServers (0.4 ms)
+[ RUN  ] P2pStunPort.PrepareAddressFail
+[  OK  ] P2pStunPort.PrepareAddressFail (0.3 ms)
+[ RUN  ] P2pStunPort.MultipleServersWithBadServer
+[  OK  ] P2pStunPort.MultipleServersWithBadServer (0.6 ms)
+[ RUN  ] P2pStunPort.ServerAddressFamilyMismatch
+[  OK  ] P2pStunPort.ServerAddressFamilyMismatch (0.1 ms)
+[ RUN  ] P2pStunPort.KeepAliveResponse
+[  OK  ] P2pStunPort.KeepAliveResponse (0.3 ms)
+[ RUN  ] P2pStunPort.DefaultKeepaliveInterval
+[  OK  ] P2pStunPort.DefaultKeepaliveInterval (0.4 ms)
+[ RUN  ] P2pStunPort.KeepaliveLifetimeFollowsNetworkCost
+[  OK  ] P2pStunPort.KeepaliveLifetimeFollowsNetworkCost (0.1 ms)
+[ RUN  ] P2pStunPort.BindingRequestLifetime
+[  OK  ] P2pStunPort.BindingRequestLifetime (4.0 ms)
+[ RUN  ] P2pStunPort.ErrorResponseRetriesFor50Seconds
+[  OK  ] P2pStunPort.ErrorResponseRetriesFor50Seconds (0.8 ms)
+[ RUN  ] P2pUdpPort.SharedSocketPrepareAddress
+[  OK  ] P2pUdpPort.SharedSocketPrepareAddress (0.2 ms)
+[ RUN  ] P2pUdpPort.SharedSocketSkipsReflexiveEqualToLocal
+[  OK  ] P2pUdpPort.SharedSocketSkipsReflexiveEqualToLocal (0.1 ms)
+[ RUN  ] P2pUdpPort.SharedSocketCompleteWhenServersFail
+[  OK  ] P2pUdpPort.SharedSocketCompleteWhenServersFail (0.1 ms)
+[ RUN  ] P2pUdpPort.SocketCloseFailsPendingBindingRequest
+[  OK  ] P2pUdpPort.SocketCloseFailsPendingBindingRequest (0.2 ms)
+[ RUN  ] P2pUdpPort.NoServersCompleteAtOnce
+[  OK  ] P2pUdpPort.NoServersCompleteAtOnce (0.1 ms)
+[ RUN  ] P2pUdpPort.StunPacketsHaveDscp
+[  OK  ] P2pUdpPort.StunPacketsHaveDscp (0.3 ms)
+[ RUN  ] P2pUdpPort.EmitLocalForAnyAddress
+[  OK  ] P2pUdpPort.EmitLocalForAnyAddress (0.1 ms)
+[ RUN  ] P2pUdpPort.ServerPacketsGoToRequests
+[  OK  ] P2pUdpPort.ServerPacketsGoToRequests (0.3 ms)
+[ RUN  ] P2pUdpPort.OwnSocketInPortRange
+[  OK  ] P2pUdpPort.OwnSocketInPortRange (0.1 ms)
+[ RUN  ] StunRequest.TestSuccess
+[  OK  ] StunRequest.TestSuccess (0.2 ms)
+[ RUN  ] StunRequest.TestError
+[  OK  ] StunRequest.TestError (0.0 ms)
+[ RUN  ] StunRequest.TestUnexpected
+[  OK  ] StunRequest.TestUnexpected (0.0 ms)
+[ RUN  ] StunRequest.TestBackoff
+[  OK  ] StunRequest.TestBackoff (0.5 ms)
+[ RUN  ] StunRequest.TestTimeout
+[  OK  ] StunRequest.TestTimeout (0.1 ms)
+[ RUN  ] StunRequest.TestNoEmptyRequest
+[  OK  ] StunRequest.TestNoEmptyRequest (0.0 ms)
+[ RUN  ] StunRequest.TestUnrecognizedComprehensionRequiredAttribute
+[  OK  ] StunRequest.TestUnrecognizedComprehensionRequiredAttribute (0.0 ms)
+[ RUN  ] StunRequest.ResponseValidatedWithDifferentPasswordRevalidates
+[  OK  ] StunRequest.ResponseValidatedWithDifferentPasswordRevalidates (0.2 ms)
+[ RUN  ] StunRequest.ResponseWithNewPasswordDoesNotMatchOldRequest
+[  OK  ] StunRequest.ResponseWithNewPasswordDoesNotMatchOldRequest (0.1 ms)
+[ RUN  ] StunRequest.ResponseValidatedWithMatchingPassword
+[  OK  ] StunRequest.ResponseValidatedWithMatchingPassword (0.2 ms)
+[ RUN  ] StunRequest.UnsignedResponseToAuthenticatedRequestIsRefused
+[  OK  ] StunRequest.UnsignedResponseToAuthenticatedRequestIsRefused (0.1 ms)
+[ RUN  ] StunRequest.UnauthenticatedTurnResponses
+[  OK  ] StunRequest.UnauthenticatedTurnResponses (0.0 ms)
+[ RUN  ] StunRequest.CheckResponseFromBytes
+[  OK  ] StunRequest.CheckResponseFromBytes (0.0 ms)
+[ RUN  ] StunRequest.FlushRestartsTheSchedule
+[  OK  ] StunRequest.FlushRestartsTheSchedule (0.1 ms)
+[ RUN  ] StunRequestReentrance.TestSuccess
+[  OK  ] StunRequestReentrance.TestSuccess (0.0 ms)
+[ RUN  ] StunRequestReentrance.TestError
+[  OK  ] StunRequestReentrance.TestError (0.0 ms)
+[ RUN  ] StunRequest.RefusesPredictableIds
+[  OK  ] StunRequest.RefusesPredictableIds (0.1 ms)
+[ RUN  ] StunServer.BindingThroughEachNatType
+[  OK  ] StunServer.BindingThroughEachNatType (0.9 ms)
+[ RUN  ] StunServer.RetransmissionRecoversFromLoss
+[  OK  ] StunServer.RetransmissionRecoversFromLoss (3.6 ms)
+[ RUN  ] StunServer.AnswersOtherRequestsWith600
+[  OK  ] StunServer.AnswersOtherRequestsWith600 (0.3 ms)
+[ RUN  ] Stun.MessageTypes
+[  OK  ] Stun.MessageTypes (0.2 ms)
+[ RUN  ] Stun.ReadMessageWithIPv4AddressAttribute
+[  OK  ] Stun.ReadMessageWithIPv4AddressAttribute (0.1 ms)
+[ RUN  ] Stun.ReadMessageWithIPv4XorAddressAttribute
+[  OK  ] Stun.ReadMessageWithIPv4XorAddressAttribute (0.0 ms)
+[ RUN  ] Stun.ReadMessageWithIPv6AddressAttribute
+[  OK  ] Stun.ReadMessageWithIPv6AddressAttribute (0.0 ms)
+[ RUN  ] Stun.ReadMessageWithInvalidAddressAttribute
+[  OK  ] Stun.ReadMessageWithInvalidAddressAttribute (0.0 ms)
+[ RUN  ] Stun.ReadMessageWithIPv6XorAddressAttribute
+[  OK  ] Stun.ReadMessageWithIPv6XorAddressAttribute (0.0 ms)
+[ RUN  ] Stun.ReadRfc5769RequestMessage
+[  OK  ] Stun.ReadRfc5769RequestMessage (0.4 ms)
+[ RUN  ] Stun.ReadRfc5769ResponseMessage
+[  OK  ] Stun.ReadRfc5769ResponseMessage (0.0 ms)
+[ RUN  ] Stun.ReadRfc5769ResponseMessageIPv6
+[  OK  ] Stun.ReadRfc5769ResponseMessageIPv6 (0.0 ms)
+[ RUN  ] Stun.ReadRfc5769RequestMessageLongTermAuth
+[  OK  ] Stun.ReadRfc5769RequestMessageLongTermAuth (0.2 ms)
+[ RUN  ] Stun.ReadLegacyMessage
+[  OK  ] Stun.ReadLegacyMessage (0.0 ms)
+[ RUN  ] Stun.SetIPv6XorAddressAttributeOwner
+[  OK  ] Stun.SetIPv6XorAddressAttributeOwner (0.0 ms)
+[ RUN  ] Stun.SetIPv4XorAddressAttributeOwner
+[  OK  ] Stun.SetIPv4XorAddressAttributeOwner (0.3 ms)
+[ RUN  ] Stun.CreateIPv6AddressAttribute
+[  OK  ] Stun.CreateIPv6AddressAttribute (0.0 ms)
+[ RUN  ] Stun.CreateIPv4AddressAttribute
+[  OK  ] Stun.CreateIPv4AddressAttribute (0.0 ms)
+[ RUN  ] Stun.CreateAddressInArbitraryOrder
+[  OK  ] Stun.CreateAddressInArbitraryOrder (0.0 ms)
+[ RUN  ] Stun.WriteMessageWithIPv6AddressAttribute
+[  OK  ] Stun.WriteMessageWithIPv6AddressAttribute (0.0 ms)
+[ RUN  ] Stun.WriteMessageWithIPv4AddressAttribute
+[  OK  ] Stun.WriteMessageWithIPv4AddressAttribute (0.0 ms)
+[ RUN  ] Stun.WriteMessageWithIPv6XorAddressAttribute
+[  OK  ] Stun.WriteMessageWithIPv6XorAddressAttribute (0.1 ms)
+[ RUN  ] Stun.WriteMessageWithIPv4XoreAddressAttribute
+[  OK  ] Stun.WriteMessageWithIPv4XoreAddressAttribute (0.0 ms)
+[ RUN  ] Stun.ReadByteStringAttribute
+[  OK  ] Stun.ReadByteStringAttribute (0.0 ms)
+[ RUN  ] Stun.ReadPaddedByteStringAttribute
+[  OK  ] Stun.ReadPaddedByteStringAttribute (0.0 ms)
+[ RUN  ] Stun.ReadErrorCodeAttribute
+[  OK  ] Stun.ReadErrorCodeAttribute (0.1 ms)
+[ RUN  ] Stun.GetErrorCodeValueWithNoErrorAttribute
+[  OK  ] Stun.GetErrorCodeValueWithNoErrorAttribute (0.0 ms)
+[ RUN  ] Stun.ReadMessageWithAUInt16ListAttribute
+[  OK  ] Stun.ReadMessageWithAUInt16ListAttribute (0.0 ms)
+[ RUN  ] Stun.ReadMessageWithAnUnknownAttribute
+[  OK  ] Stun.ReadMessageWithAnUnknownAttribute (0.0 ms)
+[ RUN  ] Stun.WriteMessageWithAnErrorCodeAttribute
+[  OK  ] Stun.WriteMessageWithAnErrorCodeAttribute (0.0 ms)
+[ RUN  ] Stun.WriteMessageWithAUInt16ListAttribute
+[  OK  ] Stun.WriteMessageWithAUInt16ListAttribute (0.1 ms)
+[ RUN  ] Stun.FailToReadInvalidMessages
+[  OK  ] Stun.FailToReadInvalidMessages (0.0 ms)
+[ RUN  ] Stun.FailToReadRtcpPacket
+[  OK  ] Stun.FailToReadRtcpPacket (0.0 ms)
+[ RUN  ] Stun.ValidateMessageIntegrity
+[  OK  ] Stun.ValidateMessageIntegrity (3.0 ms)
+[ RUN  ] Stun.AddMessageIntegrity
+[  OK  ] Stun.AddMessageIntegrity (0.2 ms)
+[ RUN  ] Stun.ValidateMessageIntegrity32
+[  OK  ] Stun.ValidateMessageIntegrity32 (2.3 ms)
+[ RUN  ] Stun.AddMessageIntegrity32
+[  OK  ] Stun.AddMessageIntegrity32 (0.2 ms)
+[ RUN  ] Stun.AddMessageIntegrity32AndMessageIntegrity
+[  OK  ] Stun.AddMessageIntegrity32AndMessageIntegrity (0.2 ms)
+[ RUN  ] Stun.ValidateFingerprint
+[  OK  ] Stun.ValidateFingerprint (0.2 ms)
+[ RUN  ] Stun.AddFingerprint
+[  OK  ] Stun.AddFingerprint (0.0 ms)
+[ RUN  ] Stun.RemoveAttribute
+[  OK  ] Stun.RemoveAttribute (0.0 ms)
+[ RUN  ] Stun.ClearAttributes
+[  OK  ] Stun.ClearAttributes (0.0 ms)
+[ RUN  ] Stun.CopyAttribute
+[  OK  ] Stun.CopyAttribute (0.0 ms)
+[ RUN  ] Stun.Clone
+[  OK  ] Stun.Clone (0.1 ms)
+[ RUN  ] Stun.EqualAttributes
+[  OK  ] Stun.EqualAttributes (0.5 ms)
+[ RUN  ] Stun.ReduceTransactionIdIsHostOrderIndependent
+[  OK  ] Stun.ReduceTransactionIdIsHostOrderIndependent (0.0 ms)
+[ RUN  ] Stun.GoogMiscInfo
+[  OK  ] Stun.GoogMiscInfo (0.1 ms)
+[ RUN  ] Stun.IsStunMethod
+[  OK  ] Stun.IsStunMethod (0.0 ms)
+[ RUN  ] Stun.SizeRestrictionOnAttributes
+[  OK  ] Stun.SizeRestrictionOnAttributes (0.0 ms)
+[ RUN  ] Stun.ValidateMessageIntegrityWithParser
+[  OK  ] Stun.ValidateMessageIntegrityWithParser (0.1 ms)
+[ RUN  ] Stun.ByteStringAsVectorOfUint32
+[  OK  ] Stun.ByteStringAsVectorOfUint32 (0.0 ms)
+[ RUN  ] Stun.RemovingSigningAttributesAllowsAddingNewAttributes
+[  OK  ] Stun.RemovingSigningAttributesAllowsAddingNewAttributes (0.1 ms)
+[ RUN  ] Stun.AddingAttributesAfterSigningFails
+[  OK  ] Stun.AddingAttributesAfterSigningFails (0.1 ms)
+[ RUN  ] Stun.RemovingAttributesAfterSigningFails
+[  OK  ] Stun.RemovingAttributesAfterSigningFails (0.1 ms)
+[ RUN  ] Stun.IceAttributesAndTypedGetters
+[  OK  ] Stun.IceAttributesAndTypedGetters (0.0 ms)
+[ RUN  ] Stun.TurnMessageRoundTrip
+[  OK  ] Stun.TurnMessageRoundTrip (0.2 ms)
+[ RUN  ] Stun.GeneratedTransactionIds
+[  OK  ] Stun.GeneratedTransactionIds (0.0 ms)
+[ RUN  ] Stun.NoCryptoFailsClosed
+[  OK  ] Stun.NoCryptoFailsClosed (0.0 ms)
+[ RUN  ] Stun.TruncatedPacketsFail
+[  OK  ] Stun.TruncatedPacketsFail (0.4 ms)
+[ RUN  ] Stun.Crc32CheckValue
+[  OK  ] Stun.Crc32CheckValue (0.0 ms)
+[ RUN  ] P2pTcpPort.PassiveCandidateOnListenSocket
+[  OK  ] P2pTcpPort.PassiveCandidateOnListenSocket (0.9 ms)
+[ RUN  ] P2pTcpPort.ActiveCandidateWithoutListenSocket
+[  OK  ] P2pTcpPort.ActiveCandidateWithoutListenSocket (0.1 ms)
+[ RUN  ] P2pTcpPort.CreateConnectionRules
+[  OK  ] P2pTcpPort.CreateConnectionRules (0.5 ms)
+[ RUN  ] P2pTcpPort.TCPPortWithLocalhostAddress
+[  OK  ] P2pTcpPort.TCPPortWithLocalhostAddress (0.4 ms)
+[ RUN  ] P2pTcpPort.TCPPortDiscardedIfBoundAddressDoesNotMatchNetwork
+[  OK  ] P2pTcpPort.TCPPortDiscardedIfBoundAddressDoesNotMatchNetwork (0.4 ms)
+[ RUN  ] P2pTcpPort.TCPPortNotDiscardedIfNotBoundToBestIP
+[  OK  ] P2pTcpPort.TCPPortNotDiscardedIfNotBoundToBestIP (0.3 ms)
+[ RUN  ] P2pTcpPort.SignalSentPacket
+[  OK  ] P2pTcpPort.SignalSentPacket (1.3 ms)
+[ RUN  ] P2pTcpPort.SignalSentPacketAfterReconnect
+[  OK  ] P2pTcpPort.SignalSentPacketAfterReconnect (1.6 ms)
+[ RUN  ] P2pTcpPort.ReconnectionTimeoutDestroysConnection
+[  OK  ] P2pTcpPort.ReconnectionTimeoutDestroysConnection (0.4 ms)
+[ RUN  ] P2pTcpPort.ReconnectTimeoutAfterShutdownDoesNotDestroy
+[  OK  ] P2pTcpPort.ReconnectTimeoutAfterShutdownDoesNotDestroy (0.3 ms)
+[ RUN  ] P2pTcpPort.ConnectFailureDestroysOrPrunes
+[  OK  ] P2pTcpPort.ConnectFailureDestroysOrPrunes (0.3 ms)
+[ RUN  ] AsyncTcpSocket.OnWriteEvent
+[  OK  ] AsyncTcpSocket.OnWriteEvent (0.0 ms)
+[ RUN  ] AsyncTcpSocket.FramesPacketsBothWaysThroughTheFactory
+[  OK  ] AsyncTcpSocket.FramesPacketsBothWaysThroughTheFactory (2.1 ms)
+[ RUN  ] AsyncTcpSocket.FactoryRefusesTlsAndStunListeners
+[  OK  ] AsyncTcpSocket.FactoryRefusesTlsAndStunListeners (0.2 ms)
+[ RUN  ] AsyncStunTcpSocket.TestSingleStunPacket
+[  OK  ] AsyncStunTcpSocket.TestSingleStunPacket (0.7 ms)
+[ RUN  ] AsyncStunTcpSocket.TestMultipleStunPackets
+[  OK  ] AsyncStunTcpSocket.TestMultipleStunPackets (0.4 ms)
+[ RUN  ] AsyncStunTcpSocket.ProcessInputHandlesMultiplePackets
+[  OK  ] AsyncStunTcpSocket.ProcessInputHandlesMultiplePackets (0.4 ms)
+[ RUN  ] AsyncStunTcpSocket.TestTurnChannelDataWithZeroLength
+[  OK  ] AsyncStunTcpSocket.TestTurnChannelDataWithZeroLength (0.3 ms)
+[ RUN  ] AsyncStunTcpSocket.TestTurnChannelData
+[  OK  ] AsyncStunTcpSocket.TestTurnChannelData (0.3 ms)
+[ RUN  ] AsyncStunTcpSocket.TestTurnChannelDataPadding
+[  OK  ] AsyncStunTcpSocket.TestTurnChannelDataPadding (0.2 ms)
+[ RUN  ] AsyncStunTcpSocket.TestStunInvalidLength
+[  OK  ] AsyncStunTcpSocket.TestStunInvalidLength (0.2 ms)
+[ RUN  ] AsyncStunTcpSocket.TestTurnChannelDataWithInvalidLength
+[  OK  ] AsyncStunTcpSocket.TestTurnChannelDataWithInvalidLength (0.2 ms)
+[ RUN  ] AsyncStunTcpSocket.TestTooSmallMessageBuffer
+[  OK  ] AsyncStunTcpSocket.TestTooSmallMessageBuffer (0.2 ms)
+[ RUN  ] AsyncStunTcpSocket.TestMaximumSizeTurnPacket
+[  OK  ] AsyncStunTcpSocket.TestMaximumSizeTurnPacket (10.7 ms)
+[ RUN  ] AsyncStunTcpSocket.TestMaximumSizeStunPacket
+[  OK  ] AsyncStunTcpSocket.TestMaximumSizeStunPacket (10.4 ms)
+[ RUN  ] AsyncStunTcpSocket.TestWithSmallSendBuffer
+[  OK  ] AsyncStunTcpSocket.TestWithSmallSendBuffer (0.5 ms)
+[ RUN  ] AsyncStunTcpSocket.SignalSentPacketFiredWhenPacketSent
+[  OK  ] AsyncStunTcpSocket.SignalSentPacketFiredWhenPacketSent (0.3 ms)
+[ RUN  ] AsyncStunTcpSocket.SignalSentPacketNotFiredWhenPacketNotSent
+[  OK  ] AsyncStunTcpSocket.SignalSentPacketNotFiredWhenPacketNotSent (0.2 ms)
+[ RUN  ] EmulatedTcp.ConnectAcceptAndMss
+[  OK  ] EmulatedTcp.ConnectAcceptAndMss (0.6 ms)
+[ RUN  ] EmulatedTcp.ConnectionRefusedWithoutListener
+[  OK  ] EmulatedTcp.ConnectionRefusedWithoutListener (0.2 ms)
+[ RUN  ] EmulatedTcp.TcpAndUdpShareThePortTable
+[  OK  ] EmulatedTcp.TcpAndUdpShareThePortTable (0.1 ms)
+[ RUN  ] EmulatedTcp.FlowControlAndWriteEvent
+[  OK  ] EmulatedTcp.FlowControlAndWriteEvent (9.6 ms)
+[ RUN  ] EmulatedTcp.CloseAndReset
+[  OK  ] EmulatedTcp.CloseAndReset (1.1 ms)
+[ RUN  ] EmulatedTcp.EchoFromBehindEachNatType
+[  OK  ] EmulatedTcp.EchoFromBehindEachNatType (1.7 ms)
+[ RUN  ] EmulatedTcp.ConnectIntoANatTimesOut
+[  OK  ] EmulatedTcp.ConnectIntoANatTimesOut (0.1 ms)
+[ RUN  ] EmulatedTcp.DeliversInOrderOverLossyLinks
+[  OK  ] EmulatedTcp.DeliversInOrderOverLossyLinks (257.5 ms)
+[ RUN  ] StunTestCrypto.Sha1Fips180Vectors
+[  OK  ] StunTestCrypto.Sha1Fips180Vectors (0.4 ms)
+[ RUN  ] StunTestCrypto.HmacSha1Rfc2202Vectors
+[  OK  ] StunTestCrypto.HmacSha1Rfc2202Vectors (0.1 ms)
+[ RUN  ] StunTestCrypto.Md5Rfc1321Vectors
+[  OK  ] StunTestCrypto.Md5Rfc1321Vectors (0.0 ms)
+[ RUN  ] StunTestCrypto.Sha256AndHmacVectors
+[  OK  ] StunTestCrypto.Sha256AndHmacVectors (0.1 ms)
+[ RUN  ] StunTestCrypto.UniqueIdsDontRepeat
+[  OK  ] StunTestCrypto.UniqueIdsDontRepeat (388.1 ms)
+[ RUN  ] P2pTurnPortTcp.Allocate
+[  OK  ] P2pTurnPortTcp.Allocate (4.1 ms)
+[ RUN  ] P2pTurnPortTcp.AllocateMismatch
+[  OK  ] P2pTurnPortTcp.AllocateMismatch (2.8 ms)
+[ RUN  ] P2pTurnPortTcp.PrivateServerErrorAddressScrubbed
+[  OK  ] P2pTurnPortTcp.PrivateServerErrorAddressScrubbed (0.2 ms)
+[ RUN  ] P2pTurnPortTcp.PublicServerErrorAddressNotScrubbed
+[  OK  ] P2pTurnPortTcp.PublicServerErrorAddressNotScrubbed (0.2 ms)
+[ RUN  ] P2pTurnPortTcp.ConnectionRefused
+[  OK  ] P2pTurnPortTcp.ConnectionRefused (0.4 ms)
+[ RUN  ] P2pTurnPortTcp.AlternateServer
+[  OK  ] P2pTurnPortTcp.AlternateServer (1.7 ms)
+[ RUN  ] P2pTurnPortTcp.AlternateServerRefused
+[  OK  ] P2pTurnPortTcp.AlternateServerRefused (2.6 ms)
+[ RUN  ] P2pTurnPortTcp.Connection
+[  OK  ] P2pTurnPortTcp.Connection (3.0 ms)
+[ RUN  ] P2pTurnPortTcp.SendData
+[  OK  ] P2pTurnPortTcp.SendData (50.1 ms)
+[ RUN  ] P2pTurnPortTcp.ReleaseAllocation
+[  OK  ] P2pTurnPortTcp.ReleaseAllocation (1.8 ms)
+[ RUN  ] P2pTurnPortTcp.GracefulReleaseAllocation
+[  OK  ] P2pTurnPortTcp.GracefulReleaseAllocation (2.9 ms)
+[ RUN  ] P2pTurnPortTcp.ConnectionClosedAfterAllocation
+[  OK  ] P2pTurnPortTcp.ConnectionClosedAfterAllocation (1.2 ms)
+[ RUN  ] P2pTurnPortTcp.AllocatorGathersRelayWithUdpBlocked
+[  OK  ] P2pTurnPortTcp.AllocatorGathersRelayWithUdpBlocked (1.6 ms)
+[ RUN  ] P2pTurnRestCredentials.UsernameAndPassword
+[  OK  ] P2pTurnRestCredentials.UsernameAndPassword (0.3 ms)
+[ RUN  ] P2pTurnRestCredentials.AllocateOverTcp
+[  OK  ] P2pTurnRestCredentials.AllocateOverTcp (1.9 ms)
+[ RUN  ] P2pTurnPort.Allocate
+[  OK  ] P2pTurnPort.Allocate (1.1 ms)
+[ RUN  ] P2pTurnPort.AllocateLoggingId
+[  OK  ] P2pTurnPort.AllocateLoggingId (1.5 ms)
+[ RUN  ] P2pTurnPort.BadCredentials
+[  OK  ] P2pTurnPort.BadCredentials (0.7 ms)
+[ RUN  ] P2pTurnPort.ServerAddressFamilyMismatch
+[  OK  ] P2pTurnPort.ServerAddressFamilyMismatch (0.1 ms)
+[ RUN  ] P2pTurnPort.AllocateMismatch
+[  OK  ] P2pTurnPort.AllocateMismatch (1.9 ms)
+[ RUN  ] P2pTurnPort.SharedSocketAllocateMismatch
+[  OK  ] P2pTurnPort.SharedSocketAllocateMismatch (1.7 ms)
+[ RUN  ] P2pTurnPort.AllocateMismatchGivesUpAfterTwoRetries
+[  OK  ] P2pTurnPort.AllocateMismatchGivesUpAfterTwoRetries (2.9 ms)
+[ RUN  ] P2pTurnPort.AlternateServer
+[  OK  ] P2pTurnPort.AlternateServer (0.9 ms)
+[ RUN  ] P2pTurnPort.AlternateServerRefused
+[  OK  ] P2pTurnPort.AlternateServerRefused (1.9 ms)
+[ RUN  ] P2pTurnPort.ValidateServerPortAndUsername
+[  OK  ] P2pTurnPort.ValidateServerPortAndUsername (0.1 ms)
+[ RUN  ] P2pTurnPort.Connection
+[  OK  ] P2pTurnPort.Connection (4.6 ms)
+[ RUN  ] P2pTurnPort.NoConnectionToRemoteMdnsCandidate
+[  OK  ] P2pTurnPort.NoConnectionToRemoteMdnsCandidate (1.1 ms)
+[ RUN  ] P2pTurnPort.DestroyConnection
+[  OK  ] P2pTurnPort.DestroyConnection (3.2 ms)
+[ RUN  ] P2pTurnPort.EntryReusedBeforeTimeout
+[  OK  ] P2pTurnPort.EntryReusedBeforeTimeout (1.6 ms)
+[ RUN  ] P2pTurnPort.SendData
+[  OK  ] P2pTurnPort.SendData (32.4 ms)
+[ RUN  ] P2pTurnPort.RefreshCreatePermissionRequest
+[  OK  ] P2pTurnPort.RefreshCreatePermissionRequest (2.1 ms)
+[ RUN  ] P2pTurnPort.RefreshRequestGetsErrorResponse
+[  OK  ] P2pTurnPort.RefreshRequestGetsErrorResponse (1.5 ms)
+[ RUN  ] P2pTurnPort.RefreshScheduledBeforeLifetimeEnds
+[  OK  ] P2pTurnPort.RefreshScheduledBeforeLifetimeEnds (3.2 ms)
+[ RUN  ] P2pTurnPort.ChannelBindGetErrorResponse
+[  OK  ] P2pTurnPort.ChannelBindGetErrorResponse (2.8 ms)
+[ RUN  ] P2pTurnPort.ConnectionFailedAndPrunedOnCreatePermissionFailure
+[  OK  ] P2pTurnPort.ConnectionFailedAndPrunedOnCreatePermissionFailure (2.1 ms)
+[ RUN  ] P2pTurnPort.ReleaseAllocation
+[  OK  ] P2pTurnPort.ReleaseAllocation (1.3 ms)
+[ RUN  ] P2pTurnPort.GracefulReleaseAllocation
+[  OK  ] P2pTurnPort.GracefulReleaseAllocation (3.0 ms)
+[ RUN  ] P2pTurnPort.StopProcessingPacketsAfterClosed
+[  OK  ] P2pTurnPort.StopProcessingPacketsAfterClosed (1.9 ms)
+[ RUN  ] P2pTurnPort.UdpSocketCloseFailsPendingAllocateRequest
+[  OK  ] P2pTurnPort.UdpSocketCloseFailsPendingAllocateRequest (0.2 ms)
+[ RUN  ] P2pTurnPort.CanCreateTwoConnectionsToSameAddress
+[  OK  ] P2pTurnPort.CanCreateTwoConnectionsToSameAddress (1.1 ms)
+[ RUN  ] P2pTurnPort.UnauthenticatedAllocateSuccessRejected
+[  OK  ] P2pTurnPort.UnauthenticatedAllocateSuccessRejected (0.3 ms)
+[ RUN  ] P2pTurnPort.AllocatorGathersRelayBehindSymmetricNat
+[  OK  ] P2pTurnPort.AllocatorGathersRelayBehindSymmetricNat (1.4 ms)
+[ RUN  ] P2pTurnServer.OneAllocationPerClientAddress
+[  OK  ] P2pTurnServer.OneAllocationPerClientAddress (1.5 ms)
+[ RUN  ] StunTls.Rfc5769IntegrityWithBoringSsl
+[  OK  ] StunTls.Rfc5769IntegrityWithBoringSsl (3.6 ms)
+[ RUN  ] StunTls.InstallStunCryptoFromTls
+[  OK  ] StunTls.InstallStunCryptoFromTls (0.2 ms)
+[ RUN  ] P2pSslAdapter.TlsClientConnectsWithSniAndEchoes
+[  OK  ] P2pSslAdapter.TlsClientConnectsWithSniAndEchoes (26.2 ms)
+[ RUN  ] P2pSslAdapter.AlpnAndCurvesReachTheServer
+[  OK  ] P2pSslAdapter.AlpnAndCurvesReachTheServer (13.5 ms)
+[ RUN  ] P2pSslAdapter.UntrustedCertificateClosesTheSocket
+[  OK  ] P2pSslAdapter.UntrustedCertificateClosesTheSocket (14.6 ms)
+[ RUN  ] P2pSslAdapter.InsecureOptionAcceptsAnyCertificate
+[  OK  ] P2pSslAdapter.InsecureOptionAcceptsAnyCertificate (14.8 ms)
+[ RUN  ] P2pSslAdapter.AddressWithoutHostnameFailsTheSecureCheck
+[  OK  ] P2pSslAdapter.AddressWithoutHostnameFailsTheSecureCheck (14.4 ms)
+[ RUN  ] P2pSslAdapter.CustomVerifierAcceptsOrRefuses
+[  OK  ] P2pSslAdapter.CustomVerifierAcceptsOrRefuses (28.8 ms)
+[ RUN  ] P2pSslAdapter.SendBeforeTheHandshakeIsNotConnected
+[  OK  ] P2pSslAdapter.SendBeforeTheHandshakeIsNotConnected (0.1 ms)
+[ RUN  ] P2pSslAdapter.LargePacketsCrossRecordsAndAFullSendBuffer
+[  OK  ] P2pSslAdapter.LargePacketsCrossRecordsAndAFullSendBuffer (70.2 ms)
+[ RUN  ] P2pSslAdapter.NoTlsWithoutAnInstalledAdapterOrForFakeTls
+[  OK  ] P2pSslAdapter.NoTlsWithoutAnInstalledAdapterOrForFakeTls (0.2 ms)
+[ RUN  ] P2pSslAdapter.ServerSocketRefusesTls
+[  OK  ] P2pSslAdapter.ServerSocketRefusesTls (0.1 ms)
+[ RUN  ] P2pTurnPortTls.Allocate
+[  OK  ] P2pTurnPortTls.Allocate (17.4 ms)
+[ RUN  ] P2pTurnPortTls.AllocateMismatch
+[  OK  ] P2pTurnPortTls.AllocateMismatch (49.4 ms)
+[ RUN  ] P2pTurnPortTls.PrivateServerErrorAddressScrubbed
+[  OK  ] P2pTurnPortTls.PrivateServerErrorAddressScrubbed (0.4 ms)
+[ RUN  ] P2pTurnPortTls.PublicServerErrorAddressNotScrubbed
+[  OK  ] P2pTurnPortTls.PublicServerErrorAddressNotScrubbed (0.2 ms)
+[ RUN  ] P2pTurnPortTls.ConnectionRefused
+[  OK  ] P2pTurnPortTls.ConnectionRefused (0.6 ms)
+[ RUN  ] P2pTurnPortTls.AlternateServer
+[  OK  ] P2pTurnPortTls.AlternateServer (31.6 ms)
+[ RUN  ] P2pTurnPortTls.AlternateServerRefused
+[  OK  ] P2pTurnPortTls.AlternateServerRefused (94.8 ms)
+[ RUN  ] P2pTurnPortTls.Connection
+[  OK  ] P2pTurnPortTls.Connection (31.8 ms)
+[ RUN  ] P2pTurnPortTls.SendData
+[  OK  ] P2pTurnPortTls.SendData (72.6 ms)
+[ RUN  ] P2pTurnPortTls.ReleaseAllocation
+[  OK  ] P2pTurnPortTls.ReleaseAllocation (15.8 ms)
+[ RUN  ] P2pTurnPortTls.GracefulReleaseAllocation
+[  OK  ] P2pTurnPortTls.GracefulReleaseAllocation (17.5 ms)
+[ RUN  ] P2pTurnPortTls.ConnectionClosedAfterAllocation
+[  OK  ] P2pTurnPortTls.ConnectionClosedAfterAllocation (15.3 ms)
+[ RUN  ] P2pTurnPortTls.AllocatorGathersRelayWithUdpBlocked
+[  OK  ] P2pTurnPortTls.AllocatorGathersRelayWithUdpBlocked (16.3 ms)
+[ RUN  ] P2pTurnPortTls.AllocateOnPort443
+[  OK  ] P2pTurnPortTls.AllocateOnPort443 (15.4 ms)
+[ RUN  ] P2pIceCompareTls.TlsRelayMatchesLibwebrtc
+[  OK  ] P2pIceCompareTls.TlsRelayMatchesLibwebrtc (2664.5 ms)
+
+469 tests run, 469 passed, 0 failed

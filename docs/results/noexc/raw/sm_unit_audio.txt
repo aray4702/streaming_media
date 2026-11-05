@@ -1,70 +1,617 @@
-[ RUN  ] HighPassFilter.FrequencyResponse
-[metric] hpf_gain_20hz_db=-48.1666
-[metric] hpf_gain_50hz_db=-16.4309
-[metric] hpf_gain_300hz_db=-0.000165939
-[  OK  ] HighPassFilter.FrequencyResponse (2.1 ms)
-[ RUN  ] HighPassFilter.RemovesDcOffset
-[  OK  ] HighPassFilter.RemovesDcOffset (0.1 ms)
+[ RUN  ] Aec3Analysis.FilterAnalyzerFilterResize
+[  OK  ] Aec3Analysis.FilterAnalyzerFilterResize (0.0 ms)
+[ RUN  ] Aec3Analysis.FilterAnalyzerDelayGainAndConsistency
+[  OK  ] Aec3Analysis.FilterAnalyzerDelayGainAndConsistency (2.5 ms)
+[ RUN  ] Aec3Analysis.FilterAnalyzerNoisyFilterIsNotConsistent
+[  OK  ] Aec3Analysis.FilterAnalyzerNoisyFilterIsNotConsistent (1.5 ms)
+[ RUN  ] Aec3Analysis.EchoAudibilityStationaryNoise
+[  OK  ] Aec3Analysis.EchoAudibilityStationaryNoise (2.0 ms)
+[ RUN  ] Aec3Analysis.EchoAudibilityWaitsForTheDelay
+[  OK  ] Aec3Analysis.EchoAudibilityWaitsForTheDelay (1.3 ms)
+[ RUN  ] Aec3Analysis.TransparentModeFactory
+[  OK  ] Aec3Analysis.TransparentModeFactory (0.0 ms)
+[ RUN  ] Aec3Analysis.TransparentModeLegacySwitching
+[  OK  ] Aec3Analysis.TransparentModeLegacySwitching (0.0 ms)
+[ RUN  ] Aec3Analysis.TransparentModeHmmSwitching
+[  OK  ] Aec3Analysis.TransparentModeHmmSwitching (0.0 ms)
+[ RUN  ] Aec3Analysis.SubtractorOutputAnalyzerThresholds
+[  OK  ] Aec3Analysis.SubtractorOutputAnalyzerThresholds (0.0 ms)
+[ RUN  ] Aec3Delay.DecimatorNoLeakageFromUpperFrequencies
+[  OK  ] Aec3Delay.DecimatorNoLeakageFromUpperFrequencies (7.1 ms)
+[ RUN  ] Aec3Delay.MaxSquarePeakIndex
+[  OK  ] Aec3Delay.MaxSquarePeakIndex (6.2 ms)
+[ RUN  ] Aec3Delay.MatchedFilterLagEstimation
+[  OK  ] Aec3Delay.MatchedFilterLagEstimation (956.4 ms)
+[ RUN  ] Aec3Delay.MatchedFilterPreEchoEstimation
+[  OK  ] Aec3Delay.MatchedFilterPreEchoEstimation (157.4 ms)
+[ RUN  ] Aec3Delay.MatchedFilterLagNotReliableForUncorrelatedRenderAndCapture
+[  OK  ] Aec3Delay.MatchedFilterLagNotReliableForUncorrelatedRenderAndCapture (18.2 ms)
+[ RUN  ] Aec3Delay.MatchedFilterLagNotUpdatedForLowLevelRender
+[  OK  ] Aec3Delay.MatchedFilterLagNotUpdatedForLowLevelRender (16.3 ms)
+[ RUN  ] Aec3Delay.LagAggregatorInvarianceRequiredForAggregatedLag
+[  OK  ] Aec3Delay.LagAggregatorInvarianceRequiredForAggregatedLag (0.2 ms)
+[ RUN  ] Aec3Delay.LagAggregatorCoarseThenRefined
+[  OK  ] Aec3Delay.LagAggregatorCoarseThenRefined (0.0 ms)
+[ RUN  ] Aec3Delay.ClockdriftDetector
+[  OK  ] Aec3Delay.ClockdriftDetector (0.0 ms)
+[ RUN  ] Aec3Delay.EchoPathDelayEstimatorBasicApiCalls
+[  OK  ] Aec3Delay.EchoPathDelayEstimatorBasicApiCalls (3.4 ms)
+[ RUN  ] Aec3Delay.EchoPathDelayEstimatorDelayEstimation
+[  OK  ] Aec3Delay.EchoPathDelayEstimatorDelayEstimation (398.4 ms)
+[ RUN  ] Aec3Delay.EchoPathDelayEstimatorNoEstimatesForLowLevelRender
+[  OK  ] Aec3Delay.EchoPathDelayEstimatorNoEstimatesForLowLevelRender (3.4 ms)
+[ RUN  ] Aec3Delay.RenderBufferLowRateOverrunAndUnderrun
+[  OK  ] Aec3Delay.RenderBufferLowRateOverrunAndUnderrun (0.1 ms)
+[ RUN  ] Aec3Delay.RenderDelayControllerFollowsEchoPathChangeOnSpeech
+[metric] first_estimate_ms=176
+[metric] delay_8s_samples=832
+[metric] delay_16s_samples=2752
+[  OK  ] Aec3Delay.RenderDelayControllerFollowsEchoPathChangeOnSpeech (370.4 ms)
+[ RUN  ] Aec3Erle.ErlEstimatorEstimates
+[  OK  ] Aec3Erle.ErlEstimatorEstimates (1.7 ms)
+[ RUN  ] Aec3Erle.ErleEstimatorVerifyErleIncreaseAndHold
+[  OK  ] Aec3Erle.ErleEstimatorVerifyErleIncreaseAndHold (20.8 ms)
+[ RUN  ] Aec3Erle.ErleEstimatorVerifyErleTrackingOnOnsets
+[  OK  ] Aec3Erle.ErleEstimatorVerifyErleTrackingOnOnsets (500.7 ms)
+[ RUN  ] Aec3Erle.SignalDependentErleEstimatorSweepSettings
+[  OK  ] Aec3Erle.SignalDependentErleEstimatorSweepSettings (227.4 ms)
+[ RUN  ] Aec3Erle.SignalDependentErleEstimatorLongerRun
+[  OK  ] Aec3Erle.SignalDependentErleEstimatorLongerRun (3.1 ms)
+[ RUN  ] Aec3Filter.FftOfZeroImpulseAndConstant
+[  OK  ] Aec3Filter.FftOfZeroImpulseAndConstant (0.0 ms)
+[ RUN  ] Aec3Filter.IfftOfZeroImpulseAndConstant
+[  OK  ] Aec3Filter.IfftOfZeroImpulseAndConstant (0.0 ms)
+[ RUN  ] Aec3Filter.FftAndIfft
+[  OK  ] Aec3Filter.FftAndIfft (0.0 ms)
+[ RUN  ] Aec3Filter.OouraFft128MatchesDft
+[  OK  ] Aec3Filter.OouraFft128MatchesDft (0.4 ms)
+[ RUN  ] Aec3Filter.ZeroPaddedFft
+[  OK  ] Aec3Filter.ZeroPaddedFft (0.0 ms)
+[ RUN  ] Aec3Filter.PaddedFft
+[  OK  ] Aec3Filter.PaddedFft (0.0 ms)
+[ RUN  ] Aec3Filter.RenderDelayBufferOverflow
+[  OK  ] Aec3Filter.RenderDelayBufferOverflow (2.1 ms)
+[ RUN  ] Aec3Filter.RenderDelayBufferAvailableBlock
+[  OK  ] Aec3Filter.RenderDelayBufferAvailableBlock (0.0 ms)
+[ RUN  ] Aec3Filter.RenderDelayBufferAlignFromDelay
+[  OK  ] Aec3Filter.RenderDelayBufferAlignFromDelay (0.0 ms)
+[ RUN  ] Aec3Filter.RenderDelayBufferSizes
+[  OK  ] Aec3Filter.RenderDelayBufferSizes (0.0 ms)
+[ RUN  ] Aec3Filter.AdaptiveFirFilterStatisticsAccess
+[  OK  ] Aec3Filter.AdaptiveFirFilterStatisticsAccess (0.0 ms)
+[ RUN  ] Aec3Filter.AdaptiveFirFilterSize
+[  OK  ] Aec3Filter.AdaptiveFirFilterSize (0.0 ms)
+[ RUN  ] Aec3Filter.AdaptiveFirFilterSizeChange
+[  OK  ] Aec3Filter.AdaptiveFirFilterSizeChange (0.9 ms)
+[ RUN  ] Aec3Filter.AdaptiveFirFilterFilterAndAdapt
+[  OK  ] Aec3Filter.AdaptiveFirFilterFilterAndAdapt (344.8 ms)
+[ RUN  ] Aec3Filter.CoarseGainCausesFilterToConverge
+[  OK  ] Aec3Filter.CoarseGainCausesFilterToConverge (1327.4 ms)
+[ RUN  ] Aec3Filter.CoarseGainSaturationBehavior
+[  OK  ] Aec3Filter.CoarseGainSaturationBehavior (5.4 ms)
+[ RUN  ] Aec3Filter.CoarseGainDecreasing
+[  OK  ] Aec3Filter.CoarseGainDecreasing (21.7 ms)
+[ RUN  ] Aec3Filter.RefinedGainCausesFilterToConverge
+[  OK  ] Aec3Filter.RefinedGainCausesFilterToConverge (36.4 ms)
+[ RUN  ] Aec3Filter.RefinedGainDecreasing
+[  OK  ] Aec3Filter.RefinedGainDecreasing (5.2 ms)
+[ RUN  ] Aec3Filter.RefinedGainSaturationBehavior
+[  OK  ] Aec3Filter.RefinedGainSaturationBehavior (5.6 ms)
+[ RUN  ] Aec3Filter.SubtractorConvergence
+[  OK  ] Aec3Filter.SubtractorConvergence (153.9 ms)
+[ RUN  ] Aec3Filter.SubtractorRefinedFilterLongerThanCoarseFilter
+[  OK  ] Aec3Filter.SubtractorRefinedFilterLongerThanCoarseFilter (1.6 ms)
+[ RUN  ] Aec3Filter.SubtractorCoarseFilterLongerThanRefinedFilter
+[  OK  ] Aec3Filter.SubtractorCoarseFilterLongerThanRefinedFilter (1.6 ms)
+[ RUN  ] Aec3Filter.SubtractorNonConvergenceOnUncorrelatedSignals
+[  OK  ] Aec3Filter.SubtractorNonConvergenceOnUncorrelatedSignals (186.8 ms)
+[ RUN  ] Aec3Filter.SubtractorMultiChannelConvergence
+[  OK  ] Aec3Filter.SubtractorMultiChannelConvergence (107.6 ms)
+[ RUN  ] Aec3Filter.SubtractorMultiChannelNonConvergenceOnUncorrelatedSignals
+[  OK  ] Aec3Filter.SubtractorMultiChannelNonConvergenceOnUncorrelatedSignals (213.2 ms)
+[ RUN  ] Aec3Filter.SubtractorReconvergesAfterEchoPathChange
+[  OK  ] Aec3Filter.SubtractorReconvergesAfterEchoPathChange (10.2 ms)
+[ RUN  ] MultiChannelContentDetector.HandlingOfMono
+[  OK  ] MultiChannelContentDetector.HandlingOfMono (0.5 ms)
+[ RUN  ] MultiChannelContentDetector.HandlingOfMonoAndDetectionOff
+[  OK  ] MultiChannelContentDetector.HandlingOfMonoAndDetectionOff (0.0 ms)
+[ RUN  ] MultiChannelContentDetector.HandlingOfDetectionOff
+[  OK  ] MultiChannelContentDetector.HandlingOfDetectionOff (0.0 ms)
+[ RUN  ] MultiChannelContentDetector.InitialDetectionOfStereo
+[  OK  ] MultiChannelContentDetector.InitialDetectionOfStereo (0.0 ms)
+[ RUN  ] MultiChannelContentDetector.DetectionWhenFakeStereo
+[  OK  ] MultiChannelContentDetector.DetectionWhenFakeStereo (0.0 ms)
+[ RUN  ] MultiChannelContentDetector.DetectionWhenStereo
+[  OK  ] MultiChannelContentDetector.DetectionWhenStereo (0.0 ms)
+[ RUN  ] MultiChannelContentDetector.DetectionWhenStereoAfterAWhile
+[  OK  ] MultiChannelContentDetector.DetectionWhenStereoAfterAWhile (0.0 ms)
+[ RUN  ] MultiChannelContentDetector.DetectionWithStereoBelowThreshold
+[  OK  ] MultiChannelContentDetector.DetectionWithStereoBelowThreshold (0.0 ms)
+[ RUN  ] MultiChannelContentDetector.DetectionWithStereoAboveThreshold
+[  OK  ] MultiChannelContentDetector.DetectionWithStereoAboveThreshold (0.0 ms)
+[ RUN  ] MultiChannelContentDetector.TimeOutBehaviorForNonTrueStereo
+[  OK  ] MultiChannelContentDetector.TimeOutBehaviorForNonTrueStereo (0.1 ms)
+[ RUN  ] MultiChannelContentDetector.PeriodBeforeStereoDetectionIsTriggered
+[  OK  ] MultiChannelContentDetector.PeriodBeforeStereoDetectionIsTriggered (0.0 ms)
+[ RUN  ] MultiChannelContentDetector.DefaultHysteresisAndTimeout
+[  OK  ] MultiChannelContentDetector.DefaultHysteresisAndTimeout (1.8 ms)
+[ RUN  ] ConfigSelector.MonoConfigIsSelectedWhenNoMultiChannelConfigPresent
+[  OK  ] ConfigSelector.MonoConfigIsSelectedWhenNoMultiChannelConfigPresent (0.0 ms)
+[ RUN  ] ConfigSelector.CorrectInitialConfigIsSelected
+[  OK  ] ConfigSelector.CorrectInitialConfigIsSelected (0.2 ms)
+[ RUN  ] ConfigSelector.CorrectConfigUpdateBehavior
+[  OK  ] ConfigSelector.CorrectConfigUpdateBehavior (0.0 ms)
+[ RUN  ] ConfigSelector.DefaultMultichannelConfig
+[  OK  ] ConfigSelector.DefaultMultichannelConfig (0.0 ms)
+[ RUN  ] AlignmentMixer.GeneralAdaptiveMode
+[  OK  ] AlignmentMixer.GeneralAdaptiveMode (22.1 ms)
+[ RUN  ] AlignmentMixer.DownmixMode
+[  OK  ] AlignmentMixer.DownmixMode (0.0 ms)
+[ RUN  ] AlignmentMixer.FixedMode
+[  OK  ] AlignmentMixer.FixedMode (0.0 ms)
+[ RUN  ] AlignmentMixer.DefaultsAreAdaptive
+[  OK  ] AlignmentMixer.DefaultsAreAdaptive (0.0 ms)
+[ RUN  ] Aec3.EchoCanceller3DetectionOfProperStereo
+[  OK  ] Aec3.EchoCanceller3DetectionOfProperStereo (0.5 ms)
+[ RUN  ] Aec3.EchoCanceller3DetectionOfProperStereoUsingThreshold
+[  OK  ] Aec3.EchoCanceller3DetectionOfProperStereoUsingThreshold (0.3 ms)
+[ RUN  ] Aec3.EchoCanceller3DetectionOfProperStereoUsingHysteresis
+[  OK  ] Aec3.EchoCanceller3DetectionOfProperStereoUsingHysteresis (5.3 ms)
+[ RUN  ] Aec3.EchoCanceller3StereoContentDetectionForMonoSignals
+[  OK  ] Aec3.EchoCanceller3StereoContentDetectionForMonoSignals (0.2 ms)
+[ RUN  ] Aec3.EchoCanceller3RemovesStereoRenderEcho
+[  OK  ] Aec3.EchoCanceller3RemovesStereoRenderEcho (1074.8 ms)
+[ RUN  ] Aec3Reverb.NotChangingDecay
+[  OK  ] Aec3Reverb.NotChangingDecay (6.3 ms)
+[ RUN  ] Aec3Reverb.ChangingDecay
+[  OK  ] Aec3Reverb.ChangingDecay (19.6 ms)
+[ RUN  ] Aec3Reverb.ReverbModelUpdates
+[  OK  ] Aec3Reverb.ReverbModelUpdates (0.0 ms)
+[ RUN  ] Aec3State.NormalUsage
+[  OK  ] Aec3State.NormalUsage (129.3 ms)
+[ RUN  ] Aec3State.ConvergedFilterDelay
+[  OK  ] Aec3State.ConvergedFilterDelay (0.0 ms)
+[ RUN  ] Aec3Suppression.MovingAverageSpectrumAverage
+[  OK  ] Aec3Suppression.MovingAverageSpectrumAverage (0.0 ms)
+[ RUN  ] Aec3Suppression.MovingAverageSpectrumUpdateMemoryLength
+[  OK  ] Aec3Suppression.MovingAverageSpectrumUpdateMemoryLength (0.9 ms)
+[ RUN  ] Aec3Suppression.MovingAverageSpectrumPassThrough
+[  OK  ] Aec3Suppression.MovingAverageSpectrumPassThrough (0.0 ms)
+[ RUN  ] Aec3Suppression.ComfortNoiseGeneratorCorrectLevel
+[  OK  ] Aec3Suppression.ComfortNoiseGeneratorCorrectLevel (4.4 ms)
+[ RUN  ] Aec3Suppression.SuppressionGainBasicGainComputation
+[  OK  ] Aec3Suppression.SuppressionGainBasicGainComputation (0.2 ms)
+[ RUN  ] Aec3Suppression.SuppressionGainUpdateStateDependingOnConfig
+[  OK  ] Aec3Suppression.SuppressionGainUpdateStateDependingOnConfig (0.0 ms)
+[ RUN  ] Aec3Suppression.SuppressionGainMaskingThresholds
+[  OK  ] Aec3Suppression.SuppressionGainMaskingThresholds (0.0 ms)
+[ RUN  ] Aec3Suppression.SuppressionFilterComfortNoiseInUnityGain
+[  OK  ] Aec3Suppression.SuppressionFilterComfortNoiseInUnityGain (0.0 ms)
+[ RUN  ] Aec3Suppression.SuppressionFilterSignalSuppression
+[  OK  ] Aec3Suppression.SuppressionFilterSignalSuppression (0.1 ms)
+[ RUN  ] Aec3Suppression.SuppressionFilterSignalTransparency
+[  OK  ] Aec3Suppression.SuppressionFilterSignalTransparency (0.1 ms)
+[ RUN  ] Aec3Suppression.SuppressionFilterDelay
+[  OK  ] Aec3Suppression.SuppressionFilterDelay (0.1 ms)
+[ RUN  ] Aec3Suppression.ResidualEchoEstimatorBasicTest
+[  OK  ] Aec3Suppression.ResidualEchoEstimatorBasicTest (29.2 ms)
+[ RUN  ] Aec3Suppression.ResidualEchoEstimatorReverbTest
+[  OK  ] Aec3Suppression.ResidualEchoEstimatorReverbTest (0.3 ms)
+[ RUN  ] Aec3Suppression.ResidualEchoEstimatorLinearMode
+[  OK  ] Aec3Suppression.ResidualEchoEstimatorLinearMode (0.4 ms)
+[ RUN  ] Aec3Suppression.DominantNearendDetectorTriggerAndHold
+[  OK  ] Aec3Suppression.DominantNearendDetectorTriggerAndHold (0.0 ms)
+[ RUN  ] Aec3Suppression.SubbandNearendDetector
+[  OK  ] Aec3Suppression.SubbandNearendDetector (0.0 ms)
+[ RUN  ] Aec3.FrameBlockerBlockBitexactness
+[  OK  ] Aec3.FrameBlockerBlockBitexactness (0.1 ms)
+[ RUN  ] Aec3.FrameBlockerBlockerAndFramer
+[  OK  ] Aec3.FrameBlockerBlockerAndFramer (0.2 ms)
+[ RUN  ] Aec3.BlockFramerFrameBitexactness
+[  OK  ] Aec3.BlockFramerFrameBitexactness (0.3 ms)
+[ RUN  ] Aec3.BlockDelayBufferCorrectDelayApplied
+[  OK  ] Aec3.BlockDelayBufferCorrectDelayApplied (1.2 ms)
+[ RUN  ] Aec3.UpdateDbMetricUpdating
+[  OK  ] Aec3.UpdateDbMetricUpdating (0.0 ms)
+[ RUN  ] Aec3.TransformDbMetricForReportingDbFsScaling
+[  OK  ] Aec3.TransformDbMetricForReportingDbFsScaling (0.0 ms)
+[ RUN  ] Aec3.TransformDbMetricForReportingLimits
+[  OK  ] Aec3.TransformDbMetricForReportingLimits (0.0 ms)
+[ RUN  ] Aec3.TransformDbMetricForReportingNegate
+[  OK  ] Aec3.TransformDbMetricForReportingNegate (0.0 ms)
+[ RUN  ] Aec3.DbMetricUpdate
+[  OK  ] Aec3.DbMetricUpdate (0.0 ms)
+[ RUN  ] Aec3.DbMetricUpdateInstant
+[  OK  ] Aec3.DbMetricUpdateInstant (0.0 ms)
+[ RUN  ] Aec3.DbMetricConstructor
+[  OK  ] Aec3.DbMetricConstructor (0.0 ms)
+[ RUN  ] Aec3.EchoRemoverMetricsNormalUsage
+[  OK  ] Aec3.EchoRemoverMetricsNormalUsage (0.0 ms)
+[ RUN  ] Aec3.EchoRemoverBasicApiCalls
+[  OK  ] Aec3.EchoRemoverBasicApiCalls (76.4 ms)
+[ RUN  ] Aec3.EchoRemoverBasicEchoRemoval
+[  OK  ] Aec3.EchoRemoverBasicEchoRemoval (384.4 ms)
+[ RUN  ] Aec3.BlockProcessorBasicSetupAndApiCalls
+[  OK  ] Aec3.BlockProcessorBasicSetupAndApiCalls (0.3 ms)
+[ RUN  ] Aec3.BlockProcessorTestLongerCall
+[  OK  ] Aec3.BlockProcessorTestLongerCall (188.0 ms)
+[ RUN  ] Aec3.EchoCanceller3CaptureDelayedByOneBlockWithoutRender
+[  OK  ] Aec3.EchoCanceller3CaptureDelayedByOneBlockWithoutRender (0.1 ms)
+[ RUN  ] Aec3.EchoCanceller3RenderQueueOverrun
+[  OK  ] Aec3.EchoCanceller3RenderQueueOverrun (0.3 ms)
+[ RUN  ] Aec3.EchoCanceller3CaptureSaturation
+[  OK  ] Aec3.EchoCanceller3CaptureSaturation (0.2 ms)
+[ RUN  ] Aec3.EchoCanceller3RejectsUnsupportedRates
+[  OK  ] Aec3.EchoCanceller3RejectsUnsupportedRates (0.1 ms)
+[ RUN  ] Aec3.EchoCanceller3RunsAtFullBandRates
+[  OK  ] Aec3.EchoCanceller3RunsAtFullBandRates (18.0 ms)
+[ RUN  ] Aec3.EchoCanceller3MonoCallsNeed16kHzFrames
+[  OK  ] Aec3.EchoCanceller3MonoCallsNeed16kHzFrames (0.0 ms)
+[ RUN  ] Agc1.GainTableMatchesLibwebrtc
+[  OK  ] Agc1.GainTableMatchesLibwebrtc (0.8 ms)
+[ RUN  ] Agc1.GainsAndOutputMatchLibwebrtc
+[  OK  ] Agc1.GainsAndOutputMatchLibwebrtc (9.7 ms)
+[ RUN  ] Agc1.SettersRejectOutOfRange
+[  OK  ] Agc1.SettersRejectOutOfRange (0.0 ms)
+[ RUN  ] Agc1.CompressesQuietAndLimitsLoud
+[  OK  ] Agc1.CompressesQuietAndLimitsLoud (0.5 ms)
+[ RUN  ] Agc1.VadFollowsActivity
+[  OK  ] Agc1.VadFollowsActivity (0.0 ms)
+[ RUN  ] Agc1VoiceActivity.WebRtcVadMatchesLibwebrtc
+[  OK  ] Agc1VoiceActivity.WebRtcVadMatchesLibwebrtc (112.8 ms)
+[ RUN  ] Agc1VoiceActivity.Resample48khzTo8khzMatchesLibwebrtc
+[  OK  ] Agc1VoiceActivity.Resample48khzTo8khzMatchesLibwebrtc (22.0 ms)
+[ RUN  ] Agc1VoiceActivity.VoiceActivityDetectorMatchesLibwebrtc
+[  OK  ] Agc1VoiceActivity.VoiceActivityDetectorMatchesLibwebrtc (115.6 ms)
+[ RUN  ] Agc1VoiceActivity.AgcMatchesLibwebrtc
+[  OK  ] Agc1VoiceActivity.AgcMatchesLibwebrtc (116.1 ms)
+[ RUN  ] Agc1VoiceActivity.AgcTargetLevel
+[  OK  ] Agc1VoiceActivity.AgcTargetLevel (0.0 ms)
+[ RUN  ] Agc1VoiceActivity.VadCore
+[  OK  ] Agc1VoiceActivity.VadCore (0.4 ms)
+[ RUN  ] Agc1VoiceActivity.VadFilterbank
+[  OK  ] Agc1VoiceActivity.VadFilterbank (0.0 ms)
+[ RUN  ] Agc1VoiceActivity.VadGmm
+[  OK  ] Agc1VoiceActivity.VadGmm (0.0 ms)
+[ RUN  ] Agc1VoiceActivity.VadSp
+[  OK  ] Agc1VoiceActivity.VadSp (0.2 ms)
+[ RUN  ] Agc1VoiceActivity.WebRtcVadApi
+[  OK  ] Agc1VoiceActivity.WebRtcVadApi (0.2 ms)
+[ RUN  ] Agc1VoiceActivity.StandaloneVadApi
+[  OK  ] Agc1VoiceActivity.StandaloneVadApi (0.0 ms)
+[ RUN  ] Agc1VoiceActivity.EvaluateGmm
+[  OK  ] Agc1VoiceActivity.EvaluateGmm (0.0 ms)
+[ RUN  ] Agc1VoiceActivity.PitchInternal
+[  OK  ] Agc1VoiceActivity.PitchInternal (0.0 ms)
+[ RUN  ] Agc1VoiceActivity.PoleZeroFilter
+[  OK  ] Agc1VoiceActivity.PoleZeroFilter (0.0 ms)
+[ RUN  ] Agc1VoiceActivity.VadCircularBuffer
+[  OK  ] Agc1VoiceActivity.VadCircularBuffer (0.0 ms)
+[ RUN  ] Agc1VoiceActivity.LoudnessHistogram
+[  OK  ] Agc1VoiceActivity.LoudnessHistogram (0.0 ms)
+[ RUN  ] Agc1VoiceActivity.Utility
+[  OK  ] Agc1VoiceActivity.Utility (0.0 ms)
+[ RUN  ] Agc2RnnVad.FullyConnectedLayerOutputWithinTolerance
+[  OK  ] Agc2RnnVad.FullyConnectedLayerOutputWithinTolerance (0.2 ms)
+[ RUN  ] Agc2RnnVad.GatedRecurrentLayerOutputWithinTolerance
+[  OK  ] Agc2RnnVad.GatedRecurrentLayerOutputWithinTolerance (0.0 ms)
+[ RUN  ] Agc2RnnVad.OpusScaleBoundaries
+[  OK  ] Agc2RnnVad.OpusScaleBoundaries (0.0 ms)
+[ RUN  ] Agc2RnnVad.SpectralCorrelatorValidOutput
+[  OK  ] Agc2RnnVad.SpectralCorrelatorValidOutput (0.1 ms)
+[ RUN  ] Agc2RnnVad.SmoothedLogMagnitudeSpectrumWithinTolerance
+[  OK  ] Agc2RnnVad.SmoothedLogMagnitudeSpectrumWithinTolerance (0.0 ms)
+[ RUN  ] Agc2RnnVad.DctWithinTolerance
+[  OK  ] Agc2RnnVad.DctWithinTolerance (0.0 ms)
+[ RUN  ] Agc2RnnVad.RealDftMatchesDirectDft
+[  OK  ] Agc2RnnVad.RealDftMatchesDirectDft (0.6 ms)
+[ RUN  ] Agc2RnnVad.SpectralFeaturesWithAndWithoutSilence
+[  OK  ] Agc2RnnVad.SpectralFeaturesWithAndWithoutSilence (0.0 ms)
+[ RUN  ] Agc2RnnVad.CepstralFeaturesConstantAverageZeroDerivative
+[  OK  ] Agc2RnnVad.CepstralFeaturesConstantAverageZeroDerivative (0.1 ms)
+[ RUN  ] Agc2RnnVad.FeatureExtractionLowHighPitch
+[  OK  ] Agc2RnnVad.FeatureExtractionLowHighPitch (0.4 ms)
+[ RUN  ] Agc2RnnVad.PitchEstimatorFindsTonePeriod
+[  OK  ] Agc2RnnVad.PitchEstimatorFindsTonePeriod (0.1 ms)
+[ RUN  ] Agc2RnnVad.WrapperReturnsSpeechProbabilities
+[  OK  ] Agc2RnnVad.WrapperReturnsSpeechProbabilities (0.0 ms)
+[ RUN  ] Agc2RnnVad.WrapperResetsPeriodically
+[  OK  ] Agc2RnnVad.WrapperResetsPeriodically (0.0 ms)
+[ RUN  ] Agc2RnnVad.WrapperResamplesToTheVadRate
+[  OK  ] Agc2RnnVad.WrapperResamplesToTheVadRate (0.2 ms)
+[ RUN  ] Agc2RnnVad.SilenceGivesZeroProbability
+[  OK  ] Agc2RnnVad.SilenceGivesZeroProbability (1.2 ms)
+[ RUN  ] Agc2RnnVad.PushSincResamplerChirpErrorWithinLibwebrtcThresholds
+[  OK  ] Agc2RnnVad.PushSincResamplerChirpErrorWithinLibwebrtcThresholds (2.8 ms)
+[ RUN  ] Agc2RnnVad.SpeechLikeVersusNoise
+[metric] speech_like_share=0.874
+[metric] white_noise_share=0
+[  OK  ] Agc2RnnVad.SpeechLikeVersusNoise (91.2 ms)
+[ RUN  ] Agc2RnnVad.GainController2RunsTheRnnVad
+[  OK  ] Agc2RnnVad.GainController2RunsTheRnnVad (4.9 ms)
+[ RUN  ] GainController2.InterpolatedGainCurveValidMonotonicAndApproximates
+[metric] max_interpolation_error=3.03737e-05
+[  OK  ] GainController2.InterpolatedGainCurveValidMonotonicAndApproximates (0.0 ms)
+[ RUN  ] GainController2.InterpolatedGainCurveRegionBoundaries
+[  OK  ] GainController2.InterpolatedGainCurveRegionBoundaries (0.2 ms)
+[ RUN  ] GainController2.LimiterOutputVolumeAboveThreshold
+[  OK  ] GainController2.LimiterOutputVolumeAboveThreshold (0.0 ms)
+[ RUN  ] GainController2.GainApplierRampsAndClips
+[  OK  ] GainController2.GainApplierRampsAndClips (0.1 ms)
+[ RUN  ] GainController2.AdaptiveDigitalMaxGainApplied
+[  OK  ] GainController2.AdaptiveDigitalMaxGainApplied (0.0 ms)
+[ RUN  ] GainController2.AdaptiveDigitalGainDoesNotChangeFast
+[  OK  ] GainController2.AdaptiveDigitalGainDoesNotChangeFast (0.1 ms)
+[ RUN  ] GainController2.AdaptiveDigitalNoiseAndLimiterLimitGain
+[  OK  ] GainController2.AdaptiveDigitalNoiseAndLimiterLimitGain (0.2 ms)
+[ RUN  ] GainController2.AdaptiveDigitalIncreasesOnlyAfterEnoughSpeechFrames
+[  OK  ] GainController2.AdaptiveDigitalIncreasesOnlyAfterEnoughSpeechFrames (0.0 ms)
+[ RUN  ] GainController2.SaturationProtectorEstimatesCrestAndChangesSlowly
+[  OK  ] GainController2.SaturationProtectorEstimatesCrestAndChangesSlowly (0.1 ms)
+[ RUN  ] GainController2.SaturationProtectorBufferFrontIsOldest
+[  OK  ] GainController2.SaturationProtectorBufferFrontIsOldest (0.0 ms)
+[ RUN  ] GainController2.SpeechLevelEstimatorConfidenceAndConvergence
+[  OK  ] GainController2.SpeechLevelEstimatorConfidenceAndConvergence (0.0 ms)
+[ RUN  ] GainController2.NoiseFloorEstimator
+[  OK  ] GainController2.NoiseFloorEstimator (1.1 ms)
+[ RUN  ] GainController2.ComposedQuietSpeechGetsGainAndNeverClips
+[metric] gain_db=0
+[  OK  ] GainController2.ComposedQuietSpeechGetsGainAndNeverClips (0.8 ms)
+[ RUN  ] GainController2.RejectsUnsupportedRatesAndFrameLengths
+[  OK  ] GainController2.RejectsUnsupportedRatesAndFrameLengths (0.0 ms)
+[ RUN  ] GainController2.RunsAtApmRates
+[  OK  ] GainController2.RunsAtApmRates (2.1 ms)
+[ RUN  ] Agc1Manager.MicVolumeResponseToRmsError
+[  OK  ] Agc1Manager.MicVolumeResponseToRmsError (0.0 ms)
+[ RUN  ] Agc1Manager.MicVolumeIsLimited
+[  OK  ] Agc1Manager.MicVolumeIsLimited (0.1 ms)
+[ RUN  ] Agc1Manager.CompressorStepsTowardsTarget
+[  OK  ] Agc1Manager.CompressorStepsTowardsTarget (0.0 ms)
+[ RUN  ] Agc1Manager.CompressorErrorIsDeemphasized
+[  OK  ] Agc1Manager.CompressorErrorIsDeemphasized (0.0 ms)
+[ RUN  ] Agc1Manager.CompressorReachesMaximumAndMinimum
+[  OK  ] Agc1Manager.CompressorReachesMaximumAndMinimum (0.1 ms)
+[ RUN  ] Agc1Manager.NoActionWhileMuted
+[  OK  ] Agc1Manager.NoActionWhileMuted (0.0 ms)
+[ RUN  ] Agc1Manager.UnmutingChecksVolumeAndRaisesTooLowVolume
+[  OK  ] Agc1Manager.UnmutingChecksVolumeAndRaisesTooLowVolume (0.1 ms)
+[ RUN  ] Agc1Manager.ManualLevelChangeResultsInNoVolumeChange
+[  OK  ] Agc1Manager.ManualLevelChangeResultsInNoVolumeChange (0.0 ms)
+[ RUN  ] Agc1Manager.RecoveryAfterManualLevelChangeFromMax
+[  OK  ] Agc1Manager.RecoveryAfterManualLevelChangeFromMax (0.1 ms)
+[ RUN  ] Agc1Manager.RecoveryAfterManualLevelChangeBelowMin
+[  OK  ] Agc1Manager.RecoveryAfterManualLevelChangeBelowMin (0.0 ms)
+[ RUN  ] Agc1Manager.ClippingBelowThresholdHasNoImpact
+[  OK  ] Agc1Manager.ClippingBelowThresholdHasNoImpact (0.0 ms)
+[ RUN  ] Agc1Manager.ClippingLowersVolumeWithWaitingPeriod
+[  OK  ] Agc1Manager.ClippingLowersVolumeWithWaitingPeriod (0.1 ms)
+[ RUN  ] Agc1Manager.ClippingLoweringIsLimited
+[  OK  ] Agc1Manager.ClippingLoweringIsLimited (0.2 ms)
+[ RUN  ] Agc1Manager.ClippingMaxIsRespected
+[  OK  ] Agc1Manager.ClippingMaxIsRespected (0.1 ms)
+[ RUN  ] Agc1Manager.MaxCompressionIsIncreasedAfterClipping
+[  OK  ] Agc1Manager.MaxCompressionIsIncreasedAfterClipping (0.3 ms)
+[ RUN  ] Agc1Manager.UserCanRaiseVolumeAfterClipping
+[  OK  ] Agc1Manager.UserCanRaiseVolumeAfterClipping (0.2 ms)
+[ RUN  ] Agc1Manager.ClippingDoesNotPullLowVolumeBackUp
+[  OK  ] Agc1Manager.ClippingDoesNotPullLowVolumeBackUp (0.0 ms)
+[ RUN  ] Agc1Manager.TakesNoActionOnZeroMicVolume
+[  OK  ] Agc1Manager.TakesNoActionOnZeroMicVolume (0.0 ms)
+[ RUN  ] Agc1Manager.ClippingDetectionLowersVolume
+[  OK  ] Agc1Manager.ClippingDetectionLowersVolume (0.0 ms)
+[ RUN  ] Agc1Manager.DisableDigitalDisablesDigital
+[  OK  ] Agc1Manager.DisableDigitalDisablesDigital (0.1 ms)
+[ RUN  ] Agc1Manager.MinMicLevelOverrideOutOfRangeIsIgnored
+[  OK  ] Agc1Manager.MinMicLevelOverrideOutOfRangeIsIgnored (0.0 ms)
+[ RUN  ] Agc1Manager.ClippingPredictorEnabledOnlyWhenConfigured
+[  OK  ] Agc1Manager.ClippingPredictorEnabledOnlyWhenConfigured (0.0 ms)
+[ RUN  ] Agc1Manager.DisabledClippingPredictorDoesNotLowerVolume
+[  OK  ] Agc1Manager.DisabledClippingPredictorDoesNotLowerVolume (0.3 ms)
+[ RUN  ] Agc1Manager.UsedClippingPredictionsProduceLowerAnalogLevels
+[  OK  ] Agc1Manager.UsedClippingPredictionsProduceLowerAnalogLevels (2.5 ms)
+[ RUN  ] Agc1Manager.UnusedClippingPredictionsProduceEqualAnalogLevels
+[  OK  ] Agc1Manager.UnusedClippingPredictionsProduceEqualAnalogLevels (2.6 ms)
+[ RUN  ] Agc1CaptureLevels.AnalogMicGainEmulation
+[  OK  ] Agc1CaptureLevels.AnalogMicGainEmulation (0.0 ms)
+[ RUN  ] AudioMixer.UpdatesSourceCountHistogram
+[  OK  ] AudioMixer.UpdatesSourceCountHistogram (0.1 ms)
+[ RUN  ] AudioMixer.FrameNotModifiedForSingleParticipant
+[  OK  ] AudioMixer.FrameNotModifiedForSingleParticipant (0.0 ms)
+[ RUN  ] AudioMixer.SourceAtNativeRateShouldNeverResample
+[  OK  ] AudioMixer.SourceAtNativeRateShouldNeverResample (0.0 ms)
+[ RUN  ] AudioMixer.MixerShouldMixAtNativeSourceRate
+[  OK  ] AudioMixer.MixerShouldMixAtNativeSourceRate (0.0 ms)
+[ RUN  ] AudioMixer.MixerShouldAlwaysMixAtNativeRate
+[  OK  ] AudioMixer.MixerShouldAlwaysMixAtNativeRate (0.0 ms)
+[ RUN  ] AudioMixer.ShouldNotCauseQualityLossForMultipleSources
+[  OK  ] AudioMixer.ShouldNotCauseQualityLossForMultipleSources (0.0 ms)
+[ RUN  ] AudioMixer.ParticipantNumberOfChannels
+[  OK  ] AudioMixer.ParticipantNumberOfChannels (0.0 ms)
+[ RUN  ] AudioMixer.MixingRateShouldBeDecidedByRateCalculator
+[  OK  ] AudioMixer.MixingRateShouldBeDecidedByRateCalculator (0.0 ms)
+[ RUN  ] AudioMixer.ZeroSourceRateShouldBeDecidedByRateCalculator
+[  OK  ] AudioMixer.ZeroSourceRateShouldBeDecidedByRateCalculator (0.0 ms)
+[ RUN  ] AudioMixer.NoLimiterBasicApiCalls
+[  OK  ] AudioMixer.NoLimiterBasicApiCalls (0.0 ms)
+[ RUN  ] AudioMixer.AnyRateIsPossibleWithNoLimiter
+[  OK  ] AudioMixer.AnyRateIsPossibleWithNoLimiter (0.1 ms)
+[ RUN  ] AudioMixer.MultipleChannelsOneParticipant
+[  OK  ] AudioMixer.MultipleChannelsOneParticipant (0.0 ms)
+[ RUN  ] AudioMixer.MultipleChannelsManyParticipants
+[  OK  ] AudioMixer.MultipleChannelsManyParticipants (0.0 ms)
+[ RUN  ] AudioMixer.ShouldIncludeRtpPacketInfoFromAllMixedSources
+[  OK  ] AudioMixer.ShouldIncludeRtpPacketInfoFromAllMixedSources (0.2 ms)
+[ RUN  ] AudioMixer.MixesEveryUnmutedSourceAsM157
+[  OK  ] AudioMixer.MixesEveryUnmutedSourceAsM157 (0.0 ms)
+[ RUN  ] AudioMixer.LoudSumIsLimitedNotClipped
+[  OK  ] AudioMixer.LoudSumIsLimitedNotClipped (0.1 ms)
+[ RUN  ] FrameCombiner.BasicApiCallsLimiter
+[  OK  ] FrameCombiner.BasicApiCallsLimiter (0.3 ms)
+[ RUN  ] FrameCombiner.ContainsAllRtpPacketInfos
+[  OK  ] FrameCombiner.ContainsAllRtpPacketInfos (0.0 ms)
+[ RUN  ] FrameCombiner.BasicApiCallsNoLimiter
+[  OK  ] FrameCombiner.BasicApiCallsNoLimiter (0.0 ms)
+[ RUN  ] FrameCombiner.CombiningZeroFramesShouldProduceSilence
+[  OK  ] FrameCombiner.CombiningZeroFramesShouldProduceSilence (0.0 ms)
+[ RUN  ] FrameCombiner.CombiningOneFrameShouldNotChangeFrame
+[  OK  ] FrameCombiner.CombiningOneFrameShouldNotChangeFrame (0.1 ms)
+[ RUN  ] FrameCombiner.GainCurveIsSmoothForAlternatingNumberOfStreams
+[  OK  ] FrameCombiner.GainCurveIsSmoothForAlternatingNumberOfStreams (1.0 ms)
+[ RUN  ] AudioFrameManipulator.CompareForwardRampWithExpectedResultStereo
+[  OK  ] AudioFrameManipulator.CompareForwardRampWithExpectedResultStereo (0.0 ms)
+[ RUN  ] AudioFrameManipulator.CompareBackwardRampWithExpectedResultMono
+[  OK  ] AudioFrameManipulator.CompareBackwardRampWithExpectedResultMono (0.0 ms)
+[ RUN  ] AudioFrameManipulator.RemixAndEnergyAsLibwebrtc
+[  OK  ] AudioFrameManipulator.RemixAndEnergyAsLibwebrtc (0.0 ms)
+[ RUN  ] AudioFrameManipulator.FloatS16ToS16RoundsAndSaturatesAsLibwebrtc
+[  OK  ] AudioFrameManipulator.FloatS16ToS16RoundsAndSaturatesAsLibwebrtc (0.0 ms)
+[ RUN  ] GainController2.LimiterOnTwoIdenticalChannelsEqualsMono
+[  OK  ] GainController2.LimiterOnTwoIdenticalChannelsEqualsMono (0.0 ms)
+[ RUN  ] Agc1ClippingLevelBuffer.Sizes
+[  OK  ] Agc1ClippingLevelBuffer.Sizes (0.0 ms)
+[ RUN  ] Agc1ClippingLevelBuffer.MetricsAfterFullBuffer
+[  OK  ] Agc1ClippingLevelBuffer.MetricsAfterFullBuffer (0.0 ms)
+[ RUN  ] Agc1ClippingLevelBuffer.MetricsAfterPushBeyondCapacity
+[  OK  ] Agc1ClippingLevelBuffer.MetricsAfterPushBeyondCapacity (0.0 ms)
+[ RUN  ] Agc1ClippingLevelBuffer.MetricsAfterTooFewItems
+[  OK  ] Agc1ClippingLevelBuffer.MetricsAfterTooFewItems (0.0 ms)
+[ RUN  ] Agc1ClippingLevelBuffer.MetricsAfterReset
+[  OK  ] Agc1ClippingLevelBuffer.MetricsAfterReset (0.0 ms)
+[ RUN  ] Agc1ClippingPredictor.Creation
+[  OK  ] Agc1ClippingPredictor.Creation (0.0 ms)
+[ RUN  ] Agc1ClippingPredictor.EventPredictorEstimateAfterCrestFactorDrop
+[  OK  ] Agc1ClippingPredictor.EventPredictorEstimateAfterCrestFactorDrop (0.1 ms)
+[ RUN  ] Agc1ClippingPredictor.EventPredictorNoEstimateAfterConstantCrestFactor
+[  OK  ] Agc1ClippingPredictor.EventPredictorNoEstimateAfterConstantCrestFactor (0.1 ms)
+[ RUN  ] Agc1ClippingPredictor.PeakPredictorEstimateAfterHighCrestFactor
+[  OK  ] Agc1ClippingPredictor.PeakPredictorEstimateAfterHighCrestFactor (0.1 ms)
+[ RUN  ] Agc1ClippingPredictor.PeakPredictorNoEstimateAfterLowCrestFactor
+[  OK  ] Agc1ClippingPredictor.PeakPredictorNoEstimateAfterLowCrestFactor (0.1 ms)
+[ RUN  ] Agc1ClippingPredictor.EventPredictorThresholdAndMargin
+[  OK  ] Agc1ClippingPredictor.EventPredictorThresholdAndMargin (0.0 ms)
+[ RUN  ] Agc1ClippingPredictor.PeakModesClippingMargin
+[  OK  ] Agc1ClippingPredictor.PeakModesClippingMargin (0.0 ms)
+[ RUN  ] Agc1ClippingPredictor.NoEstimateAfterReset
+[  OK  ] Agc1ClippingPredictor.NoEstimateAfterReset (0.0 ms)
+[ RUN  ] Agc1ClippingPredictor.AdaptiveAndFixedStepEstimates
+[  OK  ] Agc1ClippingPredictor.AdaptiveAndFixedStepEstimates (0.0 ms)
+[ RUN  ] Agc1ClippingPredictor.InvalidWindowGetsNoPredictor
+[  OK  ] Agc1ClippingPredictor.InvalidWindowGetsNoPredictor (0.0 ms)
+[ RUN  ] AudioLevel.ExtensionAndLevel
+[  OK  ] AudioLevel.ExtensionAndLevel (0.0 ms)
+[ RUN  ] RmsLevel.AveragesTheChunksSinceTheLastCallAndResets
+[  OK  ] RmsLevel.AveragesTheChunksSinceTheLastCallAndResets (0.0 ms)
+[ RUN  ] RmsLevel.FaintButNotMutedReads126AndSilence127
+[  OK  ] RmsLevel.FaintButNotMutedReads126AndSilence127 (0.0 ms)
+[ RUN  ] RmsLevel.ANewChunkSizeRestartsAndPeakIsTheLoudestChunk
+[  OK  ] RmsLevel.ANewChunkSizeRestartsAndPeakIsTheLoudestChunk (0.0 ms)
+[ RUN  ] AudioLevelMeter.RefreshesEvery11thFrameAndDecaysToAQuarter
+[  OK  ] AudioLevelMeter.RefreshesEvery11thFrameAndDecaysToAQuarter (0.0 ms)
+[ RUN  ] AudioLevelMeter.EnergyUsesTheLevelNotTheFrameAndMutedIsZero
+[  OK  ] AudioLevelMeter.EnergyUsesTheLevelNotTheFrameAndMutedIsZero (0.0 ms)
+[ RUN  ] Vad.ApiAsLibwebrtc
+[  OK  ] Vad.ApiAsLibwebrtc (0.2 ms)
+[ RUN  ] Vad.IsWebRtcVadAndResets
+[  OK  ] Vad.IsWebRtcVadAndResets (14.6 ms)
 [ RUN  ] Vad.SpeechVersusNoise
-[metric] vad_recall=0.997546
+[metric] vad_recall=1
 [metric] vad_false_positive_rate=0
-[  OK  ] Vad.SpeechVersusNoise (29.1 ms)
-[ RUN  ] Vad.NoiseLevelStepIsNotSpeech
-[metric] vad_frames_on_noise_step=0
-[  OK  ] Vad.NoiseLevelStepIsNotSpeech (1.2 ms)
-[ RUN  ] NoiseSuppressor.AttenuatesStationaryNoise
-[metric] ns_noise_reduction_db=16.5408
-[  OK  ] NoiseSuppressor.AttenuatesStationaryNoise (1.9 ms)
-[ RUN  ] NoiseSuppressor.ImprovesSnr
-[metric] ns_snr_in_db=6.39877
-[metric] ns_snr_out_db=14.7677
-[  OK  ] NoiseSuppressor.ImprovesSnr (25.1 ms)
-[ RUN  ] GainControl.LimiterNeverExceedsCeiling
-[  OK  ] GainControl.LimiterNeverExceedsCeiling (0.1 ms)
-[ RUN  ] GainControl.QuietSpeechReachesTarget
-[metric] agc_output_level_dbfs=-17.9858
-[metric] agc_gain_db=25.3885
-[  OK  ] GainControl.QuietSpeechReachesTarget (54.9 ms)
-[ RUN  ] GainControl.NoGainOnSilenceAndClippingRecommendation
-[  OK  ] GainControl.NoGainOnSilenceAndClippingRecommendation (0.2 ms)
+[  OK  ] Vad.SpeechVersusNoise (29.3 ms)
+[ RUN  ] Vad.NoiseLevelStepAsLibwebrtc
+[metric] vad_frames_on_noise_step=300
+[  OK  ] Vad.NoiseLevelStepAsLibwebrtc (2.0 ms)
 [ RUN  ] TransientSuppressor.AttenuatesClicksKeepsTone
 [metric] click_attenuation_db=20
 [  OK  ] TransientSuppressor.AttenuatesClicksKeepsTone (0.2 ms)
-[ RUN  ] Resampler.DownsampleQualityAndAliasRejection
-[metric] resampler_48_16_snr_db=107.327
-[metric] resampler_alias_rejection_db=90.9691
-[  OK  ] Resampler.DownsampleQualityAndAliasRejection (2.5 ms)
-[ RUN  ] Resampler.ArbitraryRatiosKeepRate
-[  OK  ] Resampler.ArbitraryRatiosKeepRate (3.5 ms)
-[ RUN  ] EchoDelay.FindsKnownDelay
-[metric] delay_confidence=21.243
-[  OK  ] EchoDelay.FindsKnownDelay (27.6 ms)
-[ RUN  ] EchoDelay.TracksDelayChangeThroughRoom
-[  OK  ] EchoDelay.TracksDelayChangeThroughRoom (158.6 ms)
-[ RUN  ] EchoCanceller.ConvergesOnFarEndOnly
-[metric] aec_erle_linear_db=31.819
-[metric] aec_erle_db=42.4191
-[metric] aec_bulk_delay_ms=50.5
-[  OK  ] EchoCanceller.ConvergesOnFarEndOnly (180.5 ms)
-[ RUN  ] EchoCanceller.KeepsNearEndDuringDoubleTalk
-[metric] aec_double_talk_near_level_change_db=-0.747618
-[metric] aec_double_talk_snr_db=9.07956
-[  OK  ] EchoCanceller.KeepsNearEndDuringDoubleTalk (251.5 ms)
-[ RUN  ] ComfortNoise.SidRoundTripAndLevel
-[  OK  ] ComfortNoise.SidRoundTripAndLevel (0.0 ms)
-[ RUN  ] ComfortNoise.GeneratedNoiseMatchesLevelAndSpectrum
-[metric] cng_level_error_db=0.335535
-[metric] cng_tilt_error_db=-0.353426
-[  OK  ] ComfortNoise.GeneratedNoiseMatchesLevelAndSpectrum (1.0 ms)
-[ RUN  ] ComfortNoise.DtxDecisions
-[  OK  ] ComfortNoise.DtxDecisions (0.4 ms)
-[ RUN  ] AudioLevel.ExtensionAndLevel
-[  OK  ] AudioLevel.ExtensionAndLevel (0.0 ms)
-[ RUN  ] AudioLevel.ActiveSpeakerHysteresis
-[  OK  ] AudioLevel.ActiveSpeakerHysteresis (0.0 ms)
-[ RUN  ] Mixer.LoudestNWithoutClipping
-[  OK  ] Mixer.LoudestNWithoutClipping (0.3 ms)
-[ RUN  ] Mixer.RampAvoidsClickOnJoin
-[  OK  ] Mixer.RampAvoidsClickOnJoin (0.1 ms)
+[ RUN  ] TransientSuppressor.OffByDefaultAsLibwebrtc
+[  OK  ] TransientSuppressor.OffByDefaultAsLibwebrtc (0.0 ms)
+[ RUN  ] CascadedBiquadFilter.BlockingConfiguration
+[  OK  ] CascadedBiquadFilter.BlockingConfiguration (0.0 ms)
+[ RUN  ] CascadedBiquadFilter.HighPassConfiguration
+[  OK  ] CascadedBiquadFilter.HighPassConfiguration (0.0 ms)
+[ RUN  ] CascadedBiquadFilter.HighPassConfigurationResetFunctionality
+[  OK  ] CascadedBiquadFilter.HighPassConfigurationResetFunctionality (0.0 ms)
+[ RUN  ] CascadedBiquadFilter.TransparentConfiguration
+[  OK  ] CascadedBiquadFilter.TransparentConfiguration (0.0 ms)
+[ RUN  ] CascadedBiquadFilter.CascadedConfiguration
+[  OK  ] CascadedBiquadFilter.CascadedConfiguration (0.0 ms)
+[ RUN  ] Hpf.FrequencyResponse16kHz
+[metric] hpf2_gain_20hz_db=-82.517
+[metric] hpf2_gain_50hz_db=-68.2254
+[metric] hpf2_gain_60hz_db=-44.5517
+[metric] hpf2_gain_100hz_db=-0.47582
+[metric] hpf2_gain_1000hz_db=-0.393084
+[  OK  ] Hpf.FrequencyResponse16kHz (15.0 ms)
+[ RUN  ] Hpf.FrequencyResponseAtEveryRate
+[  OK  ] Hpf.FrequencyResponseAtEveryRate (13.8 ms)
+[ RUN  ] Hpf.RemovesDcOffset
+[  OK  ] Hpf.RemovesDcOffset (0.1 ms)
+[ RUN  ] Hpf.ChannelsAndReset
+[  OK  ] Hpf.ChannelsAndReset (0.0 ms)
+[ RUN  ] Ns.Fft4gBitExactWithLibwebrtc
+[  OK  ] Ns.Fft4gBitExactWithLibwebrtc (0.0 ms)
+[ RUN  ] Ns.Fft4gInverseScaledByTwoOverN
+[  OK  ] Ns.Fft4gInverseScaledByTwoOverN (0.0 ms)
+[ RUN  ] Ns.SuppressionParamsAsLibwebrtc
+[  OK  ] Ns.SuppressionParamsAsLibwebrtc (0.1 ms)
+[ RUN  ] Ns.FastMathApproximations
+[  OK  ] Ns.FastMathApproximations (0.0 ms)
+[ RUN  ] Ns.QuantileEstimateSettlesOnStationarySpectrum
+[  OK  ] Ns.QuantileEstimateSettlesOnStationarySpectrum (0.2 ms)
+[ RUN  ] Ns.ZeroFramesAreNotAnalyzed
+[  OK  ] Ns.ZeroFramesAreNotAnalyzed (0.1 ms)
+[ RUN  ] Ns.PassesCleanSpeechWith96SamplesDelay
+[metric] speech_snr_db=6.40548
+[  OK  ] Ns.PassesCleanSpeechWith96SamplesDelay (24.0 ms)
+[ RUN  ] Ns.AttenuatesNoiseToTheLevelFloor
+[metric] attenuation_k18db=17.2275
+[metric] attenuation_k6db=5.95895
+[  OK  ] Ns.AttenuatesNoiseToTheLevelFloor (4.9 ms)
+[ RUN  ] Ns.AllRatesAndLevelsAsLibwebrtcUnitTest
+[  OK  ] Ns.AllRatesAndLevelsAsLibwebrtcUnitTest (35.7 ms)
+[ RUN  ] Ns.BitExactWithLibwebrtcMultichannel
+[  OK  ] Ns.BitExactWithLibwebrtcMultichannel (106.7 ms)
+[ RUN  ] Ns.IdenticalChannelsGiveTheMonoOutput
+[  OK  ] Ns.IdenticalChannelsGiveTheMonoOutput (10.8 ms)
+[ RUN  ] Ns.RejectsUnsupportedRates
+[  OK  ] Ns.RejectsUnsupportedRates (0.0 ms)
+[ RUN  ] Ns.RejectsShortFrames
+[  OK  ] Ns.RejectsShortFrames (0.0 ms)
+[ RUN  ] Ns.RunsAtFullBandRates
+[  OK  ] Ns.RunsAtFullBandRates (0.2 ms)
+[ RUN  ] SplResampler.Reset
+[  OK  ] SplResampler.Reset (0.8 ms)
+[ RUN  ] SplResampler.Mono
+[  OK  ] SplResampler.Mono (0.2 ms)
+[ RUN  ] SplResampler.Stereo
+[  OK  ] SplResampler.Stereo (0.3 ms)
+[ RUN  ] SplResampler.MultipleResets
+[  OK  ] SplResampler.MultipleResets (0.0 ms)
+[ RUN  ] SplResampler.RefusesPartialBlocksAndShortOutput
+[  OK  ] SplResampler.RefusesPartialBlocksAndShortOutput (0.0 ms)
+[ RUN  ] SplResampler.BitExactWithLibwebrtc
+[  OK  ] SplResampler.BitExactWithLibwebrtc (59.6 ms)
+[ RUN  ] PushResampler.VerifiesInputParameters
+[  OK  ] PushResampler.VerifiesInputParameters (0.2 ms)
+[ RUN  ] PushResampler.MatchingRatesCopy
+[  OK  ] PushResampler.MatchingRatesCopy (0.0 ms)
+[ RUN  ] PushResampler.InterleavedChannelsMatchMonoResamplers
+[  OK  ] PushResampler.InterleavedChannelsMatchMonoResamplers (0.3 ms)
+[ RUN  ] PushResampler.Int16MatchesFloatRounded
+[  OK  ] PushResampler.Int16MatchesFloatRounded (0.2 ms)
+[ RUN  ] SplittingFilter.SplitsIntoTwoBandsAndReconstructs
+[  OK  ] SplittingFilter.SplitsIntoTwoBandsAndReconstructs (0.2 ms)
+[ RUN  ] SplittingFilter.SplitsIntoThreeBandsAndReconstructs
+[  OK  ] SplittingFilter.SplitsIntoThreeBandsAndReconstructs (0.3 ms)
+[ RUN  ] SplittingFilter.TwoBandQmfIsAllPassCascadeOnEvenAndOddSamples
+[  OK  ] SplittingFilter.TwoBandQmfIsAllPassCascadeOnEvenAndOddSamples (0.8 ms)
+[ RUN  ] SplittingFilter.ReconstructionKeepsTheLevel
+[metric] split2_reconstruction_gain_db=-0.0015097
+[metric] split3_reconstruction_gain_db=0.00191492
+[  OK  ] SplittingFilter.ReconstructionKeepsTheLevel (0.4 ms)
+[ RUN  ] SplittingFilter.SynthesisSaturatesAsS16
+[  OK  ] SplittingFilter.SynthesisSaturatesAsS16 (0.0 ms)
+[ RUN  ] SplittingFilter.MatchesLibwebrtcOutput
+[  OK  ] SplittingFilter.MatchesLibwebrtcOutput (0.1 ms)
 
-23 tests run, 23 passed, 0 failed
+297 tests run, 297 passed, 0 failed

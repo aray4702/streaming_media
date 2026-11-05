@@ -11,6 +11,10 @@ TARGET="${1:-native}"
 JOBS="$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)"
 BENCH_TIME="${SM_BENCH_MIN_TIME:-0.25}"
 
+# The library's own verbose, info and warning log lines ("[sm V]", "[sm I]", "[sm W]") are not test results; a
+# Debug SCTP run writes hundreds of thousands of them. Errors ("[sm E]") stay.
+drop_library_log() { grep -v -E '^\[sm [VIW]\] ' || true; }
+
 run_platform() {
   local name="$1" build="$2" runner="$3"
   shift 3
@@ -31,9 +35,9 @@ run_platform() {
     local base
     base="$(basename "$exe" .js)"
     if [[ -n "$runner" ]]; then
-      "$runner" "$exe" > "$out/raw/$base.txt" 2>&1 || true
+      "$runner" "$exe" 2>&1 | drop_library_log > "$out/raw/$base.txt" || true
     else
-      "$exe" > "$out/raw/$base.txt" 2>&1 || true
+      "$exe" 2>&1 | drop_library_log > "$out/raw/$base.txt" || true
     fi
   done
   if [[ -f "$build/bench/sm_bench" || -f "$build/bench/sm_bench.js" ]]; then
@@ -70,15 +74,18 @@ run_platform() {
   grep -E "tests passed" "$out/raw/ctest.txt" | tail -1
 }
 
+# Native as the CI preset `native`: Release, with data channels (sections 9.6-9.9 and their benchmarks).
+NATIVE_ARGS=(-DCMAKE_BUILD_TYPE=Release -DSM_WITH_DATACHANNEL=ON)
+
 case "$TARGET" in
-  native) run_platform native "$ROOT/build" "" ;;
+  native) run_platform native "$ROOT/build" "" "${NATIVE_ARGS[@]}" ;;
   wasm) run_platform wasm "$ROOT/build-wasm" node ;;
-  asan) run_platform asan "$ROOT/build-asan" "" -DSM_SANITIZE=ON -DCMAKE_BUILD_TYPE=Debug -DSM_BUILD_BENCH=OFF ;;
+  asan) run_platform asan "$ROOT/build-asan" "" -DSM_SANITIZE=ON -DCMAKE_BUILD_TYPE=Debug -DSM_BUILD_BENCH=OFF -DSM_WITH_DATACHANNEL=ON ;;
   noexc) run_platform noexc "$ROOT/build-noexc" "" -DSM_NO_EXCEPTIONS=ON -DSM_BUILD_BENCH=OFF ;;
   all)
-    run_platform native "$ROOT/build" ""
+    run_platform native "$ROOT/build" "" "${NATIVE_ARGS[@]}"
     command -v emcc > /dev/null && run_platform wasm "$ROOT/build-wasm" node
-    run_platform asan "$ROOT/build-asan" "" -DSM_SANITIZE=ON -DCMAKE_BUILD_TYPE=Debug -DSM_BUILD_BENCH=OFF
+    run_platform asan "$ROOT/build-asan" "" -DSM_SANITIZE=ON -DCMAKE_BUILD_TYPE=Debug -DSM_BUILD_BENCH=OFF -DSM_WITH_DATACHANNEL=ON
     run_platform noexc "$ROOT/build-noexc" "" -DSM_NO_EXCEPTIONS=ON -DSM_BUILD_BENCH=OFF
     ;;
   *) echo "unknown target $TARGET" >&2; exit 2 ;;

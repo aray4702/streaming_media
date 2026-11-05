@@ -1,0 +1,44 @@
+[ RUN  ] PcJsepTransportController.IceRoleFromTheFirstLocalDescription
+[  OK  ] PcJsepTransportController.IceRoleFromTheFirstLocalDescription (36.5 ms)
+[ RUN  ] PcJsepTransportController.DtlsRoleFromSetup
+[  OK  ] PcJsepTransportController.DtlsRoleFromSetup (1.8 ms)
+[ RUN  ] PcJsepTransportController.BundleOntoOneTransportOnAnswer
+[  OK  ] PcJsepTransportController.BundleOntoOneTransportOnAnswer (1.4 ms)
+[ RUN  ] PcJsepTransportController.MaxBundleBundlesTheOffer
+[  OK  ] PcJsepTransportController.MaxBundleBundlesTheOffer (0.9 ms)
+[ RUN  ] PcJsepTransportController.RefusesWhatLibwebrtcRefuses
+[  OK  ] PcJsepTransportController.RefusesWhatLibwebrtcRefuses (1.4 ms)
+[ RUN  ] PcJsepTransportController.CandidatesNeedTheRemoteDescription
+[  OK  ] PcJsepTransportController.CandidatesNeedTheRemoteDescription (0.8 ms)
+[ RUN  ] PcPeerEndpoint.CallOverNatsWithStunSendsOpusAndH264BothWays
+[  OK  ] PcPeerEndpoint.CallOverNatsWithStunSendsOpusAndH264BothWays (428.8 ms)
+[ RUN  ] PcPeerEndpoint.MediaIsEncryptedOnTheWire
+[  OK  ] PcPeerEndpoint.MediaIsEncryptedOnTheWire (130.4 ms)
+[ RUN  ] PcPeerEndpoint.AnswerRejectsDataAndChecksSignalingState
+[  OK  ] PcPeerEndpoint.AnswerRejectsDataAndChecksSignalingState (3.4 ms)
+[ RUN  ] PcPeerEndpoint.ExternalMediaCarriesTheHostsPackets
+[  OK  ] PcPeerEndpoint.ExternalMediaCarriesTheHostsPackets (14.6 ms)
+[ RUN  ] PcPeerEndpoint.AudioVideoAndDataChannelsOnOneBundleTransport
+[  OK  ] PcPeerEndpoint.AudioVideoAndDataChannelsOnOneBundleTransport (326.3 ms)
+[ RUN  ] PcPeerEndpoint.DataChannelSwitchOffInTheOfferAndInTheAnswer
+[  OK  ] PcPeerEndpoint.DataChannelSwitchOffInTheOfferAndInTheAnswer (158.3 ms)
+[ RUN  ] PcPeerEndpoint.SimulcastOfferAndSfuAnswer
+[  OK  ] PcPeerEndpoint.SimulcastOfferAndSfuAnswer (5.7 ms)
+[ RUN  ] PcPeerEndpoint.SimulcastRejectedOrPausedByTheAnswer
+[  OK  ] PcPeerEndpoint.SimulcastRejectedOrPausedByTheAnswer (9.3 ms)
+[ RUN  ] PcRenegotiation.SfuOffersAddAndRemoveRemoteTracks
+[  OK  ] PcRenegotiation.SfuOffersAddAndRemoveRemoteTracks (45.7 ms)
+[ RUN  ] PcRenegotiation.EachSectionIsDemuxedToItsOwnStreamWithItsOwnFeedbackAndStats
+[  OK  ] PcRenegotiation.EachSectionIsDemuxedToItsOwnStreamWithItsOwnFeedbackAndStats (1569.7 ms)
+[ RUN  ] PcRenegotiation.EitherSideReoffersAndTheDtlsRoleStays
+[  OK  ] PcRenegotiation.EitherSideReoffersAndTheDtlsRoleStays (123.3 ms)
+[ RUN  ] PcRenegotiation.TransceiverApi
+[  OK  ] PcRenegotiation.TransceiverApi (13.5 ms)
+[ RUN  ] PcRenegotiation.ReceiveRemoteTracksOffRejectsSectionsWithoutATransceiver
+[  OK  ] PcRenegotiation.ReceiveRemoteTracksOffRejectsSectionsWithoutATransceiver (10.1 ms)
+[ RUN  ] PcRenegotiation.SfuReofferKeepsTheSimulcastLayersAndAddsARemoteTrack
+[  OK  ] PcRenegotiation.SfuReofferKeepsTheSimulcastLayersAndAddsARemoteTrack (135.7 ms)
+[ RUN  ] PcRenegotiation.SfuReofferPausesAndResumesASimulcastLayer
+[  OK  ] PcRenegotiation.SfuReofferPausesAndResumesASimulcastLayer (421.7 ms)
+
+21 tests run, 21 passed, 0 failed

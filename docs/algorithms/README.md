@@ -6,130 +6,130 @@ One document per algorithm: problem, the issue it solves, design, implementation
 
 | # | Algorithm | Unit | E2E | Benchmarks | macOS arm64 (native) | WebAssembly (Node) | ASan+UBSan (Debug) | -fno-exceptions -fno-rtti |
 |---|---|---|---|---|---|---|---|---|
-| 1.1 | [STUN messages](1-connectivity/1.1-stun.md) | 84 | 0 | 2 | not recorded | not recorded | not recorded | not recorded |
-| 1.2 | [Ports and candidates](1-connectivity/1.2-ports-candidates.md) | 54 | 0 | 0 | not recorded | not recorded | not recorded | not recorded |
-| 1.3 | [Connections: candidate-pair checks](1-connectivity/1.3-connections.md) | 34 | 0 | 0 | not recorded | not recorded | not recorded | not recorded |
-| 1.4 | [Port allocation](1-connectivity/1.4-port-allocation.md) | 64 | 0 | 0 | not recorded | not recorded | not recorded | not recorded |
-| 1.5 | [The ICE controller](1-connectivity/1.5-ice-controller.md) | 27 | 0 | 0 | not recorded | not recorded | not recorded | not recorded |
-| 1.6 | [The ICE agent (P2PTransportChannel)](1-connectivity/1.6-ice-agent.md) | 102 | 0 | 0 | not recorded | not recorded | not recorded | not recorded |
-| 1.7 | [ICE-lite for the AI server](1-connectivity/1.7-ice-lite.md) | 4 | 0 | 0 | not recorded | not recorded | not recorded | not recorded |
-| 1.8 | [TURN client (UDP, TCP, TLS)](1-connectivity/1.8-turn-client.md) | 57 | 0 | 0 | not recorded | not recorded | not recorded | not recorded |
-| 1.9 | [TCP packet sockets](1-connectivity/1.9-tcp-sockets.md) | 31 | 0 | 0 | not recorded | not recorded | not recorded | not recorded |
-| 1.10 | [SDP model and parse/write](1-connectivity/1.10-sdp.md) | 80 | 0 | 0 | not recorded | not recorded | not recorded | not recorded |
-| 1.11 | [Offer/answer generation](1-connectivity/1.11-offer-answer.md) | 65 | 0 | 0 | not recorded | not recorded | not recorded | not recorded |
-| 1.12 | [The endpoint (PeerEndpoint)](1-connectivity/1.12-endpoint.md) | 22 | 1 | 0 | not recorded | not recorded | not recorded | not recorded |
+| 1.1 | [STUN messages](1-connectivity/1.1-stun.md) | 84 | 0 | 2 | pass | not recorded | pass | pass |
+| 1.2 | [Ports and candidates](1-connectivity/1.2-ports-candidates.md) | 54 | 0 | 1 | pass | pass | pass | pass |
+| 1.3 | [Connections: candidate-pair checks](1-connectivity/1.3-connections.md) | 34 | 0 | 1 | pass | pass | pass | pass |
+| 1.4 | [Port allocation](1-connectivity/1.4-port-allocation.md) | 64 | 0 | 1 | pass | pass | pass | pass |
+| 1.5 | [The ICE controller](1-connectivity/1.5-ice-controller.md) | 27 | 0 | 1 | pass | pass | pass | pass |
+| 1.6 | [The ICE agent (P2PTransportChannel)](1-connectivity/1.6-ice-agent.md) | 102 | 0 | 2 | pass | not recorded | pass | pass |
+| 1.7 | [ICE-lite for the AI server](1-connectivity/1.7-ice-lite.md) | 4 | 0 | 1 | pass | pass | pass | pass |
+| 1.8 | [TURN client (UDP, TCP, TLS)](1-connectivity/1.8-turn-client.md) | 57 | 0 | 2 | pass | not recorded | pass | pass |
+| 1.9 | [TCP packet sockets](1-connectivity/1.9-tcp-sockets.md) | 31 | 0 | 2 | pass | pass | pass | pass |
+| 1.10 | [SDP model and parse/write](1-connectivity/1.10-sdp.md) | 80 | 0 | 2 | pass | not recorded | pass | pass |
+| 1.11 | [Offer/answer generation](1-connectivity/1.11-offer-answer.md) | 65 | 0 | 1 | pass | not recorded | pass | pass |
+| 1.12 | [The endpoint (PeerEndpoint)](1-connectivity/1.12-endpoint.md) | 21 | 1 | 1 | pass | not recorded | pass | pass |
 
 ## 2. Security
 
 | # | Algorithm | Unit | E2E | Benchmarks | macOS arm64 (native) | WebAssembly (Node) | ASan+UBSan (Debug) | -fno-exceptions -fno-rtti |
 |---|---|---|---|---|---|---|---|---|
-| 2.1 | [TLS/DTLS interface and its BoringSSL and mbedTLS backends](2-security/2.1-tls-interface.md) | 21 | 0 | 0 | not recorded | not recorded | not recorded | not recorded |
-| 2.2 | [DTLS transport](2-security/2.2-dtls-transport.md) | 33 | 0 | 0 | not recorded | not recorded | not recorded | not recorded |
-| 2.3 | [DTLS-SRTP key export](2-security/2.3-dtls-srtp.md) | 18 | 0 | 0 | not recorded | not recorded | not recorded | not recorded |
-| 2.4 | [SRTP and SRTCP (libsrtp)](2-security/2.4-srtp.md) | 40 | 0 | 0 | not recorded | not recorded | not recorded | not recorded |
-| 2.5 | [TLS client socket over TCP](2-security/2.5-tls-client-socket.md) | 25 | 0 | 0 | not recorded | not recorded | not recorded | not recorded |
+| 2.1 | [TLS/DTLS interface and its BoringSSL and mbedTLS backends](2-security/2.1-tls-interface.md) | 33 | 0 | 5 | pass | not recorded | pass | pass |
+| 2.2 | [DTLS transport](2-security/2.2-dtls-transport.md) | 39 | 0 | 2 | pass | not recorded | pass | pass |
+| 2.3 | [DTLS-SRTP key export](2-security/2.3-dtls-srtp.md) | 18 | 0 | 1 | pass | not recorded | pass | pass |
+| 2.4 | [SRTP and SRTCP (libsrtp)](2-security/2.4-srtp.md) | 40 | 0 | 3 | pass | not recorded | pass | pass |
+| 2.5 | [TLS client socket over TCP](2-security/2.5-tls-client-socket.md) | 40 | 0 | 2 | pass | not recorded | pass | pass |
 
 ## 3. Packet loss
 
 | # | Algorithm | Unit | E2E | Benchmarks | macOS arm64 (native) | WebAssembly (Node) | ASan+UBSan (Debug) | -fno-exceptions -fno-rtti |
 |---|---|---|---|---|---|---|---|---|
-| 3.1 | [NACK + RTX retransmission](3-loss/3.1-nack-rtx.md) | 9 | 2 | 3 | not recorded | not recorded | not recorded | not recorded |
-| 3.2 | [Forward error correction (ULPFEC over RED, as libwebrtc)](3-loss/3.2-fec.md) | 0 | 2 | 3 | not recorded | not recorded | not recorded | not recorded |
-| 3.3 | [RED audio redundancy (RFC 2198)](3-loss/3.3-red.md) | 4 | 1 | 2 | pass | pass | pass | pass |
-| 3.4 | [Packet loss concealment (PCM domain)](3-loss/3.4-plc.md) | 0 | 1 | 1 | not recorded | not recorded | not recorded | not recorded |
-| 3.5 | [Keyframe requests (PLI/FIR) and loss notification](3-loss/3.5-keyframe-requests.md) | 4 | 1 | 2 | not recorded | not recorded | not recorded | not recorded |
-| 3.7 | [NACK/FEC protection selection](3-loss/3.7-protection-selection.md) | 0 | 1 | 2 | not recorded | not recorded | not recorded | not recorded |
+| 3.1 | [NACK + RTX retransmission](3-loss/3.1-nack-rtx.md) | 47 | 2 | 3 | pass | pass | pass | pass |
+| 3.2 | [Forward error correction (ULPFEC over RED, as libwebrtc)](3-loss/3.2-fec.md) | 11 | 2 | 3 | pass | pass | pass | pass |
+| 3.3 | [RED audio redundancy (RFC 2198)](3-loss/3.3-red.md) | 7 | 1 | 2 | pass | pass | pass | pass |
+| 3.4 | [Packet loss concealment (PCM domain)](3-loss/3.4-plc.md) | 24 | 1 | 1 | pass | pass | pass | pass |
+| 3.5 | [Keyframe requests (PLI/FIR) and loss notification](3-loss/3.5-keyframe-requests.md) | 28 | 1 | 2 | pass | pass | pass | pass |
+| 3.7 | [NACK/FEC protection selection](3-loss/3.7-protection-selection.md) | 10 | 1 | 2 | pass | pass | pass | pass |
 
 ## 4. Jitter, reordering and timing
 
 | # | Algorithm | Unit | E2E | Benchmarks | macOS arm64 (native) | WebAssembly (Node) | ASan+UBSan (Debug) | -fno-exceptions -fno-rtti |
 |---|---|---|---|---|---|---|---|---|
-| 4.1 | [Packet buffer: reordering, de-duplication, frame assembly](4-timing/4.1-packet-buffer.md) | 5 | 1 | 1 | pass | pass | pass | pass |
-| 4.2 | [RTCP statistics: loss, jitter and RTT](4-timing/4.2-rtcp-stats.md) | 5 | 1 | 1 | pass | pass | pass | pass |
-| 4.3 | [Audio target delay estimation (DelayManager)](4-timing/4.3-delay-manager.md) | 4 | 1 | 1 | not recorded | not recorded | not recorded | not recorded |
+| 4.1 | [Packet buffer: reordering, de-duplication, frame assembly](4-timing/4.1-packet-buffer.md) | 32 | 1 | 1 | pass | pass | pass | pass |
+| 4.2 | [RTCP statistics: loss, jitter and RTT](4-timing/4.2-rtcp-stats.md) | 17 | 1 | 1 | pass | pass | pass | pass |
+| 4.3 | [Audio target delay estimation (DelayManager)](4-timing/4.3-delay-manager.md) | 38 | 1 | 1 | pass | pass | pass | pass |
 | 4.4 | [Time stretching (WSOLA accelerate / preemptive expand)](4-timing/4.4-time-stretch.md) | 4 | 1 | 2 | pass | pass | pass | pass |
-| 4.5 | [Adaptive audio jitter buffer (NetEq-lite)](4-timing/4.5-audio-jitter-buffer.md) | 5 | 1 | 2 | not recorded | not recorded | not recorded | not recorded |
-| 4.6 | [Video jitter estimation and render timing](4-timing/4.6-video-jitter.md) | 4 | 1 | 2 | not recorded | not recorded | not recorded | not recorded |
+| 4.5 | [Adaptive audio jitter buffer (NetEq-lite)](4-timing/4.5-audio-jitter-buffer.md) | 66 | 1 | 2 | pass | pass | pass | pass |
+| 4.6 | [Video jitter estimation and render timing](4-timing/4.6-video-jitter.md) | 38 | 1 | 2 | pass | pass | pass | pass |
 
 ## 5. Bandwidth, congestion and unstable links
 
 | # | Algorithm | Unit | E2E | Benchmarks | macOS arm64 (native) | WebAssembly (Node) | ASan+UBSan (Debug) | -fno-exceptions -fno-rtti |
 |---|---|---|---|---|---|---|---|---|
-| 5.1 | [Transport-wide CC feedback (and REMB)](5-cc/5.1-transport-feedback.md) | 5 | 1 | 1 | pass | pass | pass | pass |
-| 5.2 | [Delay-based bandwidth estimation (GCC)](5-cc/5.2-delay-based-bwe.md) | 5 | 1 | 2 | not recorded | not recorded | not recorded | not recorded |
-| 5.3 | [Loss-based bandwidth estimation](5-cc/5.3-loss-based-bwe.md) | 0 | 1 | 1 | not recorded | not recorded | not recorded | not recorded |
-| 5.4 | [Send-side bandwidth estimation (GCC network controller)](5-cc/5.4-gcc-controller.md) | 1 | 1 | 1 | not recorded | not recorded | not recorded | not recorded |
-| 5.5 | [Pacer with priority queues](5-cc/5.5-pacer.md) | 5 | 1 | 2 | not recorded | not recorded | not recorded | not recorded |
-| 5.6 | [Bandwidth probing](5-cc/5.6-probing.md) | 3 | 1 | 1 | not recorded | not recorded | not recorded | not recorded |
-| 5.7 | [Bitrate allocation among streams](5-cc/5.7-bitrate-allocator.md) | 2 | 1 | 2 | not recorded | not recorded | not recorded | not recorded |
-| 5.8 | [Encoder overshoot control (frame dropper)](5-cc/5.8-frame-dropper.md) | 3 | 1 | 2 | not recorded | not recorded | not recorded | not recorded |
-| 5.9 | [Resolution/frame-rate adaptation and CPU overuse detection](5-cc/5.9-video-adaptation.md) | 0 | 2 | 1 | not recorded | not recorded | not recorded | not recorded |
+| 5.1 | [Transport-wide CC feedback (and REMB)](5-cc/5.1-transport-feedback.md) | 7 | 1 | 1 | pass | pass | pass | pass |
+| 5.2 | [Delay-based bandwidth estimation (GCC)](5-cc/5.2-delay-based-bwe.md) | 66 | 1 | 2 | pass | pass | pass | pass |
+| 5.3 | [Loss-based bandwidth estimation](5-cc/5.3-loss-based-bwe.md) | 22 | 1 | 1 | pass | pass | pass | pass |
+| 5.4 | [Send-side bandwidth estimation (GCC network controller)](5-cc/5.4-gcc-controller.md) | 12 | 1 | 1 | pass | pass | pass | pass |
+| 5.5 | [Pacer with priority queues](5-cc/5.5-pacer.md) | 60 | 1 | 2 | pass | pass | pass | pass |
+| 5.6 | [Bandwidth probing](5-cc/5.6-probing.md) | 59 | 1 | 1 | pass | pass | pass | pass |
+| 5.7 | [Bitrate allocation among streams](5-cc/5.7-bitrate-allocator.md) | 13 | 1 | 2 | pass | pass | pass | pass |
+| 5.8 | [Encoder overshoot control (frame dropper)](5-cc/5.8-frame-dropper.md) | 25 | 1 | 2 | pass | pass | pass | pass |
+| 5.9 | [Resolution/frame-rate adaptation and CPU overuse detection](5-cc/5.9-video-adaptation.md) | 26 | 2 | 1 | pass | pass | pass | pass |
 | 5.11 | [Link outage detection and recovery](5-cc/5.11-outage.md) | 1 | 1 | 1 | pass | pass | pass | pass |
 
 ## 6. Audio quality (APM)
 
 | # | Algorithm | Unit | E2E | Benchmarks | macOS arm64 (native) | WebAssembly (Node) | ASan+UBSan (Debug) | -fno-exceptions -fno-rtti |
 |---|---|---|---|---|---|---|---|---|
-| 6.1 | [Acoustic echo cancellation](6-audio/6.1-echo-canceller.md) | 0 | 1 | 1 | not recorded | not recorded | not recorded | not recorded |
-| 6.2 | [Echo-path delay estimation](6-audio/6.2-echo-delay.md) | 0 | 1 | 1 | not recorded | not recorded | not recorded | not recorded |
-| 6.3 | [Noise suppression](6-audio/6.3-noise-suppression.md) | 0 | 1 | 0 | not recorded | not recorded | not recorded | not recorded |
-| 6.4 | [Automatic gain control and limiter](6-audio/6.4-gain-control.md) | 0 | 1 | 0 | not recorded | not recorded | not recorded | not recorded |
-| 6.5 | [High-pass filter](6-audio/6.5-high-pass-filter.md) | 0 | 1 | 0 | not recorded | not recorded | not recorded | not recorded |
-| 6.6 | [Transient (keyboard click) suppression](6-audio/6.6-transient-suppressor.md) | 1 | 1 | 1 | pass | pass | pass | pass |
-| 6.8 | [Voice activity detection](6-audio/6.8-vad.md) | 2 | 1 | 1 | pass | pass | pass | pass |
-| 6.9 | [Audio level (RFC 6464)](6-audio/6.9-audio-level.md) | 2 | 1 | 1 | not recorded | not recorded | not recorded | not recorded |
-| 6.11 | [Sample-rate conversion](6-audio/6.11-resampler.md) | 0 | 1 | 0 | not recorded | not recorded | not recorded | not recorded |
-| 6.12 | [Band splitting](6-audio/6.12-band-splitting.md) | 0 | 0 | 1 | not recorded | not recorded | not recorded | not recorded |
-| 6.13 | [Receive-side audio mixing (group calls)](6-audio/6.13-audio-mixer.md) | 0 | 0 | 0 | not recorded | not recorded | not recorded | not recorded |
+| 6.1 | [Acoustic echo cancellation](6-audio/6.1-echo-canceller.md) | 89 | 3 | 1 | pass | pass | pass | pass |
+| 6.2 | [Echo-path delay estimation](6-audio/6.2-echo-delay.md) | 14 | 1 | 1 | pass | pass | pass | pass |
+| 6.3 | [Noise suppression](6-audio/6.3-noise-suppression.md) | 14 | 1 | 2 | pass | pass | pass | pass |
+| 6.4 | [Automatic gain control and limiter](6-audio/6.4-gain-control.md) | 97 | 2 | 3 | pass | pass | pass | pass |
+| 6.5 | [High-pass filter](6-audio/6.5-high-pass-filter.md) | 9 | 1 | 1 | pass | pass | pass | pass |
+| 6.6 | [Transient (keyboard click) suppression](6-audio/6.6-transient-suppressor.md) | 2 | 1 | 1 | pass | pass | pass | pass |
+| 6.8 | [Voice activity detection](6-audio/6.8-vad.md) | 4 | 1 | 1 | pass | pass | pass | pass |
+| 6.9 | [Audio level (RFC 6464)](6-audio/6.9-audio-level.md) | 4 | 1 | 1 | pass | pass | pass | pass |
+| 6.11 | [Sample-rate conversion](6-audio/6.11-resampler.md) | 10 | 1 | 3 | pass | pass | pass | pass |
+| 6.12 | [Band splitting](6-audio/6.12-band-splitting.md) | 6 | 0 | 1 | pass | pass | pass | pass |
+| 6.13 | [Receive-side audio mixing (group calls)](6-audio/6.13-audio-mixer.md) | 26 | 3 | 2 | pass | pass | pass | pass |
 
 ## 7. Video quality and processing
 
 | # | Algorithm | Unit | E2E | Benchmarks | macOS arm64 (native) | WebAssembly (Node) | ASan+UBSan (Debug) | -fno-exceptions -fno-rtti |
 |---|---|---|---|---|---|---|---|---|
-| 7.1 | [Freeze detection](7-video/7.1-freeze-detector.md) | 2 | 1 | 1 | pass | pass | pass | pass |
-| 7.2 | [Hardware -> software codec fallback](7-video/7.2-codec-fallback.md) | 2 | 1 | 1 | not recorded | not recorded | not recorded | not recorded |
+| 7.1 | [Freeze detection](7-video/7.1-freeze-detector.md) | 8 | 1 | 1 | pass | pass | pass | pass |
+| 7.2 | [Hardware -> software codec fallback](7-video/7.2-codec-fallback.md) | 17 | 1 | 1 | pass | pass | pass | pass |
 | 7.3 | [Video orientation (CVO)](7-video/7.3-orientation.md) | 2 | 1 | 1 | pass | pass | pass | pass |
-| 7.4 | [Content hints and screen-content variable frame rate](7-video/7.4-content-policy.md) | 2 | 1 | 2 | not recorded | not recorded | not recorded | not recorded |
-| 7.7 | [Render timing and late-frame dropping](7-video/7.7-frame-scheduler.md) | 2 | 1 | 1 | not recorded | not recorded | not recorded | not recorded |
-| 7.8 | [QP-based quality scaler](7-video/7.8-quality-scaler.md) | 1 | 1 | 1 | not recorded | not recorded | not recorded | not recorded |
-| 7.9 | [Simulcast send](7-video/7.9-simulcast-send.md) | 0 | 0 | 0 | not recorded | not recorded | not recorded | not recorded |
+| 7.4 | [Content hints and screen-content variable frame rate](7-video/7.4-content-policy.md) | 13 | 1 | 2 | pass | pass | pass | pass |
+| 7.7 | [Render timing and late-frame dropping](7-video/7.7-frame-scheduler.md) | 42 | 1 | 1 | pass | pass | pass | pass |
+| 7.8 | [QP-based quality scaler](7-video/7.8-quality-scaler.md) | 24 | 2 | 1 | pass | pass | pass | pass |
+| 7.9 | [Simulcast send](7-video/7.9-simulcast-send.md) | 70 | 0 | 2 | pass | pass | pass | pass |
 
 ## 8. Synchronization
 
 | # | Algorithm | Unit | E2E | Benchmarks | macOS arm64 (native) | WebAssembly (Node) | ASan+UBSan (Debug) | -fno-exceptions -fno-rtti |
 |---|---|---|---|---|---|---|---|---|
-| 8.1 | [RTP -> NTP mapping](8-sync/8.1-rtp-to-ntp.md) | 2 | 1 | 2 | pass | pass | pass | pass |
-| 8.2 | [Audio/video synchronization and CNAME sync groups](8-sync/8.2-stream-sync.md) | 3 | 1 | 1 | pass | pass | pass | pass |
-| 8.3 | [Absolute capture time and glass-to-glass latency](8-sync/8.3-capture-time.md) | 3 | 1 | 1 | pass | pass | pass | pass |
-| 8.4 | [Header extensions (RFC 8285) and BUNDLE demuxing](8-sync/8.4-header-extensions.md) | 3 | 1 | 2 | not recorded | not recorded | not recorded | not recorded |
+| 8.1 | [RTP -> NTP mapping](8-sync/8.1-rtp-to-ntp.md) | 5 | 1 | 2 | pass | pass | pass | pass |
+| 8.2 | [Audio/video synchronization and CNAME sync groups](8-sync/8.2-stream-sync.md) | 13 | 1 | 1 | pass | pass | pass | pass |
+| 8.3 | [Absolute capture time and glass-to-glass latency](8-sync/8.3-capture-time.md) | 8 | 1 | 1 | pass | pass | pass | pass |
+| 8.4 | [Header extensions (RFC 8285) and BUNDLE demuxing](8-sync/8.4-header-extensions.md) | 14 | 1 | 2 | pass | pass | pass | pass |
 
 ## 9. RTP/RTCP session layer
 
 | # | Algorithm | Unit | E2E | Benchmarks | macOS arm64 (native) | WebAssembly (Node) | ASan+UBSan (Debug) | -fno-exceptions -fno-rtti |
 |---|---|---|---|---|---|---|---|---|
-| 9.1 | [RTCP engine, SDES and BYE](9-rtp/9.1-rtcp-engine.md) | 0 | 0 | 0 | not recorded | not recorded | not recorded | not recorded |
-| 9.2 | [RTP sender and send-side controller](9-rtp/9.2-rtp-sender.md) | 0 | 0 | 0 | not recorded | not recorded | not recorded | not recorded |
-| 9.3 | [RTP receiver](9-rtp/9.3-rtp-receiver.md) | 0 | 0 | 0 | not recorded | not recorded | not recorded | not recorded |
-| 9.4 | [RTP session facade](9-rtp/9.4-session.md) | 0 | 0 | 0 | not recorded | not recorded | not recorded | not recorded |
-| 9.5 | [H.264 packetization (RFC 6184) and fake encoder](9-rtp/9.5-h264.md) | 0 | 0 | 0 | not recorded | not recorded | not recorded | not recorded |
+| 9.1 | [RTCP engine, SDES and BYE](9-rtp/9.1-rtcp-engine.md) | 38 | 10 | 4 | pass | pass | pass | pass |
+| 9.2 | [RTP sender and send-side controller](9-rtp/9.2-rtp-sender.md) | 87 | 2 | 1 | pass | pass | pass | pass |
+| 9.3 | [RTP receiver](9-rtp/9.3-rtp-receiver.md) | 40 | 3 | 1 | pass | pass | pass | pass |
+| 9.4 | [RTP session facade](9-rtp/9.4-session.md) | 75 | 10 | 2 | pass | pass | pass | pass |
+| 9.5 | [H.264 packetization (RFC 6184) and fake encoder](9-rtp/9.5-h264.md) | 35 | 10 | 2 | pass | pass | pass | pass |
 
 ## 9. Data channels
 
 | # | Algorithm | Unit | E2E | Benchmarks | macOS arm64 (native) | WebAssembly (Node) | ASan+UBSan (Debug) | -fno-exceptions -fno-rtti |
 |---|---|---|---|---|---|---|---|---|
-| 9.6 | [dcSCTP packet layer](9-data-channels/9.6-dcsctp-packet.md) | 112 | 0 | 0 | not recorded | not recorded | not recorded | not recorded |
-| 9.7 | [dcSCTP socket](9-data-channels/9.7-dcsctp-socket.md) | 365 | 0 | 0 | not recorded | not recorded | not recorded | not recorded |
-| 9.8 | [SCTP over DTLS](9-data-channels/9.8-sctp-over-dtls.md) | 13 | 0 | 0 | not recorded | not recorded | not recorded | not recorded |
-| 9.9 | [DCEP and the data channel API](9-data-channels/9.9-data-channel-api.md) | 23 | 0 | 0 | not recorded | not recorded | not recorded | not recorded |
+| 9.6 | [dcSCTP packet layer](9-data-channels/9.6-dcsctp-packet.md) | 112 | 0 | 1 | pass | not recorded | pass | not recorded |
+| 9.7 | [dcSCTP socket](9-data-channels/9.7-dcsctp-socket.md) | 402 | 0 | 2 | pass | not recorded | pass | not recorded |
+| 9.8 | [SCTP over DTLS](9-data-channels/9.8-sctp-over-dtls.md) | 13 | 0 | 1 | pass | not recorded | pass | not recorded |
+| 9.9 | [DCEP and the data channel API](9-data-channels/9.9-data-channel-api.md) | 23 | 0 | 2 | pass | not recorded | pass | not recorded |
 
 ## 10. Observability
 
 | # | Algorithm | Unit | E2E | Benchmarks | macOS arm64 (native) | WebAssembly (Node) | ASan+UBSan (Debug) | -fno-exceptions -fno-rtti |
 |---|---|---|---|---|---|---|---|---|
-| 10.1 | [Build and runtime switches](10-observability/10.1-switches.md) | 9 | 0 | 0 | not recorded | not recorded | not recorded | not recorded |
-| 10.2 | [ICE and DTLS connection stats](10-observability/10.2-connection-stats.md) | 4 | 0 | 0 | not recorded | not recorded | not recorded | not recorded |
-| 10.3 | [The observability-off check](10-observability/10.3-observability-off.md) | 0 | 0 | 0 | pass | pass | pass | pass |
-| 10.4 | [Fuzzing of the network parsers](10-observability/10.4-fuzzing.md) | 0 | 0 | 0 | pass | pass | pass | pass |
+| 10.1 | [Build and runtime switches](10-observability/10.1-switches.md) | 9 | 0 | 5 | pass | pass | pass | pass |
+| 10.2 | [ICE and DTLS connection stats](10-observability/10.2-connection-stats.md) | 3 | 0 | 1 | pass | not recorded | pass | pass |
+| 10.3 | [The observability-off check](10-observability/10.3-observability-off.md) | 0 | 0 | 2 | pass | pass | pass | pass |
+| 10.4 | [Fuzzing of the network parsers](10-observability/10.4-fuzzing.md) | 0 | 0 | 15 | pass | pass | pass | pass |
 
 ## Not implemented as separate algorithms
 
