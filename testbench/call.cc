@@ -33,6 +33,7 @@
 #include "sm/rtp/fake_h264.h"
 #include "sm/rtp/h264.h"
 #include "sm/rtp/session.h"
+#include "sm/rtp/simulcast_send_controller.h"
 #include "sm/rtp/video_send_controller.h"
 #include "sm/sim/network_link.h"
 #include "sm/sim/signals.h"
@@ -329,6 +330,11 @@ const std::vector<std::pair<std::string, std::string>>& OneWayMetricCatalog() {
       {"repair.overhead_pct", "(RTX + FEC packet bytes) / (audio + video media packet bytes), whole RTP packets"},
       {"repair.nack_recovered", "RTX packets that arrived before their original (from the link, as sm_compare)"},
       {"repair.fec_recovered", "Packets recovered by FEC (the ULPFEC receiver's counter)"},
+      {"simulcast.layer<i>_fps", "Simulcast (C17): frames layer i's encoder produced, per second of the call (the video.* "
+                                 "metrics are the viewed layer's, `simulcast_view`)"},
+      {"simulcast.layer<i>_kbps", "Simulcast: layer i's encoded bitrate averaged over the call"},
+      {"simulcast.layer<i>_keyframes", "Simulcast: keyframes layer i's encoder produced"},
+      {"simulcast.total_kbps", "Simulcast: every layer's encoded bitrate, averaged over the call"},
       {"rtcp.audio_report_blocks", "Report blocks about the audio SSRC in the RTCP the sender received (SRs and RRs; "
                                    "libwebrtc's audio channel reports every 5 s, about 6 in 30 s; issue #484)"},
       {"conv.responses", "Two-way call with turns: AI replies heard at the user (#753)"},
@@ -704,6 +710,40 @@ void AddLinkKindMetrics(const sim::LinkStats& stats, const Scenario& s, Report& 
 
 void AddCcMetrics(const Scenario& s, double demand_kbps, Report& rep) { AddCcMetrics(s, s.forward, demand_kbps, rep); }
 
+video::VideoEncoderConfig SimulcastEncoderConfig(const Scenario& s) {
+  video::VideoEncoderConfig c;
+  c.codec_type = video::VideoCodecType::kH264;
+  c.number_of_streams = static_cast<size_t>(std::max(1, s.simulcast));
+  c.simulcast_layers.assign(c.number_of_streams, video::VideoStream{});
+  c.simulcast_layers[0].min_bitrate_bps = static_cast<int>(s.video_min.bps());
+  c.max_bitrate_bps = static_cast<int>(s.video_max.bps());
+  return c;
+}
+
+double VideoDemandKbps(const Scenario& s) {
+  if (s.simulcast < 2) return s.video_max.kbps();
+  double kbps = 0;
+  for (const video::VideoStream& l : video::CreateEncoderStreams({}, s.video_width, s.video_height, SimulcastEncoderConfig(s))) {
+    if (l.active && l.max_bitrate_bps > 0) kbps += l.max_bitrate_bps / 1000.0;
+  }
+  return kbps;
+}
+
+void AddSimulcastMetrics(const Scenario& s, const std::vector<int64_t>& frames, const std::vector<int64_t>& bytes,
+                         const std::vector<int64_t>& keyframes, Report& rep) {
+  auto& m = rep.metrics;
+  const double secs = s.duration.seconds();
+  int64_t total = 0;
+  for (size_t i = 0; i < frames.size(); ++i) {
+    const std::string p = "simulcast.layer" + std::to_string(i) + "_";
+    m[p + "fps"] = static_cast<double>(frames[i]) / secs;
+    m[p + "kbps"] = static_cast<double>(bytes[i]) * 8 / secs / 1000;
+    m[p + "keyframes"] = static_cast<double>(keyframes[i]);
+    total += bytes[i];
+  }
+  m["simulcast.total_kbps"] = static_cast<double>(total) * 8 / secs / 1000;
+}
+
 void AddCcMetrics(const Scenario& s, const std::vector<LinkChange>& changes, double demand_kbps, Report& rep) {
   auto& m = rep.metrics;
   std::vector<double> targets;
@@ -897,7 +937,33 @@ struct StreamConfigs {
   // The direction's SSRCs: 1, 2 and 3 for a one-way call and a two-way call's up direction, 11, 12 and 13 for its down
   // direction (each endpoint's session sends on one set and receives the other).
   uint32_t audio_ssrc = kAudioSsrc, video_ssrc = kVideoSsrc, rtx_ssrc = kRtxSsrc;
+  // `simulcast` (C17): every layer's stream, lowest first (layer i on SSRC 2 + 100 i, RTX 3 + 100 i, RID q, h, f);
+  // `video` and the SSRCs above are then the viewed layer's (`simulcast_view`). Empty without simulcast.
+  std::vector<rtp::VideoStreamConfig> layers;
+  int view = 0;
+  // A packet of a simulcast layer other than the viewed one (media or RTX SSRC).
+  bool OtherLayer(uint32_t ssrc) const {
+    for (size_t i = 0; i < layers.size(); ++i) {
+      if (static_cast<int>(i) == view) continue;
+      if (ssrc == layers[i].ssrc || (layers[i].rtx_ssrc && ssrc == *layers[i].rtx_ssrc)) return true;
+    }
+    return false;
+  }
+  bool IsRtxSsrc(uint32_t ssrc) const {
+    if (ssrc == rtx_ssrc) return true;
+    for (const auto& l : layers) {
+      if (l.rtx_ssrc && ssrc == *l.rtx_ssrc) return true;
+    }
+    return false;
+  }
 };
+
+// The simulcast layers' RIDs, as an SFU client (LiveKit's) names them.
+constexpr const char* kSimulcastRids[] = {"q", "h", "f"};
+// The SSRC step between simulcast layers (C17).
+constexpr uint32_t kSimulcastSsrcStep = 100;
+// The RID and repaired RID extension ids of a simulcast call (both stacks).
+constexpr uint8_t kRidExtId = 2, kRepairedRidExtId = 3;
 
 StreamConfigs MakeStreamConfigs(const Scenario& s, int sr, DataRate audio_wire_rate, DirectionMeters& d,
                                 uint32_t ssrc_base = 0) {
@@ -945,6 +1011,21 @@ StreamConfigs MakeStreamConfigs(const Scenario& s, int sr, DataRate audio_wire_r
   // The bench's H.264 stream has no picture id, so with NACK on libwebrtc sends
   // no video FEC (ShouldDisableRedAndUlpfec) and neither does the session.
   video_cfg.deliver_bitstream = false;  // The bench has no decoder.
+  if (s.simulcast > 1 && !s.two_way && !s.mesh) {
+    // One stream per layer, each with its SSRC, RTX SSRC and RID (C17).
+    for (int i = 0; i < s.simulcast; ++i) {
+      rtp::VideoStreamConfig l = video_cfg;
+      l.ssrc = c.video_ssrc + kSimulcastSsrcStep * static_cast<uint32_t>(i);
+      if (s.nack) l.rtx_ssrc = c.rtx_ssrc + kSimulcastSsrcStep * static_cast<uint32_t>(i);
+      l.rid = kSimulcastRids[i];
+      c.layers.push_back(l);
+    }
+    c.view = s.simulcast_view < 0 ? s.simulcast - 1 : std::min(s.simulcast_view, s.simulcast - 1);
+    video_cfg = c.layers[static_cast<size_t>(c.view)];
+    video_cfg.rid.clear();
+    c.video_ssrc = video_cfg.ssrc;
+    c.rtx_ssrc = c.rtx_ssrc + kSimulcastSsrcStep * static_cast<uint32_t>(c.view);
+  }
   return c;
 }
 
@@ -973,6 +1054,11 @@ rtp::SessionConfig MakeSessionConfig(const Scenario& s, EventLog& events, uint32
   c.local_ssrc = rtcp_ssrc;
   c.cname = cname;
   c.extensions.Register(1, sync::uri::kTransportCc);
+  if (s.simulcast > 1 && !s.two_way && !s.mesh) {
+    // The layers name themselves by RID (C17), as sm_compare's libwebrtc side registers the same ids.
+    c.extensions.Register(kRidExtId, sync::uri::kRid);
+    c.extensions.Register(kRepairedRidExtId, sync::uri::kRepairedRid);
+  }
   c.rtcp.has_video = s.video;
   c.send_side.gcc.min_rate = s.min_rate;
   c.send_side.gcc.start_rate = s.start_rate;
@@ -1012,6 +1098,7 @@ class SendSide {
     Timestamp capture, done;
     rtp::EncodedFrameReport report;
     uint32_t rtp_ts;
+    int layer = -1;  // Simulcast: the layer's encoder (C17); -1 without simulcast.
   };
 
   SendSide(const Scenario& s, const RunOptions& opt, rtp::Session& session, const StreamConfigs& cfg,
@@ -1037,7 +1124,26 @@ class SendSide {
       speech_.emplace(s.duration.seconds() + 1, s.seed + 7, pauses);
     }
     if (s.audio) audio_send_ = session.AddAudioSend(cfg.audio);
-    if (s.video) video_send_ = session.AddVideoSend(cfg.video);
+    if (s.video && !cfg.layers.empty()) {
+      // Simulcast (C17): a send stream per layer, lowest first; the viewed layer's is video_send_.
+      view_ = cfg.view;
+      for (const rtp::VideoStreamConfig& l : cfg.layers) layer_sends_.push_back(session.AddVideoSend(l));
+      video_send_ = layer_sends_[static_cast<size_t>(view_)];
+      for (rtp::VideoSendId id : layer_sends_) layer_ts_offsets_.push_back(session.video_sender(id).StartTimestamp());
+      layer_frames_.assign(layer_sends_.size(), 0);
+      layer_bytes_.assign(layer_sends_.size(), 0);
+      layer_keyframes_.assign(layer_sends_.size(), 0);
+      rtp::SimulcastSendControllerConfig sc;
+      sc.encoder = SimulcastEncoderConfig(s);  // sm_compare's VideoEncoderConfig.
+      sc.keyframe_interval = s.keyframe_interval;
+      sc.fps = s.video_fps;
+      sc.bitrate_adjuster = s.bitrate_adjuster;
+      sc.adjuster.newfangled_headroom_adjustment = s.rate_utilization_tracker;
+      sc.adjuster_on_update = s.adjuster_on_update;
+      sc_.emplace(sc, session, layer_sends_);
+    } else if (s.video) {
+      video_send_ = session.AddVideoSend(cfg.video);
+    }
     // Each stream starts its RTP timestamps at a random offset, as libwebrtc (issue #514). The
     // measurement maps wire timestamps back to the capture clock by taking the offset off again, as
     // webrtc_call.cc takes off the first audio timestamp and the video frames' offset.
@@ -1045,6 +1151,12 @@ class SendSide {
     video_ts_offset_ = s.video ? session.video_sender(video_send_).StartTimestamp() : 0;
     video_ctl_.emplace(MakeVideoSendControllerConfig(s), session);
   }
+
+  // Simulcast (C17): the controller, and each layer's encoded frames, bytes and keyframes.
+  const rtp::SimulcastSendController* simulcast() const { return sc_ ? &*sc_ : nullptr; }
+  const std::vector<int64_t>& layer_frames() const { return layer_frames_; }
+  const std::vector<int64_t>& layer_bytes() const { return layer_bytes_; }
+  const std::vector<int64_t>& layer_keyframes() const { return layer_keyframes_; }
 
   rtp::Session& session() { return session_; }
   const rtp::Session& session() const { return session_; }
@@ -1078,11 +1190,16 @@ class SendSide {
   // The session's events since the last call.
   void OnEvents(Timestamp at) {
     for (const auto& e : session_.TakeEvents()) {
-      video_ctl().OnSessionEvent(e);
+      if (sc_) {
+        sc_->OnSessionEvent(e);
+      } else {
+        video_ctl().OnSessionEvent(e);
+      }
       switch (e.type) {
         case rtp::SessionEventType::kKeyframeRequested:
-          // A PLI or FIR names the media SSRC; the outage monitor's own request does not.
-          if (e.ssrc != 0) ++keyframe_requests_;
+          // A PLI or FIR names the media SSRC; the outage monitor's own request does not. With simulcast, the
+          // viewed layer's (as sm_compare reads its receive stream's PLI and FIR counts).
+          if (e.ssrc != 0 && (!sc_ || e.ssrc == session_.video_sender(video_send_).config().ssrc)) ++keyframe_requests_;
           break;
         case rtp::SessionEventType::kEncoderPause:
         case rtp::SessionEventType::kEncoderResume: break;  // Handled by the video controller.
@@ -1115,6 +1232,22 @@ class SendSide {
   // post-encode step (RunPostEncode) then gets the size of the frame as sent, after the keyframe SPS
   // rewrite (issue #655).
   void FrameEncoded(const PendingFrame& f) {
+    if (f.layer >= 0) {
+      // Simulcast (C17): the layer's frame on its send stream; the frame meters follow the viewed layer.
+      const auto layer = static_cast<size_t>(f.layer);
+      const auto frame = rtp::MakeFakeH264Frame(f.report.keyframe, static_cast<size_t>(f.report.size.bytes()));
+      if (f.layer == view_) {
+        const uint32_t wire_ts = f.rtp_ts + layer_ts_offsets_[layer];
+        d_.frame_capture[wire_ts] = f.capture;
+        d_.frame_times[wire_ts].capture = f.capture;
+        d_.frame_times[wire_ts].submitted = f.done;
+        if (opt_.link_trace) d_.frame_rtx_room[wire_ts] = rtx_ack_.Room();
+      }
+      rtp::EncodedFrameReport sent = f.report;
+      sent.size = session_.SendVideo(layer_sends_[layer], {f.rtp_ts, frame, f.report.keyframe}, f.done + clock0_);
+      sc_->OnEncoded(layer, sent, f.done + clock0_);
+      return;
+    }
     // Keyed by the timestamp on the wire.
     const uint32_t wire_ts = f.rtp_ts + video_ts_offset_;
     d_.frame_capture[wire_ts] = f.capture;
@@ -1139,6 +1272,16 @@ class SendSide {
   // VideoStreamEncoder::OnBitrateUpdated after the session ran: a resume encodes the frame held during the
   // pause (pending_frame_), with its capture time, as libwebrtc's encoder does in sm_compare.
   void PollPendingFrame(Timestamp at) {
+    if (sc_) {
+      if (const std::optional<rtp::SimulcastEncodeDecision> p = sc_->MaybeEncodePendingFrame(at + clock0_)) {
+        held_frame_ = false;
+        --frames_skipped_;
+        EncodeLayers(*p, p->capture_time - clock0_, at);
+      } else if (held_frame_ && !sc_->has_pending_frame()) {
+        held_frame_ = false;
+      }
+      return;
+    }
     if (const std::optional<rtp::EncodeDecision> p = video_ctl().MaybeEncodePendingFrame(at + clock0_)) {
       held_frame_ = false;
       --frames_skipped_;  // Counted when it was held.
@@ -1203,6 +1346,29 @@ class SendSide {
     VideoTraceRow& vt_row = d_.vt_row;
     int64_t k = frames_encoded_ + frames_skipped_ + frames_held_ + 1;
     next_frame_ms_ = k * 1000 / s_.video_fps;
+    if (sc_) {
+      // Simulcast (C17): the library decides per layer; the trace and the video.* counters follow the viewed layer.
+      const rtp::SimulcastEncodeDecision dec = sc_->OnCapturedFrame({s_.video_width, s_.video_height}, now + clock0_);
+      const DataRate vr = dec.layers[static_cast<size_t>(view_)].target;
+      ++vt_row.captured;
+      vt_row.encoder_target_bps = vr.bps();
+      encoder_target_bps_sum_ += vr.bps();
+      if (held_frame_ && dec.reason != rtp::DropReason::kCongestionWindow) ++vt_row.dropped_encoder_queue;
+      if (dec.reason != rtp::DropReason::kCongestionWindow) held_frame_ = dec.hold;
+      if (!dec.encode) {
+        ++frames_skipped_;
+        switch (dec.reason) {
+          case rtp::DropReason::kFrameDropper: ++vt_row.dropped_rate_limiter; break;
+          case rtp::DropReason::kCongestionWindow: ++vt_row.dropped_congestion_window; break;
+          default:
+            if (!dec.hold) ++vt_row.dropped_encoder_queue;
+            break;
+        }
+      } else {
+        EncodeLayers(dec, now, now);
+      }
+      return;
+    }
     // The library decides: encode or drop, keyframe or not, and the rate.
     const rtp::EncodeDecision dec = video_ctl().OnCapturedFrame({s_.video_width, s_.video_height}, now + clock0_);
     // The size the library asks for (the captured size unless quality scaling adapts it) is dec.width x
@@ -1233,8 +1399,9 @@ class SendSide {
   void FillTraceRow(Timestamp now) {
     VideoTraceRow& vt_row = d_.vt_row;
     vt_row.alloc_target_bps = session_.rates().video_target.bps();
-    vt_row.paused = video_ctl().paused() ? 1 : 0;
+    vt_row.paused = (sc_ ? sc_->paused() : video_ctl().paused()) ? 1 : 0;
     vt_row.pacer_queue_ms = static_cast<double>(session_.send_side().pacer().OldestQueueTime(now + clock0_).us()) / 1000.0;
+    if (sc_) return;  // No quality scaler with simulcast.
     const video::QualityScaler& qs = video_ctl().quality_scaler();
     if (qs.checks() > vt_qs_checks_) {
       using Signal = video::QualityScaler::Signal;
@@ -1248,7 +1415,9 @@ class SendSide {
     }
   }
 
-  int64_t frames_encoded() const { return frames_encoded_; }
+  // With simulcast, the viewed layer's encoded frames (frames_skipped counts whole captured frames dropped).
+  int64_t frames_encoded() const { return sc_ ? view_frames_ : frames_encoded_; }
+  int64_t frames_captured() const { return frames_encoded_ + frames_skipped_; }
   int64_t frames_skipped() const { return frames_skipped_; }
   int64_t keyframes_sent() const { return keyframes_sent_; }
   int64_t keyframe_requests() const { return keyframe_requests_; }
@@ -1258,6 +1427,56 @@ class SendSide {
   int64_t height_sum() const { return height_sum_; }
 
  private:
+  // Simulcast (C17): each layer the decision encodes, lowest first, as SimulcastEncoderAdapter runs its encoders,
+  // each an encoder model at its layer's rate and size (sm_compare's ModelEncoder per layer draws in the same order).
+  // The video trace and the video.* counters take the viewed layer's frames.
+  void EncodeLayers(const rtp::SimulcastEncodeDecision& dec, Timestamp capture, Timestamp at) {
+    VideoTraceRow& vt_row = d_.vt_row;
+    ++frames_encoded_;
+    const int64_t capture_ntp_ms = (CallClockStartSeconds(s_) + 2208988800LL) * 1000 + capture.ms();
+    const uint32_t rtp_ts = static_cast<uint32_t>(capture_ntp_ms * 90);
+    for (size_t i = 0; i < dec.layers.size(); ++i) {
+      const rtp::SimulcastLayerDecision& l = dec.layers[i];
+      if (!l.encode) continue;
+      const bool key = l.keyframe;
+      const double per_frame = static_cast<double>(l.target.bps()) / 8 / s_.video_fps;
+      int64_t bytes = static_cast<int64_t>(
+          key ? per_frame * 4
+              : per_frame * enc_rng_.Uniform(0.8, 1.2) * EncoderModel::DeltaSizeFactor(enc_behaviour_, capture.ms(), s_.video_fps));
+      bytes = std::max<int64_t>(bytes, 200);
+      const int qp = EncoderModel::Qp(bytes, key, l.width, l.height, s_.video_complexity);
+      const int64_t encode_us = EncoderModel::EncodeTimeUs(l.width, l.height, s_.encoder_speed);
+      ++layer_frames_[i];
+      layer_bytes_[i] += bytes;
+      if (key) ++layer_keyframes_[i];
+      if (static_cast<int>(i) == view_) {
+        ++view_frames_;
+        ++vt_row.encoded;
+        vt_row.encoded_bytes += bytes;
+        vt_row.qp_sum += qp;
+        vt_row.encode_us_sum += encode_us;
+        vt_row.height_sum += l.height;
+        vt_row.encode_width = l.width;
+        vt_row.encode_height = l.height;
+        qp_sum_ += qp;
+        height_sum_ += l.height;
+        video_bytes_encoded_ += bytes;
+        if (key) {
+          ++keyframes_sent_;
+          ++vt_row.keyframes;
+          vt_row.keyframe_bytes += bytes;
+        }
+      }
+      const TimeDelta encode_time = s_.encode_delay ? TimeDelta::Micros(encode_us) : TimeDelta::Zero();
+      PendingFrame f{capture, at + encode_time, {DataSize::Bytes(bytes), key, qp}, rtp_ts, static_cast<int>(i)};
+      if (encode_time > TimeDelta::Zero()) {
+        encoding_.push_back(f);
+      } else {
+        FrameEncoded(f);
+      }
+    }
+  }
+
   // Encode a frame the library allowed, captured at `capture`, at `at` (the capture time, or the resume
   // that encodes a held frame).
   void EncodeVideo(const rtp::EncodeDecision& dec, Timestamp capture, Timestamp at) {
@@ -1332,6 +1551,13 @@ class SendSide {
   rtp::VideoSendId video_send_;
   uint32_t audio_ts_offset_ = 0, video_ts_offset_ = 0;
   std::optional<rtp::VideoSendController> video_ctl_;
+  // Simulcast (C17).
+  std::optional<rtp::SimulcastSendController> sc_;
+  std::vector<rtp::VideoSendId> layer_sends_;
+  std::vector<uint32_t> layer_ts_offsets_;
+  std::vector<int64_t> layer_frames_, layer_bytes_, layer_keyframes_;
+  int view_ = -1;
+  int64_t view_frames_ = 0;
 
   const EncoderModel::Behaviour enc_behaviour_;
   int64_t frames_encoded_ = 0, frames_skipped_ = 0, keyframes_sent_ = 0, keyframe_requests_ = 0;
@@ -1370,6 +1596,17 @@ class ReceiveSide {
     if (s.audio) audio_recv_ = session.AddAudioReceive(cfg.audio, &decoder_);
     audio_ssrc_ = cfg.audio.ssrc;
     if (s.video) video_recv_ = session.AddVideoReceive(cfg.video);
+    // Simulcast (C17): the SFU's side of the uplink receives every layer, each on its own receive stream (NACK,
+    // keyframe requests, report blocks); the meters measure the viewed one (`video`).
+    streams_ = &cfg;
+    for (size_t i = 0; s.video && i < cfg.layers.size(); ++i) {
+      if (static_cast<int>(i) == cfg.view) continue;
+      rtp::VideoStreamConfig l = cfg.layers[i];
+      l.rid.clear();
+      other_layers_.push_back(session.AddVideoReceive(l));
+      other_delivery_.push_back(std::make_unique<FirstDelivery>());
+      other_ssrcs_.push_back({l.ssrc, l.rtx_ssrc.value_or(0)});
+    }
     audio_net_delay_.Start(audio_ts_offset, sr);
   }
 
@@ -1392,6 +1629,26 @@ class ReceiveSide {
     const bool audio_resend = w.kind == Kind::kRtx && RtpSsrc(w.bytes) == audio_ssrc_;
     if (audio_tap_ && (w.kind == Kind::kAudio || audio_resend)) audio_tap_(RtpTimestamp(w.bytes), at);
     int64_t wire = static_cast<int64_t>(w.bytes.size()) + kUdpIpOverhead;
+    if (!other_layers_.empty() && (w.kind == Kind::kVideo || w.kind == Kind::kRtx || w.kind == Kind::kFec ||
+                                   w.kind == Kind::kPadding)) {
+      // Simulcast (C17): another layer's packet counts in the goodput (each sequence number once per layer) and goes
+      // to its receive stream; the video meters follow the viewed layer only.
+      const uint32_t ssrc = RtpSsrc(w.bytes);
+      for (size_t i = 0; i < other_ssrcs_.size(); ++i) {
+        const auto [media, rtx] = other_ssrcs_[i];
+        if (ssrc != media && ssrc != rtx) continue;
+        if (w.kind == Kind::kVideo || w.kind == Kind::kFec) {
+          if (other_delivery_[i]->Deliver(FirstDelivery::kVideo, RtpSeq(w.bytes))) d_.w_good += wire;
+        } else if (w.kind == Kind::kRtx) {
+          if (auto q = RtpPacket::Parse(w.bytes); q && q->payload.size() > 2) {
+            const auto osn = static_cast<uint16_t>((q->payload[0] << 8) | q->payload[1]);
+            if (other_delivery_[i]->Deliver(FirstDelivery::kVideo, osn)) d_.w_good += wire;
+          }
+        }
+        session_.OnPacket(w.bytes, at + rx0_);
+        return;
+      }
+    }
     if (audio_resend) {
       if (first_delivery_.Deliver(FirstDelivery::kAudio, RtpSeq(w.bytes))) d_.w_good += wire;
       session_.OnPacket(w.bytes, at + rx0_);
@@ -1437,6 +1694,8 @@ class ReceiveSide {
   // Renders the frames the receiver released by `at`, at that time.
   void Render(Timestamp at, Report& rep) {
     if (!s_.video) return;
+    // Simulcast (C17): the other layers' frames leave their receive streams (an SFU forwards them).
+    for (size_t i = 0; i < other_layers_.size(); ++i) other_rendered_ += session_.TakeVideoFrames(other_layers_[i]).size();
     VideoTraceRow& vt_row = d_.vt_row;
     for (const auto& f : session_.TakeVideoFrames(video_recv_)) {
       if (opt_.video_trace) {
@@ -1691,6 +1950,12 @@ class ReceiveSide {
   Timestamp last_pull_time_ = Timestamp::MinusInfinity();
   std::optional<Timestamp> last_pull_capture_;
   FirstDelivery first_delivery_;  // goodput counts each media sequence number once (#329)
+  // Simulcast (C17): the other layers' receive streams, their first deliveries and their media and RTX SSRCs.
+  const StreamConfigs* streams_ = nullptr;
+  std::vector<rtp::VideoRecvId> other_layers_;
+  std::vector<std::unique_ptr<FirstDelivery>> other_delivery_;
+  std::vector<std::pair<uint32_t, uint32_t>> other_ssrcs_;
+  size_t other_rendered_ = 0;
   double last_video_delay_ = 0;
   std::function<void(uint32_t, Timestamp)> audio_tap_;
   uint32_t audio_ssrc_ = 0;
@@ -3003,6 +3268,7 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
     registry.Register("sender.quality_scaler", &tx.video_ctl().quality_scaler());
   }
   if (s.video) registry.Register("sender.protection", &sender.fec_controller(video_send));
+  if (tx.simulcast()) registry.Register("sender.simulcast", tx.simulcast());
   registry.Register("receiver.session", &receiver);
   registry.Register("receiver.rtcp", &receiver.rtcp());
   registry.Register("receiver.freezes", &rx.freezes());
@@ -3045,10 +3311,14 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
       // Counted by what is on the wire, as sm_compare counts libwebrtc: an RTX packet that carries
       // a payload is a retransmission, also when it was sent as payload padding (#120).
       if (is_forward && kind == Kind::kPadding) {
-        if (auto q = RtpPacket::Parse(p.bytes); q && q->ssrc == kRtxSsrc && q->payload.size() > 2) kind = Kind::kRtx;
+        if (auto q = RtpPacket::Parse(p.bytes); q && streams.IsRtxSsrc(q->ssrc) && q->payload.size() > 2) kind = Kind::kRtx;
       }
+      // Simulcast (C17): another layer's packet is on the link and in the send rate, but the repair and frame meters
+      // follow the viewed layer, as sm_compare's libwebrtc side counts them.
+      const bool other_layer = is_forward && !streams.layers.empty() && kind != Kind::kRtcp && kind != Kind::kAudio &&
+                               p.bytes.size() >= 12 && streams.OtherLayer(RtpSsrc(p.bytes));
       if (is_forward) {
-        dm.repair.OnSent(LinkKindOf(kind), p.bytes.size(), kind == Kind::kVideo ? RtpSeq(p.bytes) : 0, now.ms());
+        if (!other_layer) dm.repair.OnSent(LinkKindOf(kind), p.bytes.size(), kind == Kind::kVideo ? RtpSeq(p.bytes) : 0, now.ms());
         if (kind != Kind::kRtcp) dm.w_send += p.wire_size.bytes();
         if (kind == Kind::kAudio) {
           if (!dm.audio_ts_first) {
@@ -3059,10 +3329,10 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
           dm.audio_ts_last = std::make_pair(RtpTimestamp(p.bytes), now);
         }
         if (kind == Kind::kPadding) {
-          if (auto q = RtpPacket::Parse(p.bytes)) (q->ssrc == kRtxSsrc ? dm.padding_rtx_ssrc : dm.padding_media_ssrc)++;
+          if (auto q = RtpPacket::Parse(p.bytes)) (streams.IsRtxSsrc(q->ssrc) ? dm.padding_rtx_ssrc : dm.padding_media_ssrc)++;
           dm.padding_sizes.insert(p.wire_size.bytes());
         }
-        if (kind == Kind::kVideo) {
+        if (kind == Kind::kVideo && !other_layer) {
           if (!dm.video_start_seq) dm.video_start_seq = RtpSeq(p.bytes);
           auto ft = dm.frame_times.find(RtpTimestamp(p.bytes));
           if (ft != dm.frame_times.end()) ft->second.last_sent = now;
@@ -3324,13 +3594,14 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
     m["video.keyframe_requests"] = static_cast<double>(tx.keyframe_requests());
     m["video.encoder_dropped"] = static_cast<double>(tx.frames_skipped());
     m["video.encoder_target_avg_kbps"] =
-        tx.frames_encoded() + tx.frames_skipped()
-            ? static_cast<double>(tx.encoder_target_bps_sum()) / static_cast<double>(tx.frames_encoded() + tx.frames_skipped()) / 1000
+        tx.frames_captured()
+            ? static_cast<double>(tx.encoder_target_bps_sum()) / static_cast<double>(tx.frames_captured()) / 1000
             : 0;
+    if (tx.simulcast()) AddSimulcastMetrics(s, tx.layer_frames(), tx.layer_bytes(), tx.layer_keyframes(), rep);
   }
 
   // Congestion control: utilization, queueing and settle time.
-  const double demand_kbps = (s.video ? s.video_max.kbps() : 0) + audio_wire_rate.kbps();
+  const double demand_kbps = (s.video ? VideoDemandKbps(s) : 0) + audio_wire_rate.kbps();
   AddCcMetrics(s, demand_kbps, rep);
   m["cc.queue_p95_ms"] = Percentile(queue_samples, 95);
   m["cc.queue_max_ms"] = queue_samples.empty() ? 0 : *std::max_element(queue_samples.begin(), queue_samples.end());
