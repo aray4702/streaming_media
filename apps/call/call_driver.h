@@ -48,8 +48,8 @@ class CallDriver {
     std::string lk_url = join.url;
     net::Url q = token_service;
     q.path += "?room=" + config.room + "&identity=" + config.peer_id;  // The service accepts [A-Za-z0-9_.-] only.
-    // Publish only (until C18): a grant without canSubscribe, so LiveKit makes the publisher connection the primary
-    // one and opens no subscriber connection (whose data-only first offer the endpoint can't take yet).
+    // Publish only, when asked (livekit_subscribe off): a grant without canSubscribe, so LiveKit opens no subscriber
+    // connection. By default the client subscribes to the whole room (C20).
     if (!config.livekit_subscribe) q.path += "&subscribe=0";
     if (auto body = net::HttpGet(q, 3000)) {
       auto m = net::JsonParseFlat(*body);

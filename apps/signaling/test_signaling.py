@@ -274,7 +274,7 @@ class LiveKitTokenTest(unittest.TestCase):
                     q(room='r', identity='.hidden'), q(room='r' * 65, identity='i'), q(room='r', identity='a b'),
                     q(room='r', identity='é')):
             self.assertEqual(server.livekit_token_response('k', 's', '', bad)[0], 400, bad)
-        # subscribe=0: a publish-only grant (the native client until C18).
+        # subscribe=0: a publish-only grant (sm_call_smoke --publish-only).
         pub_only = server.livekit_token_response('k', 's', '', q(room='r', identity='i', subscribe='0'))
         self.assertEqual(verify_jwt(pub_only[1]['token'], 's')['video']['canSubscribe'], False)
         self.assertEqual(verify_jwt(ok[1]['token'], 's')['video']['canSubscribe'], True)

@@ -18,15 +18,25 @@ if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
 else()
   add_test(NAME unit.call_smoke.usage COMMAND sm_call_smoke)
   set_tests_properties(unit.call_smoke.usage PROPERTIES LABELS unit WILL_FAIL TRUE)
-  # The native LiveKit client (C19, #1164) publishes to a local LiveKit server and a Chrome page receives it; skipped
-  # without Chrome or livekit-server (SM_LIVEKIT_SERVER).
+  # The native LiveKit client (C19, #1164; C20, #1172) publishes to a local LiveKit server and a Chrome page receives
+  # it, and it receives the page; skipped without Chrome or livekit-server (SM_LIVEKIT_SERVER).
   find_package(Python3 COMPONENTS Interpreter QUIET)
   if(Python3_Interpreter_FOUND)
     add_test(NAME interop.WebApp.group_native
              COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/apps/web/test_group_call.py
-                     --native=$<TARGET_FILE:sm_call_smoke>)
+                     --native=$<TARGET_FILE:sm_call_smoke> --subscribe)
     set_tests_properties(interop.WebApp.group_native PROPERTIES
       LABELS interop SKIP_RETURN_CODE 77 TIMEOUT 120 RESOURCE_LOCK sm_chrome)
+    # The whole group (C20, #1172): two pages, the native client and the AI server (--livekit) in one room, a third
+    # page joining and leaving; everyone receives everyone, the active speaker moves between the native client and
+    # the AI, which answers the native client's turns.
+    if(TARGET sm_ai_server)
+      add_test(NAME interop.WebApp.group_all
+               COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/apps/web/test_group_call.py --all
+                       --native=$<TARGET_FILE:sm_call_smoke> --ai=$<TARGET_FILE:sm_ai_server>)
+      set_tests_properties(interop.WebApp.group_all PROPERTIES
+        LABELS interop SKIP_RETURN_CODE 77 TIMEOUT 180 RESOURCE_LOCK sm_chrome)
+    endif()
   endif()
 endif()
 
