@@ -1728,7 +1728,7 @@ ALGORITHMS = [
                   "800 kbps, rises from 1 Mbps, or stays clean (`simulcast_*` scenarios); the receiver takes every "
                   "layer as an SFU does and one layer is measured (`simulcast_view`).",
          notes="C17 (issue #1162; Owner decision #1160: group calls through a LiveKit SFU). See the "
-               "[libwebrtc parity inventory](../../design/libwebrtc-parity.md#1023-simulcast-send-c17-1162) for the "
+               "[libwebrtc parity inventory](../../design/libwebrtc-parity.md#1024-simulcast-send-c17-1162) for the "
                "differences from libwebrtc. `video/config/simulcast.cc` and the simulcast path of "
                "`encoder_stream_factory.cc` give the layers (the bitrate table by resolution, the layer count limited by "
                "resolution, 1/2 resolution steps), `simulcast_rate_allocator.cc` splits the target (layers on lowest "
@@ -1967,7 +1967,7 @@ ALGORITHMS = [
                       "(docs/results/472-h264-receive-switches-trial.md)."),
     dict(id="9.4", slug="session", title="RTP session facade",
          problems=["Wiring the building blocks by hand -> one rtp::Session per endpoint of a one-to-one call"],
-         headers=["rtp/session.h", "rtp/call_stats.h"], unit=["Session", "CallStats"], e2e=["E2E_RtpSession"], bench=[],
+         headers=["rtp/session.h", "rtp/call_stats.h"], unit=["Session", "SessionMultiStream", "CallStats"], e2e=["E2E_RtpSession"], bench=[],
          scenario="The test bench runs a full call through two rtp::Session objects, and every packet crosses "
                   "sim::NetworkLink as bytes. The whole scenario suite is the end-to-end test.",
          notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#9-rtp-session-layer) for the differences from libwebrtc. Pull-based: every output is a Take*() call, so the order of effects is fixed. The app keeps the "
@@ -1975,7 +1975,11 @@ ALGORITHMS = [
                "The video receivers take their RTT from CallStats (video/call_stats2.cc: the maximum of the reports "
                "of the last 1.5 s, on each report and every 1 s), fed by the 1 s periodic update; a receive-only "
                "endpoint's measurement comes from the XR DLRR echo with `rtcp.xr_rrtr` (as libwebrtc's GetAndResetXrRrRtt, issue #356; the test "
-               "bench turns it on with video, as sm_compare does on libwebrtc's side), else from SetRtt (#217).",
+               "bench turns it on with video, as sm_compare does on libwebrtc's side), else from SetRtt (#217). "
+               "Several remote participants on one session (C18, #1167): each receive stream has its own MID (demuxed "
+               "by MID and SSRC) and sync group (the msid stream; one synchronizer per video stream, paired as "
+               "Call::ConfigureSync), and is destroyed with RemoveAudioReceive / RemoveVideoReceive as "
+               "Call::DestroyAudioReceiveStream / DestroyVideoReceiveStream do.",
          verification="Introduced by #32 plan PRs 5 and 6. Switching the test bench changed baseline metrics only "
                       "through real packet sizes; each change is explained in PR #46. Per-suite results are "
                       "recorded by ctest and CI; tools/run_all.sh does not run these suites yet."),
@@ -2240,17 +2244,30 @@ MILESTONE3 = [
         "Requirement C6 part 2.",
         "The cases of `media_session_unittest.cc` and `transport_description_factory_unittest.cc` that apply to the subset. PR #1084."),
     _m3("1.12", "endpoint", "The endpoint (PeerEndpoint)",
-        "Setting up a whole call from SDP -> one object that applies descriptions and wires ICE, DTLS-SRTP, RTP and data channels",
+        "Setting up a whole call from SDP -> one object that applies descriptions and wires ICE, DTLS-SRTP, RTP and data "
+        "channels; and receiving a group call from an SFU on one connection, with tracks added and removed by renegotiation",
         ["pc/peer_endpoint.h", "pc/jsep_transport_controller.h"],
-        ["PcJsepTransportController", "PcPeerEndpoint"],
+        ["PcJsepTransportController", "PcPeerEndpoint", "PcRenegotiation"],
         "Two `PeerEndpoint`s behind NATs exchange an offer, an answer and trickled candidates, connect over ICE and DTLS "
         "and carry every Opus and H.264 frame intact both ways under SRTP; the same endpoint has also been called "
-        "from headless Chrome.",
-        "`pc/jsep_transport_controller.{h,cc}`, `pc/peer_connection` (the signalling part), `pc/jsep_transport`",
-        ["10.19", "10.21"],
-        "Requirement C6 part 3 and C7 part 5.",
-        "`peer_endpoint_test.cc`; the Chrome call is `tests/interop/browser` (a call with headless Chrome). PRs #1089, #1093.",
-        other_tests="`tests/interop/browser` (a call with headless Chrome, a data channel message each way)."),
+        "from headless Chrome. Five participants' endpoints feed one receiving endpoint through an SSRC-preserving "
+        "forwarder that joins and leaves them by renegotiation; the receiver holds 5 audio and 5 video tracks at once, "
+        "each on its own stream (`E2E_MultiStream`).",
+        "`pc/jsep_transport_controller.{h,cc}`, `pc/peer_connection` (the signalling part), `pc/jsep_transport`, "
+        "`pc/sdp_offer_answer.cc` (Unified Plan transceivers and subsequent offers), `pc/rtp_transceiver.cc`",
+        ["10.19", "10.21", "10.23", "10.24"],
+        "Requirement C6 part 3, C7 part 5 and C18 (multi-stream receive, #1167): transceivers (`AddTransceiver`, "
+        "direction, stop), subsequent offers and answers from either side with the DTLS role kept, a recvonly "
+        "transceiver for each remote section no transceiver takes (`receive_remote_tracks`, on as libwebrtc), remote "
+        "tracks reported with `SetOnTrack` / `SetOnRemoveTrack`, a receive stream, decoder and sync group per track. "
+        "C17 (simulcast send, #1162): `video_simulcast_rids` offers a=rid/a=simulcast:send, and the layers keep their "
+        "RIDs, SSRCs and send streams through an SFU's re-offers.",
+        "`peer_endpoint_test.cc` and `renegotiation_test.cc`; `E2E_MultiStream`; the Chrome calls are "
+        "`tests/interop/browser` (a call with headless Chrome; `multistream_chrome_offers`: Chrome sends 10 tracks in "
+        "three offers). PRs #1089, #1093; C18's PR.",
+        e2e=["E2E_MultiStream"],
+        other_tests="`tests/interop/browser` (a call with headless Chrome, a data channel message each way; Chrome sending "
+                    "5 participants' audio and video on one connection, renegotiating as they join and leave)."),
 
     # ------------------------------------------------------------------ 2
     _m3("2.1", "tls-interface", "TLS/DTLS interface and its BoringSSL and mbedTLS backends",

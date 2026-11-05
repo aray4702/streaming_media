@@ -2,11 +2,16 @@
 // see sm/pc/peer_endpoint.h. The data channels (C7 part 5, #1091) follow pc/data_channel_controller.cc and the SCTP
 // half of pc/sdp_offer_answer.cc (GetOptionsForOffer / MaybeNegotiateSctp, GetOptionsForAnswer,
 // UpdateDataChannelTransport, PushdownMediaDescription) and pc/peer_connection.cc (StartSctpTransport,
-// DestroyDataChannelTransport).
+// DestroyDataChannelTransport). Transceivers, renegotiation and remote tracks (C18, #1160) follow the Unified Plan half
+// of pc/sdp_offer_answer.cc: GetOptionsForUnifiedPlanOffer / GetOptionsForUnifiedPlanAnswer,
+// GetMediaDescriptionOptionsForTransceiver, UpdateTransceiversAndDataChannels / AssociateTransceiver /
+// FindAvailableTransceiverToReceive, ApplyRemoteDescriptionUpdateTransceiverState / ProcessRemovalOfRemoteTrack and
+// RemoveStoppedTransceivers, with call/call.cc's receive stream creation and destruction.
 #include "sm/pc/peer_endpoint.h"
 
 #include <algorithm>
 #include <cctype>
+#include <deque>
 #include <utility>
 
 #include "sm/pc/codec.h"
@@ -29,8 +34,6 @@ namespace sm::pc {
 
 namespace {
 
-constexpr char kAudioMid[] = "0";
-constexpr char kVideoMid[] = "1";
 // PeerConnection's kRtcpCnameLength.
 constexpr size_t kRtcpCnameLength = 16;
 
@@ -80,6 +83,22 @@ const ContentInfo* FirstDataContent(const SessionDescription& desc) {
   return nullptr;
 }
 
+bool IsAudioOrVideo(MediaType t) { return t == MediaType::AUDIO || t == MediaType::VIDEO; }
+
+const ContentInfo* ContentAt(const SessionDescriptionInterface* d, size_t i) {
+  if (!d || i >= d->description()->contents().size()) return nullptr;
+  return &d->description()->contents()[i];
+}
+
+// The section's negotiated MID extension.
+bool HasMidExtension(const MediaContentDescription* d) {
+  if (!d) return false;
+  for (const RtpExtension& e : d->rtp_header_extensions()) {
+    if (e.uri == RtpExtension::kMidUri) return true;
+  }
+  return false;
+}
+
 }  // namespace
 
 #if SM_ENDPOINT_DATA_CHANNELS
@@ -107,6 +126,37 @@ class PeerEndpoint::ChannelSink : public RtpPacketSinkInterface {
   PeerEndpoint* endpoint_;
 };
 
+// RtpTransceiver (pc/rtp_transceiver.h), with its sender's options, its receiver's remote track and its channel's
+// demuxer sink on the BUNDLE transport.
+struct PeerEndpoint::Transceiver {
+  MediaType kind = MediaType::AUDIO;
+  bool created_by_addtrack = false;  // The config's audio and video.
+  RtpTransceiverDirection direction = RtpTransceiverDirection::kSendRecv;
+  std::optional<RtpTransceiverDirection> current_direction;
+  std::optional<std::string> mid;
+  std::optional<size_t> mline_index;
+  bool stopping = false;
+  bool stopped = false;
+  bool has_ever_been_used_to_send = false;
+  // The sender: its id and msid streams, and the host's fixed SSRCs (external_media).
+  std::string track_id;
+  std::vector<std::string> stream_ids;
+  std::optional<uint32_t> ssrc, rtx_ssrc;
+  // Simulcast send (C17): the RIDs of the sender's encodings still in the simulcast envelope (the config's
+  // video_simulcast_rids; DisableSimulcastInSender and DisableEncodingLayers take encodings out), and whether the
+  // session sends them (an answer was applied with this transceiver's RIDs).
+  std::vector<std::string> send_rids;
+  bool simulcast_negotiated = false;
+  // The receiver: the remote track being received, and the decoder the factory made for it.
+  std::optional<RemoteTrack> remote;
+  std::unique_ptr<rtp::AudioDecoder> decoder;
+  bool uses_config_decoder = false;
+  // The channel's demuxer sink (its MID and the remote SSRCs) on the BUNDLE transport.
+  std::unique_ptr<ChannelSink> sink;
+  bool sink_registered = false;
+  std::vector<uint32_t> sink_ssrcs;
+};
+
 PeerEndpoint::PeerEndpoint(PeerEndpointConfig config, Timestamp now)
     : config_(std::move(config)),
       certificate_(config_.certificate ? config_.certificate : tls::SslIdentity::Create(config_.certificate_name)),
@@ -125,7 +175,30 @@ PeerEndpoint::PeerEndpoint(PeerEndpointConfig config, Timestamp now)
   // WebRtcSessionDescriptionFactory: a random 64-bit session id (CreateRandomId64), as decimal.
   const uint64_t id = (uint64_t{tls::CreateRandomNonZeroId()} << 32) | tls::CreateRandomNonZeroId();
   session_id_ = std::to_string(id & 0x7FFFFFFFFFFFFFFFull);
+  // PeerConnection's one CNAME for every sender (GenerateRtcpCname).
+  rtcp_cname_ = tls::CreateRandomString(kRtcpCnameLength);
   last_now_ = now;
+  // The app's AddTrack: one sendrecv transceiver per kind the config asks for.
+  if (config_.audio) {
+    auto t = std::make_unique<Transceiver>();
+    t->kind = MediaType::AUDIO;
+    t->created_by_addtrack = true;
+    t->track_id = config_.audio_track_id;
+    t->stream_ids = {config_.stream_id};
+    t->ssrc = config_.audio_ssrc;
+    transceivers_.push_back(std::move(t));
+  }
+  if (config_.video) {
+    auto t = std::make_unique<Transceiver>();
+    t->kind = MediaType::VIDEO;
+    t->created_by_addtrack = true;
+    t->track_id = config_.video_track_id;
+    t->stream_ids = {config_.stream_id};
+    t->ssrc = config_.video_ssrc;
+    if (config_.video_ssrc) t->rtx_ssrc = config_.video_rtx_ssrc;
+    if (config_.video_simulcast_rids.size() > 1) t->send_rids = config_.video_simulcast_rids;
+    transceivers_.push_back(std::move(t));
+  }
 #if SM_ENDPOINT_DATA_CHANNELS
   if (config_.enable_data_channels) {
     data_channels_ = std::make_unique<DataChannels>();
@@ -135,83 +208,157 @@ PeerEndpoint::PeerEndpoint(PeerEndpointConfig config, Timestamp now)
 }
 
 PeerEndpoint::~PeerEndpoint() {
-  if (media_rtp_transport_) {
-    for (auto& s : sinks_) media_rtp_transport_->UnregisterRtpDemuxerSink(s.get());
+  for (auto& t : transceivers_) {
+    if (t) UnregisterSink(*t);
   }
   // The SCTP transport goes before the DTLS transport under it.
   data_channels_.reset();
 }
 
-MediaSessionOptions PeerEndpoint::OfferOptions() const {
+// UniqueStringGenerator::GenerateString: the next number that no description has used as a MID.
+std::string PeerEndpoint::GenerateMid() {
+  for (;;) {
+    std::string mid = std::to_string(next_mid_++);
+    if (std::find(known_mids_.begin(), known_mids_.end(), mid) == known_mids_.end()) {
+      known_mids_.push_back(mid);
+      return mid;
+    }
+  }
+}
+
+PeerEndpoint::Transceiver* PeerEndpoint::FindByMid(std::string_view mid) const {
+  for (const auto& t : transceivers_) {
+    if (t && t->mid && *t->mid == mid) return t.get();
+  }
+  return nullptr;
+}
+
+// GetMediaDescriptionOptionsForTransceiver: the msid (sender) is signaled while the transceiver sends, and once it
+// has sent, in every later description until it is stopped (JSEP).
+MediaDescriptionOptions PeerEndpoint::OptionsForTransceiver(const Transceiver& t, const std::string& mid,
+                                                            bool offer) const {
+  const bool stopped = offer ? (t.stopping || t.stopped) : t.stopped;
+  MediaDescriptionOptions o(t.kind, mid, stopped ? RtpTransceiverDirection::kInactive : t.direction, stopped);
+  o.header_extensions =
+      t.kind == MediaType::AUDIO ? DefaultAudioRtpHeaderExtensions() : DefaultVideoRtpHeaderExtensions();
+  if (stopped || (!RtpTransceiverDirectionHasSend(t.direction) && !t.has_ever_been_used_to_send)) return o;
+  if (t.kind == MediaType::AUDIO) {
+    o.AddAudioSender(t.track_id, t.stream_ids);
+  } else if (!t.send_rids.empty() && (offer || t.simulcast_negotiated)) {
+    // Simulcast (C17): a send RID per encoding and the simulcast layers, paused where the encoding is inactive; with
+    // RIDs, num_sim_layers is 0 (no SSRCs: the layers' SSRCs are made when the first answer is applied, and every
+    // later description reuses this stream, AddStreamParams). A subsequent offer or answer signals the same RIDs, so
+    // an SFU's re-offer keeps the layers (C18). An answer signals them only once they are negotiated: a remote
+    // offer's simulcast section never takes this transceiver (AssociateTransceiver), so a first answer has none.
+    std::vector<RidDescription> rids;
+    SimulcastLayerList layers;
+    for (const std::string& rid : t.send_rids) {
+      rids.emplace_back(rid, RidDirection::kSend);
+      auto it = std::find_if(video_simulcast_.begin(), video_simulcast_.end(),
+                             [&](const SimulcastEncoding& e) { return e.rid == rid; });
+      layers.AddLayer(SimulcastLayer(rid, /*is_paused=*/it != video_simulcast_.end() && !it->active));
+    }
+    o.AddVideoSender(t.track_id, t.stream_ids, rids, layers, 0);
+  } else {
+    o.AddVideoSender(t.track_id, t.stream_ids, {}, SimulcastLayerList(), 1);
+  }
+  return o;
+}
+
+// GetOptionsForUnifiedPlanOffer (JSEP 5.2.1 and 5.2.2): every section of the current descriptions keeps its place,
+// with its transceiver's options, or rejected when it has none (stopped and removed) or is stopping; new transceivers
+// take the recyclable (rejected) sections first, then go at the end, with new MIDs; the data section last
+// (MaybeNegotiateSctp) when local data channels were requested and none is negotiated.
+MediaSessionOptions PeerEndpoint::OfferOptions() {
   MediaSessionOptions opts;
   opts.bundle_enabled = true;
   opts.rtcp_mux_enabled = true;
-  if (config_.audio) {
-    MediaDescriptionOptions o(MediaType::AUDIO, kAudioMid, RtpTransceiverDirection::kSendRecv, false);
-    o.header_extensions = DefaultAudioRtpHeaderExtensions();
-    o.AddAudioSender(config_.audio_track_id, {config_.stream_id});
-    opts.media_description_options.push_back(std::move(o));
-  }
-  if (config_.video) {
-    MediaDescriptionOptions o(MediaType::VIDEO, kVideoMid, RtpTransceiverDirection::kSendRecv, false);
-    o.header_extensions = DefaultVideoRtpHeaderExtensions();
-    if (config_.video_simulcast_rids.size() > 1) {
-      // GetMediaDescriptionOptionsForTransceiver: a send RID per encoding and the simulcast layers; with RIDs,
-      // num_sim_layers is 0 (no SSRCs in the offer).
-      std::vector<RidDescription> rids;
-      SimulcastLayerList layers;
-      for (const std::string& rid : config_.video_simulcast_rids) {
-        rids.emplace_back(rid, RidDirection::kSend);
-        layers.AddLayer(SimulcastLayer(rid, /*is_paused=*/false));
+  opts.rtcp_cname = rtcp_cname_;
+  const size_t local_n = local_description_ ? local_description_->description()->contents().size() : 0;
+  const size_t remote_n = remote_description_ ? remote_description_->description()->contents().size() : 0;
+  std::deque<size_t> recyclable;
+  for (size_t i = 0; i < std::max(local_n, remote_n); ++i) {
+    const ContentInfo* local = ContentAt(local_description_.get(), i);
+    const ContentInfo* remote = ContentAt(remote_description_.get(), i);
+    const bool had_been_rejected = (local && local->rejected) || (remote && remote->rejected);
+    const std::string mid = local ? local->mid() : remote->mid();
+    const MediaContentDescription* d = (local ? local : remote)->media_description();
+    const MediaType type = d ? d->type() : MediaType::UNSUPPORTED;
+    if (IsAudioOrVideo(type)) {
+      Transceiver* t = FindByMid(mid);
+      if (!t || (had_been_rejected && t->stopping)) {
+        recyclable.push_back(i);
+        opts.media_description_options.emplace_back(type, mid, RtpTransceiverDirection::kInactive, /*stopped=*/true);
+      } else {
+        opts.media_description_options.push_back(OptionsForTransceiver(*t, mid, /*offer=*/true));
+        t->mline_index = i;
       }
-      o.AddVideoSender(config_.video_track_id, {config_.stream_id}, rids, layers, 0);
+    } else if (type == MediaType::DATA) {
+      const bool active = !had_been_rejected && sctp_mid_ && *sctp_mid_ == mid;
+      opts.media_description_options.emplace_back(MediaType::DATA, mid,
+                                                  active ? RtpTransceiverDirection::kSendRecv
+                                                         : RtpTransceiverDirection::kInactive,
+                                                  /*stopped=*/!active);
     } else {
-      o.AddVideoSender(config_.video_track_id, {config_.stream_id}, {}, SimulcastLayerList(), 1);
+      opts.media_description_options.emplace_back(MediaType::UNSUPPORTED, mid, RtpTransceiverDirection::kInactive,
+                                                  /*stopped=*/true);
     }
-    opts.media_description_options.push_back(std::move(o));
+  }
+  for (auto& t : transceivers_) {
+    if (!t || t->mid || t->stopping || t->stopped) continue;
+    size_t index;
+    if (!recyclable.empty()) {
+      index = recyclable.front();
+      recyclable.pop_front();
+      opts.media_description_options[index] = OptionsForTransceiver(*t, GenerateMid(), /*offer=*/true);
+    } else {
+      index = opts.media_description_options.size();
+      opts.media_description_options.push_back(OptionsForTransceiver(*t, GenerateMid(), /*offer=*/true));
+    }
+    t->mline_index = index;
   }
 #if SM_ENDPOINT_DATA_CHANNELS
   // GetOptionsForUnifiedPlanOffer: lastly, an m=application section if local data channels were requested
-  // (MaybeNegotiateSctp, with the mid generator's next mid), or the one already negotiated.
-  if (data_channels_ && (sctp_mid_ || data_channels_->controller.HasDataChannels())) {
-    const std::string mid = sctp_mid_ ? *sctp_mid_ : std::to_string(opts.media_description_options.size());
-    opts.media_description_options.emplace_back(MediaType::DATA, mid, RtpTransceiverDirection::kSendRecv, false);
+  // (MaybeNegotiateSctp, with the mid generator's next mid) and none is negotiated.
+  if (data_channels_ && !sctp_mid_ && data_channels_->controller.HasDataChannels()) {
+    opts.media_description_options.emplace_back(MediaType::DATA, GenerateMid(), RtpTransceiverDirection::kSendRecv,
+                                                false);
   }
 #endif
   return opts;
 }
 
-// The transceivers follow the offer's sections in order (Unified Plan): the first audio and the first video section
-// get this end's transceivers; the rest are rejected. The data section that UpdateDataChannelTransport took (the first
-// one, with data channels on) is answered; any other is rejected (GetOptionsForUnifiedPlanAnswer).
+// GetOptionsForUnifiedPlanAnswer (JSEP 5.3.1 and 5.3.2): each section of the offer is answered with the transceiver
+// SetRemoteDescription associated with it (AssociateTransceivers), or rejected when there is none. The data section
+// that UpdateDataChannelTransport took (the first one, with data channels on) is answered; any other is rejected.
+// The DTLS role of a negotiated transport is kept (WebRtcSessionDescriptionFactory::InternalCreateAnswer sets
+// prefer_passive_role from GetDtlsRole), so a subsequent offer from the side that answered first can't swap it.
 MediaSessionOptions PeerEndpoint::AnswerOptions(const SessionDescription& offer) const {
   MediaSessionOptions opts;
   opts.bundle_enabled = true;
   opts.rtcp_mux_enabled = true;
-  bool audio_used = false, video_used = false;
+  opts.rtcp_cname = rtcp_cname_;
   for (const ContentInfo& content : offer.contents()) {
     const MediaContentDescription* d = content.media_description();
     const MediaType type = d ? d->type() : MediaType::UNSUPPORTED;
-    const bool audio = type == MediaType::AUDIO && config_.audio && !audio_used && !content.rejected;
-    const bool video = type == MediaType::VIDEO && config_.video && !video_used && !content.rejected;
-    if (type == MediaType::DATA && data_channels_ && !content.rejected && sctp_mid_ && content.mid() == *sctp_mid_) {
+    if (IsAudioOrVideo(type)) {
+      if (const Transceiver* t = FindByMid(content.mid())) {
+        opts.media_description_options.push_back(OptionsForTransceiver(*t, content.mid(), /*offer=*/false));
+      } else {
+        opts.media_description_options.emplace_back(type, content.mid(), RtpTransceiverDirection::kInactive,
+                                                    /*stopped=*/true);
+      }
+    } else if (type == MediaType::DATA && data_channels_ && !content.rejected && sctp_mid_ &&
+               content.mid() == *sctp_mid_) {
       opts.media_description_options.emplace_back(MediaType::DATA, content.mid(), RtpTransceiverDirection::kSendRecv,
                                                   /*stopped=*/false);
-    } else if (audio || video) {
-      MediaDescriptionOptions o(type, content.mid(), RtpTransceiverDirection::kSendRecv, false);
-      o.header_extensions = audio ? DefaultAudioRtpHeaderExtensions() : DefaultVideoRtpHeaderExtensions();
-      if (audio) {
-        o.AddAudioSender(config_.audio_track_id, {config_.stream_id});
-        audio_used = true;
-      } else {
-        o.AddVideoSender(config_.video_track_id, {config_.stream_id}, {}, SimulcastLayerList(), 1);
-        video_used = true;
-      }
-      opts.media_description_options.push_back(std::move(o));
     } else {
       opts.media_description_options.emplace_back(type == MediaType::ANY ? MediaType::UNSUPPORTED : type,
                                                   content.mid(), RtpTransceiverDirection::kInactive,
                                                   /*stopped=*/true);
+    }
+    if (const std::optional<p2p::SslRole> role = transport_controller_.GetDtlsRole(content.mid())) {
+      opts.media_description_options.back().transport_options.prefer_passive_role = *role == p2p::SslRole::kServer;
     }
   }
   return opts;
@@ -223,12 +370,11 @@ std::unique_ptr<SessionDescriptionInterface> PeerEndpoint::Wrap(SdpType type, st
 }
 
 std::unique_ptr<SessionDescriptionInterface> PeerEndpoint::CreateOffer(std::string* error) {
-  if (signaling_state_ != SignalingState::kStable || remote_description_) {
-    Fail(error, "CreateOffer: renegotiation is not supported.");
+  if (signaling_state_ != SignalingState::kStable && signaling_state_ != SignalingState::kHaveLocalOffer) {
+    Fail(error, "CreateOffer called in a wrong state.");
     return nullptr;
   }
   MediaSessionOptions opts = OfferOptions();
-  opts.rtcp_cname = tls::CreateRandomString(kRtcpCnameLength);
   std::unique_ptr<SessionDescription> d = session_desc_factory_->CreateOfferOrError(
       opts, local_description_ ? local_description_->description() : nullptr, error);
   ApplyFixedSsrcs(d.get());
@@ -241,30 +387,86 @@ std::unique_ptr<SessionDescriptionInterface> PeerEndpoint::CreateAnswer(std::str
     return nullptr;
   }
   MediaSessionOptions opts = AnswerOptions(*remote_description_->description());
-  opts.rtcp_cname = tls::CreateRandomString(kRtcpCnameLength);
-  std::unique_ptr<SessionDescription> d =
-      session_desc_factory_->CreateAnswerOrError(remote_description_->description(), opts, nullptr, error);
+  std::unique_ptr<SessionDescription> d = session_desc_factory_->CreateAnswerOrError(
+      remote_description_->description(), opts, local_description_ ? local_description_->description() : nullptr,
+      error);
   ApplyFixedSsrcs(d.get());
   return Wrap(SdpType::kAnswer, std::move(d));
 }
 
-// The host's fixed SSRCs replace the generated ones in the local sender's stream (SSRC munging before
-// SetLocalDescription, which libwebrtc accepts), with the FID group for video RTX.
+// The host's fixed SSRCs replace the generated ones in a transceiver's sender stream (SSRC munging before
+// SetLocalDescription, which libwebrtc accepts), with the FID group for video RTX. A section belongs to the
+// transceiver with its MID, or, in an offer not applied yet, to the new transceiver given its m-line index.
 void PeerEndpoint::ApplyFixedSsrcs(SessionDescription* desc) const {
   if (!desc) return;
-  for (ContentInfo& content : desc->contents()) {
+  for (size_t i = 0; i < desc->contents().size(); ++i) {
+    ContentInfo& content = desc->contents()[i];
     MediaContentDescription* d = content.media_description();
     if (content.rejected || !d || d->streams().empty()) continue;
-    StreamParams& sp = d->mutable_streams()[0];
-    if (d->type() == MediaType::AUDIO && config_.audio_ssrc) {
-      sp.ssrcs = {*config_.audio_ssrc};
-      sp.ssrc_groups.clear();
-    } else if (d->type() == MediaType::VIDEO && config_.video_ssrc) {
-      sp.ssrcs = {*config_.video_ssrc};
-      sp.ssrc_groups.clear();
-      if (config_.video_rtx_ssrc) sp.AddFidSsrc(*config_.video_ssrc, *config_.video_rtx_ssrc);
+    const Transceiver* t = FindByMid(content.mid());
+    if (!t) {
+      for (const auto& c : transceivers_) {
+        if (c && !c->mid && c->mline_index == i) t = c.get();
+      }
     }
+    if (!t || !t->ssrc || t->kind != d->type()) continue;
+    StreamParams& sp = d->mutable_streams()[0];
+    sp.ssrcs = {*t->ssrc};
+    sp.ssrc_groups.clear();
+    if (t->kind == MediaType::VIDEO && t->rtx_ssrc) sp.AddFidSsrc(*t->ssrc, *t->rtx_ssrc);
   }
+}
+
+// UpdateTransceiversAndDataChannels / AssociateTransceiver for every audio and video section. A local description's
+// sections take the transceiver with their MID, else the unassociated one CreateOffer put at their m-line index
+// (FindUnassociatedByMLineIndex). A remote one's take the transceiver with their MID, else (sendrecv or recvonly, no
+// simulcast) the first unassociated AddTrack transceiver of their kind (FindAvailableTransceiverToReceive), else a new
+// recvonly transceiver (with receive_remote_tracks; off, the section has none and the answer rejects it).
+bool PeerEndpoint::AssociateTransceivers(bool local, const SessionDescription& desc, std::string* error) {
+  const auto& contents = desc.contents();
+  for (size_t i = 0; i < contents.size(); ++i) {
+    const ContentInfo& content = contents[i];
+    if (std::find(known_mids_.begin(), known_mids_.end(), content.mid()) == known_mids_.end()) {
+      known_mids_.push_back(content.mid());  // mid_generator_.AddKnownId.
+    }
+    const MediaContentDescription* d = content.media_description();
+    if (!d || !IsAudioOrVideo(d->type())) continue;
+    Transceiver* t = FindByMid(content.mid());
+    if (local) {
+      if (!t) {
+        for (auto& c : transceivers_) {
+          if (c && !c->mid && c->mline_index == i) t = c.get();
+        }
+      }
+      if (!t) {
+        if (content.rejected) continue;
+        return Fail(error, "Transceiver not found based on m-line index");
+      }
+    } else {
+      if (!t && RtpTransceiverDirectionHasRecv(d->direction()) && !d->HasSimulcast()) {
+        for (auto& c : transceivers_) {
+          if (c && c->kind == d->type() && c->created_by_addtrack && !c->mid && !c->stopped && !c->stopping) {
+            t = c.get();
+            break;
+          }
+        }
+      }
+      if (!t) {
+        // A rejected section needs no transceiver (libwebrtc makes one and stops it at once).
+        if (content.rejected || !config_.receive_remote_tracks) continue;
+        auto created = std::make_unique<Transceiver>();
+        created->kind = d->type();
+        created->direction = RtpTransceiverDirection::kRecvOnly;
+        created->track_id = tls::CreateRandomUuid();
+        t = created.get();
+        transceivers_.push_back(std::move(created));
+      }
+    }
+    if (t->kind != d->type()) return Fail(error, "Transceiver type does not match media description type.");
+    t->mid = content.mid();
+    t->mline_index = i;
+  }
+  return true;
 }
 
 bool PeerEndpoint::SetLocalDescription(std::unique_ptr<SessionDescriptionInterface> desc, Timestamp now,
@@ -272,7 +474,8 @@ bool PeerEndpoint::SetLocalDescription(std::unique_ptr<SessionDescriptionInterfa
   if (!desc) return Fail(error, "SessionDescription is NULL.");
   last_now_ = std::max(last_now_, now);
   const SdpType type = desc->GetType();
-  if (!(type == SdpType::kOffer && signaling_state_ == SignalingState::kStable && !remote_description_) &&
+  if (!(type == SdpType::kOffer &&
+        (signaling_state_ == SignalingState::kStable || signaling_state_ == SignalingState::kHaveLocalOffer)) &&
       !(type == SdpType::kAnswer && signaling_state_ == SignalingState::kHaveRemoteOffer)) {
     return Fail(error, std::string("Called in wrong state for a local ") + SdpTypeToString(type) + ".");
   }
@@ -281,6 +484,7 @@ bool PeerEndpoint::SetLocalDescription(std::unique_ptr<SessionDescriptionInterfa
                                                  now, error)) {
     return false;
   }
+  if (!AssociateTransceivers(/*local=*/true, *desc->description(), error)) return false;
   suggester_.Update(desc->description(), /*local=*/true, type);
   local_description_ = std::move(desc);
   if (!UpdateDataChannelTransport(*local_description_->description(), error)) return false;
@@ -288,7 +492,7 @@ bool PeerEndpoint::SetLocalDescription(std::unique_ptr<SessionDescriptionInterfa
     signaling_state_ = SignalingState::kHaveLocalOffer;
   } else {
     signaling_state_ = SignalingState::kStable;
-    if (!CreateMediaSession(error)) return false;
+    if (!ApplyNegotiation(error)) return false;
     if (!MaybeStartSctp(last_now_, error)) return false;
   }
   transport_controller_.MaybeStartGathering(now);
@@ -300,7 +504,8 @@ bool PeerEndpoint::SetRemoteDescription(std::unique_ptr<SessionDescriptionInterf
   if (!desc) return Fail(error, "SessionDescription is NULL.");
   last_now_ = std::max(last_now_, now);
   const SdpType type = desc->GetType();
-  if (!(type == SdpType::kOffer && signaling_state_ == SignalingState::kStable && !local_description_) &&
+  if (!(type == SdpType::kOffer &&
+        (signaling_state_ == SignalingState::kStable || signaling_state_ == SignalingState::kHaveRemoteOffer)) &&
       !(type == SdpType::kAnswer && signaling_state_ == SignalingState::kHaveLocalOffer)) {
     return Fail(error, std::string("Called in wrong state for a remote ") + SdpTypeToString(type) + ".");
   }
@@ -309,6 +514,7 @@ bool PeerEndpoint::SetRemoteDescription(std::unique_ptr<SessionDescriptionInterf
                                                   desc->description(), now, error)) {
     return false;
   }
+  if (!AssociateTransceivers(/*local=*/false, *desc->description(), error)) return false;
   suggester_.Update(desc->description(), /*local=*/false, type);
   remote_description_ = std::move(desc);
   if (!UpdateDataChannelTransport(*remote_description_->description(), error)) return false;
@@ -316,7 +522,7 @@ bool PeerEndpoint::SetRemoteDescription(std::unique_ptr<SessionDescriptionInterf
     signaling_state_ = SignalingState::kHaveRemoteOffer;
   } else {
     signaling_state_ = SignalingState::kStable;
-    if (!CreateMediaSession(error)) return false;
+    if (!ApplyNegotiation(error)) return false;
     if (!MaybeStartSctp(last_now_, error)) return false;
   }
   ApplyRemoteCandidates(*remote_description_, now);
@@ -385,94 +591,231 @@ bool PeerEndpoint::IsConnected() const {
          t->rtp_transport()->IsSrtpActive();
 }
 
-// The voice and video channels' SetLocalContent / SetRemoteContent, on the one RTP session.
-bool PeerEndpoint::CreateMediaSession(std::string* error) {
+// --- Transceivers ---------------------------------------------------------------------------------------------------
+
+int PeerEndpoint::AddTransceiver(MediaType kind, const TransceiverInit& init, std::string* error) {
+  if (signaling_state_ == SignalingState::kClosed) {
+    Fail(error, "AddTransceiver called on a closed endpoint.");
+    return -1;
+  }
+  if (!IsAudioOrVideo(kind)) {
+    Fail(error, "media_type must be audio or video.");
+    return -1;
+  }
+  if (init.direction == RtpTransceiverDirection::kStopped) {
+    Fail(error, "Cannot add a stopped transceiver.");
+    return -1;
+  }
+  if (!config_.external_media && RtpTransceiverDirectionHasSend(init.direction)) {
+    Fail(error, "Only the config's transceivers send from the endpoint's own session; use external_media.");
+    return -1;
+  }
+  auto t = std::make_unique<Transceiver>();
+  t->kind = kind;
+  t->direction = init.direction;
+  t->track_id = init.track_id.empty() ? tls::CreateRandomUuid() : init.track_id;
+  t->stream_ids = init.stream_ids;
+  t->ssrc = init.ssrc;
+  if (init.ssrc && kind == MediaType::VIDEO) t->rtx_ssrc = init.rtx_ssrc;
+  transceivers_.push_back(std::move(t));
+  return static_cast<int>(transceivers_.size()) - 1;
+}
+
+bool PeerEndpoint::SetTransceiverDirection(int index, RtpTransceiverDirection direction) {
+  if (index < 0 || static_cast<size_t>(index) >= transceivers_.size() || !transceivers_[static_cast<size_t>(index)]) {
+    return false;
+  }
+  Transceiver& t = *transceivers_[static_cast<size_t>(index)];
+  if (t.stopping || t.stopped || direction == RtpTransceiverDirection::kStopped) return false;
+  if (!config_.external_media && !t.created_by_addtrack && RtpTransceiverDirectionHasSend(direction)) return false;
+  t.direction = direction;
+  return true;
+}
+
+// RtpTransceiver::StopStandard: stopping, so the next offer rejects the section; the receiver stops at once
+// (StopSendingAndReceiving), so its receive stream goes now.
+bool PeerEndpoint::StopTransceiver(int index) {
+  if (index < 0 || static_cast<size_t>(index) >= transceivers_.size() || !transceivers_[static_cast<size_t>(index)]) {
+    return false;
+  }
+  Transceiver& t = *transceivers_[static_cast<size_t>(index)];
+  if (t.stopping || t.stopped) return true;
+  t.stopping = true;
+  RemoveRemoteTrack(t);
+  if (!t.mid) t.stopped = true;  // Never negotiated: nothing to reject.
+  return true;
+}
+
+std::vector<std::pair<int, TransceiverState>> PeerEndpoint::transceivers() const {
+  std::vector<std::pair<int, TransceiverState>> out;
+  for (size_t i = 0; i < transceivers_.size(); ++i) {
+    const Transceiver* t = transceivers_[i].get();
+    if (!t) continue;
+    TransceiverState s;
+    s.kind = t->kind;
+    s.mid = t->mid;
+    s.direction = t->stopped ? RtpTransceiverDirection::kStopped : t->direction;
+    s.current_direction = t->current_direction;
+    s.stopped = t->stopped;
+    s.stopping = t->stopping;
+    out.emplace_back(static_cast<int>(i), s);
+  }
+  return out;
+}
+
+std::vector<RemoteTrack> PeerEndpoint::remote_tracks() const {
+  std::vector<RemoteTrack> out;
+  for (const auto& t : transceivers_) {
+    if (t && t->remote) out.push_back(*t->remote);
+  }
+  return out;
+}
+
+std::optional<rtp::AudioRecvId> PeerEndpoint::audio_receive() const {
+  for (const auto& t : transceivers_) {
+    if (t && t->remote && t->remote->audio) return t->remote->audio;
+  }
+  return std::nullopt;
+}
+
+std::optional<rtp::VideoRecvId> PeerEndpoint::video_receive() const {
+  for (const auto& t : transceivers_) {
+    if (t && t->remote && t->remote->video) return t->remote->video;
+  }
+  return std::nullopt;
+}
+
+// --- The completed offer/answer -------------------------------------------------------------------------------------
+
+// ApplyLocalDescription / ApplyRemoteDescriptionUpdateTransceiverState for an answer, when the offer/answer completes:
+// each associated transceiver's current direction (its side of the answer), a rejected section stops its transceiver;
+// the RTP session is made at the first answer with an audio or video section, then each section is received or not
+// (UpdateTransceiverReceive), and stopped transceivers are removed (RemoveStoppedTransceivers).
+bool PeerEndpoint::ApplyNegotiation(std::string* error) {
   const SessionDescription* local = local_description_->description();
   const SessionDescription* remote = remote_description_->description();
-  const SessionDescription* answer =
-      local_description_->GetType() == SdpType::kAnswer ? local : remote;
+  const bool local_answer = local_description_->GetType() == SdpType::kAnswer;
+  const SessionDescription* answer = local_answer ? local : remote;
+  for (auto& t : transceivers_) {
+    if (!t || !t->mid) continue;
+    const ContentInfo* c = answer->GetContentByName(*t->mid);
+    if (!c || !c->media_description()) continue;
+    if (c->rejected) {
+      t->stopped = true;
+      t->stopping = false;
+      t->current_direction = RtpTransceiverDirection::kStopped;
+      continue;
+    }
+    const RtpTransceiverDirection dir = local_answer
+                                            ? c->media_description()->direction()
+                                            : RtpTransceiverDirectionReversed(c->media_description()->direction());
+    t->current_direction = dir;
+    if (RtpTransceiverDirectionHasSend(dir)) t->has_ever_been_used_to_send = true;
+  }
+  if (!media_rtp_transport_) {
+    bool has_media = false;
+    for (const ContentInfo& c : answer->contents()) {
+      has_media = has_media || (!c.rejected && c.type == MediaProtocolType::kRtp && c.media_description() &&
+                                IsAudioOrVideo(c.media_description()->type()));
+    }
+    if (has_media && !CreateMediaSession(*answer, error)) return false;
+  } else if (session_) {
+    // A later answer may bring extensions the first one didn't have (same ids across the BUNDLE group).
+    bool added = false;
+    for (const ContentInfo& c : answer->contents()) {
+      if (c.rejected || !c.media_description() || c.type != MediaProtocolType::kRtp) continue;
+      for (const RtpExtension& e : c.media_description()->rtp_header_extensions()) {
+        if (e.id < 1 || e.id > 255 || extensions_.IdOf(e.uri)) continue;
+        added = extensions_.Register(static_cast<uint8_t>(e.id), e.uri) || added;
+      }
+    }
+    if (added) session_->SetExtensions(extensions_);
+    // The simulcast sender's layers after a subsequent offer/answer (an SFU's re-offer, or the answer to our own):
+    // the remote section's state for them (AssociateTransceiver for an existing transceiver).
+    for (auto& t : transceivers_) {
+      if (!t || !t->mid || !t->simulcast_negotiated || t->stopping || t->stopped) continue;
+      const ContentInfo* rc = remote->GetContentByName(*t->mid);
+      if (rc && !rc->rejected && rc->media_description()) UpdateSimulcastLayers(*t, *rc->media_description());
+    }
+  }
+  for (auto& t : transceivers_) {
+    if (!t || !t->mid) continue;
+    UpdateTransceiverReceive(*t, answer->GetContentByName(*t->mid), remote->GetContentByName(*t->mid));
+  }
+  RemoveStoppedTransceivers();
+  return true;
+}
+
+// The voice and video channels' SetLocalContent / SetRemoteContent for the send side, on the one RTP session (C6):
+// the session is configured from the first answer with an audio or video section, and the config's (AddTrack)
+// transceivers send on the local section's SSRCs (video with its RTX SSRC from the FID group), with the answer's
+// payload types (Opus; the first H.264 and its RTX), the negotiated header extensions (one id map: BUNDLE requires
+// the same ids), their MIDs when the MID extension is negotiated, NACK as negotiated for H.264, and the CNAME.
+bool PeerEndpoint::CreateMediaSession(const SessionDescription& answer, std::string* error) {
+  const SessionDescription* local = local_description_->description();
   rtp::SessionConfig cfg = config_.session;
-  sync::ExtensionMap extensions;
-  struct Section {
-    const ContentInfo* content = nullptr;
-    const MediaContentDescription* local = nullptr;
-    const MediaContentDescription* remote = nullptr;
-    const MediaContentDescription* answer = nullptr;
-    bool mid_negotiated = false;
-  } audio, video;
-  for (const ContentInfo& content : answer->contents()) {
+  for (const ContentInfo& content : answer.contents()) {
     if (content.rejected || content.type != MediaProtocolType::kRtp || !content.media_description()) continue;
-    Section* s = content.media_description()->type() == MediaType::AUDIO   ? &audio
-                 : content.media_description()->type() == MediaType::VIDEO ? &video
-                                                                           : nullptr;
-    if (!s || s->content) continue;
-    s->content = &content;
-    s->answer = content.media_description();
-    s->local = local->GetContentDescriptionByName(content.mid());
-    s->remote = remote->GetContentDescriptionByName(content.mid());
-    for (const RtpExtension& e : s->answer->rtp_header_extensions()) {
+    for (const RtpExtension& e : content.media_description()->rtp_header_extensions()) {
       if (e.id < 1 || e.id > 255) continue;
-      extensions.Register(static_cast<uint8_t>(e.id), e.uri);
-      if (e.uri == RtpExtension::kMidUri) s->mid_negotiated = true;
+      extensions_.Register(static_cast<uint8_t>(e.id), e.uri);
     }
+    if (!media_rtp_transport_) media_rtp_transport_ = transport_controller_.GetRtpTransport(content.mid());
   }
-  if (!audio.content && !video.content) return Fail(error, "No audio or video section was negotiated.");
-  media_rtp_transport_ = transport_controller_.GetRtpTransport((audio.content ? audio : video).content->mid());
   if (!media_rtp_transport_) return Fail(error, "No transport for the media sections.");
-
-  cfg.extensions = extensions;
-  if (audio.mid_negotiated) cfg.mid_audio = audio.content->mid();
-  if (video.mid_negotiated) cfg.mid_video = video.content->mid();
-  const StreamParams* local_audio = FirstStream(audio.local);
-  const StreamParams* local_video = FirstStream(video.local);
-  // BaseChannel::UpdateLocalStreams_w: a sender signaled with RIDs and no SSRCs (simulcast, C17) gets an SSRC per
-  // layer, and an RTX SSRC for each when RTX is negotiated.
-  std::optional<StreamParams> simulcast_video;
-  if (!local_video && video.local && !video.local->streams().empty() && video.local->streams()[0].has_rids()) {
-    simulcast_video = video.local->streams()[0];
-    const Codec* h264 = video.answer ? FindCodec(video.answer->codecs(), kH264CodecName) : nullptr;
-    const bool rtx = h264 && FindRtxFor(video.answer->codecs(), h264->id);
-    simulcast_video->GenerateSsrcs(static_cast<int>(simulcast_video->rids().size()), rtx, /*generate_fec_fr=*/false,
-                                   [this] { return ssrc_generator_.GenerateId(); });
-    local_video = &*simulcast_video;
-  }
-  const bool send_audio = local_audio && audio.local && RtpTransceiverDirectionHasSend(audio.local->direction());
-  const bool send_video = local_video && video.local && RtpTransceiverDirectionHasSend(video.local->direction());
-  const StreamParams* remote_audio = FirstStream(audio.remote);
-  const StreamParams* remote_video = FirstStream(video.remote);
-  const bool recv_audio = remote_audio && audio.remote && RtpTransceiverDirectionHasSend(audio.remote->direction()) &&
-                          config_.audio_decoder;
-  const bool recv_video = remote_video && video.remote && RtpTransceiverDirectionHasSend(video.remote->direction());
-  if (send_audio) cfg.local_ssrc = local_audio->first_ssrc();
-  else if (send_video) cfg.local_ssrc = local_video->first_ssrc();
-  else cfg.local_ssrc = ssrc_generator_.GenerateId();
-  if (send_audio || send_video) cfg.cname = (send_audio ? local_audio : local_video)->cname;
-  if (!config_.external_media) session_ = std::make_unique<rtp::Session>(cfg);
-
-  std::vector<uint8_t> audio_pts, video_pts;
-  if (config_.external_media) {
-    // The host's sessions: only the demuxer's payload types (used when the remote section has no SSRCs).
-    for (Section* s : {&audio, &video}) {
-      if (!s->content) continue;
-      for (const Codec& c : s->answer->codecs()) (s == &audio ? audio_pts : video_pts).push_back(static_cast<uint8_t>(c.id));
+  struct Send {
+    Transceiver* transceiver = nullptr;
+    const ContentInfo* content = nullptr;
+    const MediaContentDescription* answer = nullptr;
+    const StreamParams* stream = nullptr;
+    std::optional<StreamParams> simulcast;  // The RID stream with the SSRCs made for its layers.
+  } audio, video;
+  for (const auto& t : transceivers_) {
+    if (!t || !t->created_by_addtrack || !t->mid) continue;
+    Send& s = t->kind == MediaType::AUDIO ? audio : video;
+    const ContentInfo* c = answer.GetContentByName(*t->mid);
+    const MediaContentDescription* l = local->GetContentDescriptionByName(*t->mid);
+    if (s.content || !c || c->rejected || !l || !RtpTransceiverDirectionHasSend(l->direction())) continue;
+    const StreamParams* sp = FirstStream(l);
+    if (!sp && t->kind == MediaType::VIDEO && !t->send_rids.empty() && !l->streams().empty() &&
+        l->streams()[0].has_rids()) {
+      // BaseChannel::UpdateLocalStreams_w: a sender signaled with RIDs and no SSRCs (simulcast, C17) gets an SSRC
+      // per layer, and an RTX SSRC for each when RTX is negotiated. Made once: later descriptions keep signaling the
+      // RIDs without SSRCs, and the session keeps these layers (C18 keeps the send side as first negotiated).
+      s.simulcast = l->streams()[0];
+      const Codec* h264 = FindCodec(c->media_description()->codecs(), kH264CodecName);
+      const bool rtx = h264 && FindRtxFor(c->media_description()->codecs(), h264->id);
+      s.simulcast->GenerateSsrcs(static_cast<int>(s.simulcast->rids().size()), rtx, /*generate_fec_fr=*/false,
+                                 [this] { return ssrc_generator_.GenerateId(); });
+      sp = &*s.simulcast;
     }
-  } else if (audio.content) {
+    if (!sp) continue;
+    s.transceiver = t.get();
+    s.content = c;
+    s.answer = c->media_description();
+    s.stream = sp;
+  }
+  cfg.extensions = extensions_;
+  if (audio.content && HasMidExtension(audio.answer)) cfg.mid_audio = audio.content->mid();
+  if (video.content && HasMidExtension(video.answer)) cfg.mid_video = video.content->mid();
+  if (audio.stream) cfg.local_ssrc = audio.stream->first_ssrc();
+  else if (video.stream) cfg.local_ssrc = video.stream->first_ssrc();
+  else cfg.local_ssrc = ssrc_generator_.GenerateId();
+  if (audio.stream || video.stream) cfg.cname = (audio.stream ? audio.stream : video.stream)->cname;
+  media_rtp_transport_->SubscribeRtcpPacketReceived(
+      this, [this](const std::vector<uint8_t>& p, std::optional<Timestamp> arrival) { OnRtcp(p, arrival); });
+  if (config_.external_media) return true;
+  session_ = std::make_unique<rtp::Session>(cfg);
+  if (audio.content) {
     const Codec* opus = FindCodec(audio.answer->codecs(), kOpusCodecName);
     if (!opus) return Fail(error, "The audio section has no Opus.");
     rtp::AudioStreamConfig a = config_.audio_stream;
     a.payload_type = static_cast<uint8_t>(opus->id);
     a.clock_rate = opus->clockrate;
-    audio_pts.push_back(a.payload_type);
-    if (send_audio) {
-      a.ssrc = local_audio->first_ssrc();
-      audio_send_ = session_->AddAudioSend(a);
-    }
-    if (recv_audio) {
-      a.ssrc = remote_audio->first_ssrc();
-      audio_recv_ = session_->AddAudioReceive(a, config_.audio_decoder);
-    }
+    a.ssrc = audio.stream->first_ssrc();
+    audio_send_ = session_->AddAudioSend(a);
   }
-  if (video.content && !config_.external_media) {
+  if (video.content) {
     const Codec* h264 = FindCodec(video.answer->codecs(), kH264CodecName);
     if (!h264) return Fail(error, "The video section has no H.264.");
     rtp::VideoStreamConfig v = config_.video_stream;
@@ -486,71 +829,189 @@ bool PeerEndpoint::CreateMediaSession(std::string* error) {
                                     : rtp::H264PacketizationMode::kSingleNalUnit;
     const Codec* rtx = FindRtxFor(video.answer->codecs(), h264->id);
     if (rtx) v.rtx_payload_type = static_cast<uint8_t>(rtx->id);
-    video_pts.push_back(v.payload_type);
-    if (rtx) video_pts.push_back(v.rtx_payload_type);
     v.parser = &h264_parser_;
-    if (send_video && simulcast_video) {
-      // One send stream per encoding, with its SSRC, RTX SSRC and RID (RtpVideoSender's module per layer).
-      // SimulcastIsRejected: the answer has no a=simulcast or no RID extension, and only the first encoding stays
-      // active (DisableSimulcastInSender); otherwise an encoding the answer pauses or leaves out is inactive
-      // (UpdateSimulcastLayerStatusInSender).
-      bool rid_negotiated = false;
-      for (const RtpExtension& e : video.answer->rtp_header_extensions()) rid_negotiated |= e.uri == RtpExtension::kRidUri;
-      const bool rejected = !video.answer->HasSimulcast() || !rid_negotiated;
-      const SimulcastDescription& sd = video.answer->simulcast_description();
-      const std::vector<SimulcastLayer> answered = video.answer == video.remote ? sd.receive_layers().GetAllLayers()
-                                                                                : sd.send_layers().GetAllLayers();
+    if (video.simulcast) {
+      // One send stream per encoding, with its SSRC, RTX SSRC and RID (RtpVideoSender's module per layer); each
+      // encoding's state comes from the remote answer (UpdateSimulcastLayers).
       std::vector<uint32_t> primaries;
-      local_video->GetPrimarySsrcs(&primaries);
-      const auto& rids = local_video->rids();
+      video.stream->GetPrimarySsrcs(&primaries);
+      const auto& rids = video.stream->rids();
       for (size_t i = 0; i < rids.size() && i < primaries.size(); ++i) {
         SimulcastEncoding enc;
         enc.rid = rids[i].rid;
-        if (rejected) {
-          enc.active = i == 0;
-        } else {
-          auto it = std::find_if(answered.begin(), answered.end(),
-                                 [&](const SimulcastLayer& l) { return l.rid == enc.rid; });
-          enc.active = it != answered.end() && !it->is_paused;
-        }
         v.ssrc = primaries[i];
         uint32_t fid = 0;
-        v.rtx_ssrc = rtx && local_video->GetFidSsrc(v.ssrc, &fid) ? std::optional<uint32_t>(fid) : std::nullopt;
+        v.rtx_ssrc = rtx && video.stream->GetFidSsrc(v.ssrc, &fid) ? std::optional<uint32_t>(fid) : std::nullopt;
         v.rid = enc.rid;
         video_simulcast_sends_.push_back(session_->AddVideoSend(v));
         video_simulcast_.push_back(enc);
       }
       v.rid.clear();
       if (!video_simulcast_sends_.empty()) video_send_ = video_simulcast_sends_.front();
-    } else if (send_video) {
-      v.ssrc = local_video->first_ssrc();
+      video.transceiver->simulcast_negotiated = true;
+      const MediaContentDescription* remote_video =
+          remote_description_->description()->GetContentDescriptionByName(video.content->mid());
+      if (remote_video) UpdateSimulcastLayers(*video.transceiver, *remote_video);
+    } else {
+      v.ssrc = video.stream->first_ssrc();
       uint32_t fid = 0;
-      v.rtx_ssrc = rtx && local_video->GetFidSsrc(v.ssrc, &fid) ? std::optional<uint32_t>(fid) : std::nullopt;
+      v.rtx_ssrc = rtx && video.stream->GetFidSsrc(v.ssrc, &fid) ? std::optional<uint32_t>(fid) : std::nullopt;
       video_send_ = session_->AddVideoSend(v);
     }
-    if (recv_video) {
-      v.ssrc = remote_video->first_ssrc();
-      uint32_t fid = 0;
-      v.rtx_ssrc = rtx && remote_video->GetFidSsrc(v.ssrc, &fid) ? std::optional<uint32_t>(fid) : std::nullopt;
-      video_recv_ = session_->AddVideoReceive(v);
+  }
+  return true;
+}
+
+// The simulcast sender's encodings from a remote description's section (AssociateTransceiver, sdp_offer_answer.cc):
+// SimulcastIsRejected (the remote section has no a=simulcast or no RID extension, while ours offered simulcast)
+// leaves only the first encoding (DisableSimulcastInSender); otherwise UpdateSimulcastLayerStatusInSender: an encoding
+// the remote's receive layers pause is inactive and one they leave out is taken out of the envelope (DisableEncoding
+// Layers: inactive, and no longer signaled). The send streams themselves stay (video_simulcast_sends()).
+void PeerEndpoint::UpdateSimulcastLayers(Transceiver& t, const MediaContentDescription& remote) {
+  bool rid_negotiated = false;
+  for (const RtpExtension& e : remote.rtp_header_extensions()) rid_negotiated |= e.uri == RtpExtension::kRidUri;
+  if (!remote.HasSimulcast() || !rid_negotiated) {
+    for (size_t i = 1; i < video_simulcast_.size(); ++i) video_simulcast_[i].active = false;
+    if (t.send_rids.size() > 1) t.send_rids.resize(1);
+    return;
+  }
+  const std::vector<SimulcastLayer> layers = remote.simulcast_description().receive_layers().GetAllLayers();
+  for (SimulcastEncoding& enc : video_simulcast_) {
+    auto rid = std::find(t.send_rids.begin(), t.send_rids.end(), enc.rid);
+    if (rid == t.send_rids.end()) continue;  // Disabled earlier: stays out.
+    auto it = std::find_if(layers.begin(), layers.end(), [&](const SimulcastLayer& l) { return l.rid == enc.rid; });
+    if (it == layers.end()) {
+      enc.active = false;
+      t.send_rids.erase(rid);
+      continue;
+    }
+    enc.active = !it->is_paused;
+  }
+}
+
+// One associated transceiver after the offer/answer completed. Its channel (BaseChannel) registers the section's
+// header extensions and its demuxer sink (MID plus the remote SSRCs, or the payload types without SSRCs) on the BUNDLE
+// transport while the section is accepted. The section is received while the peer sends on it (its remote direction
+// has send) with signaled SSRCs: a receive stream in the session (Call::CreateAudioReceiveStream /
+// CreateVideoReceiveStream: the section's MID, the msid stream as sync group, the answer's payload types, RTX from the
+// FID group) and OnTrack; when the peer stops (sendonly to inactive or recvonly, rejected, stopped) or moves to
+// another SSRC, the stream goes and OnRemoveTrack runs (ProcessRemovalOfRemoteTrack, DestroyAudioReceiveStream).
+void PeerEndpoint::UpdateTransceiverReceive(Transceiver& t, const ContentInfo* answer, const ContentInfo* remote) {
+  const bool live = answer && !answer->rejected && answer->media_description() && !t.stopped && !t.stopping;
+  if (!live) {
+    RemoveRemoteTrack(t);
+    UnregisterSink(t);
+    return;
+  }
+  const std::string& mid = *t.mid;
+  const MediaContentDescription* ad = answer->media_description();
+  const MediaContentDescription* rd = remote && !remote->rejected ? remote->media_description() : nullptr;
+  const StreamParams* rsp = FirstStream(rd);
+  const std::vector<uint32_t> ssrcs = rsp ? rsp->ssrcs : std::vector<uint32_t>{};
+  if (media_rtp_transport_ && (!t.sink_registered || ssrcs != t.sink_ssrcs)) {
+    UnregisterSink(t);
+    media_rtp_transport_->RegisterRtpHeaderExtensionMap(mid, ad->rtp_header_extensions());
+    RtpDemuxerCriteria criteria;
+    criteria.mid = mid;
+    criteria.ssrcs = ssrcs;
+    if (criteria.ssrcs.empty()) {
+      for (const Codec& c : ad->codecs()) criteria.payload_types.push_back(static_cast<uint8_t>(c.id));
+    }
+    if (!t.sink) t.sink = std::make_unique<ChannelSink>(this);
+    t.sink_registered = media_rtp_transport_->RegisterRtpDemuxerSink(criteria, t.sink.get());
+    t.sink_ssrcs = ssrcs;
+  }
+  const bool receive = rd && rsp && RtpTransceiverDirectionHasSend(rd->direction());
+  if (t.remote && (!receive || t.remote->ssrc != rsp->first_ssrc())) RemoveRemoteTrack(t);
+  if (!receive || t.remote) return;
+
+  RemoteTrack rt;
+  rt.mid = mid;
+  rt.kind = t.kind;
+  rt.track_id = rsp->id;
+  rt.stream_ids = rsp->stream_ids();
+  rt.ssrc = rsp->first_ssrc();
+  rt.cname = rsp->cname;
+  uint32_t fid = 0;
+  if (t.kind == MediaType::VIDEO && rsp->GetFidSsrc(rt.ssrc, &fid)) rt.rtx_ssrc = fid;
+  const std::string sync_group = rt.stream_ids.empty() ? std::string() : rt.stream_ids[0];
+  if (session_ && t.kind == MediaType::AUDIO) {
+    rtp::AudioDecoder* decoder = nullptr;
+    if (config_.audio_decoder_factory) {
+      t.decoder = config_.audio_decoder_factory(mid);
+      decoder = t.decoder.get();
+    } else if (config_.audio_decoder && !audio_decoder_in_use_) {
+      decoder = config_.audio_decoder;
+      audio_decoder_in_use_ = true;
+      t.uses_config_decoder = true;
+    }
+    const Codec* opus = FindCodec(ad->codecs(), kOpusCodecName);
+    if (decoder && opus) {
+      rtp::AudioStreamConfig a = config_.audio_stream;
+      a.payload_type = static_cast<uint8_t>(opus->id);
+      a.clock_rate = opus->clockrate;
+      a.ssrc = rt.ssrc;
+      a.mid = mid;
+      a.sync_group = sync_group;
+      rt.audio = session_->AddAudioReceive(a, decoder);
+    }
+  } else if (session_ && t.kind == MediaType::VIDEO) {
+    if (const Codec* h264 = FindCodec(ad->codecs(), kH264CodecName)) {
+      rtp::VideoStreamConfig v = config_.video_stream;
+      v.codec = rtp::VideoCodecType::kH264;
+      v.payload_type = static_cast<uint8_t>(h264->id);
+      v.clock_rate = h264->clockrate;
+      v.nack = h264->HasFeedbackParam(FeedbackParam(kRtcpFbParamNack));
+      std::string mode;
+      v.h264_packetization_mode = h264->GetParam("packetization-mode", &mode) && mode == "1"
+                                      ? rtp::H264PacketizationMode::kNonInterleaved
+                                      : rtp::H264PacketizationMode::kSingleNalUnit;
+      const Codec* rtx = FindRtxFor(ad->codecs(), h264->id);
+      if (rtx) v.rtx_payload_type = static_cast<uint8_t>(rtx->id);
+      v.parser = &h264_parser_;
+      v.ssrc = rt.ssrc;
+      v.rtx_ssrc = rtx ? rt.rtx_ssrc : std::nullopt;
+      v.mid = mid;
+      v.sync_group = sync_group;
+      rt.video = session_->AddVideoReceive(v);
     }
   }
+  t.remote = rt;
+  if (on_track_) on_track_(rt);
+}
 
-  // BaseChannel::SetRtpTransport / RegisterRtpDemuxerSink and the header extension map, per section.
-  for (Section* s : {&audio, &video}) {
-    if (!s->content) continue;
-    RtpHeaderExtensions exts = s->answer->rtp_header_extensions();
-    media_rtp_transport_->RegisterRtpHeaderExtensionMap(s->content->mid(), exts);
-    RtpDemuxerCriteria criteria;
-    criteria.mid = s->content->mid();
-    if (const StreamParams* sp = FirstStream(s->remote)) criteria.ssrcs = sp->ssrcs;
-    if (criteria.ssrcs.empty()) criteria.payload_types = s == &audio ? audio_pts : video_pts;
-    sinks_.push_back(std::make_unique<ChannelSink>(this));
-    media_rtp_transport_->RegisterRtpDemuxerSink(criteria, sinks_.back().get());
+void PeerEndpoint::RemoveRemoteTrack(Transceiver& t) {
+  if (!t.remote) return;
+  const RemoteTrack rt = *t.remote;
+  t.remote.reset();
+  if (session_ && rt.audio) session_->RemoveAudioReceive(*rt.audio);
+  if (session_ && rt.video) session_->RemoveVideoReceive(*rt.video);
+  if (t.uses_config_decoder) {
+    t.uses_config_decoder = false;
+    audio_decoder_in_use_ = false;
   }
-  media_rtp_transport_->SubscribeRtcpPacketReceived(
-      this, [this](const std::vector<uint8_t>& p, std::optional<Timestamp> arrival) { OnRtcp(p, arrival); });
-  return true;
+  if (on_remove_track_) on_remove_track_(rt);
+  t.decoder.reset();  // After the stream that used it, and after the callback (which may still read it).
+}
+
+void PeerEndpoint::UnregisterSink(Transceiver& t) {
+  if (t.sink_registered && media_rtp_transport_) {
+    media_rtp_transport_->UnregisterRtpDemuxerSink(t.sink.get());
+    if (t.mid) media_rtp_transport_->UnregisterRtpHeaderExtensionMap(*t.mid);
+  }
+  t.sink_registered = false;
+  t.sink_ssrcs.clear();
+}
+
+// RemoveStoppedTransceivers: a stopped transceiver leaves the set (its channel cleared first), and its section can be
+// recycled by the next offer.
+void PeerEndpoint::RemoveStoppedTransceivers() {
+  for (auto& t : transceivers_) {
+    if (!t || !t->stopped) continue;
+    RemoveRemoteTrack(*t);
+    UnregisterSink(*t);
+    t.reset();
+  }
 }
 
 void PeerEndpoint::Deliver(std::span<const uint8_t> packet, bool rtcp, Timestamp arrival) {

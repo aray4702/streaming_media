@@ -180,9 +180,19 @@ if(SM_WITH_TLS)
       sm_add_test_exe(sm_unit_pc_endpoint LABEL unit DEPS sm::pc_endpoint sm::p2p_tls
         SOURCES
           unit/pc_endpoint/peer_endpoint_test.cc
+          unit/pc_endpoint/renegotiation_test.cc
         SUITES
           PcJsepTransportController
           PcPeerEndpoint
+          PcRenegotiation
+      )
+      # One connection receiving 5 audio and 5 video streams from participants behind a forwarder, joining and
+      # leaving by renegotiation (C18, #1160).
+      sm_add_test_exe(sm_e2e_pc_multi_stream LABEL e2e DEPS sm::pc_endpoint sm::p2p_tls
+        SOURCES
+          e2e/multi_stream_e2e_test.cc
+        SUITES
+          E2E_MultiStream
       )
     endif()
   endif()

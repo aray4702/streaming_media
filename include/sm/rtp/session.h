@@ -88,6 +88,14 @@ struct SessionConfig {
   // share a sync_group, and a sync::RtpStreamsSynchronizer sets both streams'
   // minimum playout delays every second (needs video timing version 2).
   // Off: each stream plays out on its own delay.
+  // With several remote participants (C18, #1160), the receive streams name
+  // their group (AudioStreamConfig / VideoStreamConfig::sync_group, the msid
+  // stream id): then each video receive stream is paired as Call::ConfigureSync
+  // does (call/call.cc:1318-1341), with the first audio receive stream of its
+  // group, and has its own synchronizer; a video stream without a group, or
+  // the second video stream of a group, is not synced. While no receive
+  // stream names a group, the first audio and the first video are paired, as
+  // above.
   bool av_sync = false;
   // The audio send stream sends its own RTCP sender reports beside video's,
   // as libwebrtc's audio RtpRtcp module does (SSRC the audio SSRC, the 5 s
@@ -179,6 +187,12 @@ struct AudioStreamConfig {
     c.enable_muted_state = true;
     return c;
   }();
+  // Receive side (C18, #1160): the BUNDLE MID of the stream's m= section, for one connection that receives
+  // several streams of a kind (each transceiver's section has its own MID). Empty: SessionConfig::mid_audio.
+  std::string mid;
+  // Receive side: the stream's sync group (AudioReceiveStreamInterface::Config::sync_group, the remote msid's
+  // stream id), for SessionConfig::av_sync. Empty: none.
+  std::string sync_group;
 };
 
 // Payload formats libwebrtc tells apart when it decides about video FEC.
@@ -234,6 +248,10 @@ struct VideoStreamConfig {
   // libwebrtc's video receive timing (VCMTiming and frame release, version 2) is the session default (#24).
   timing::VideoTimingConfig timing = [] { timing::VideoTimingConfig c; c.version = 2; return c; }();
   TimeDelta decode_time = TimeDelta::Millis(5);
+  // Receive side (C18, #1160), as AudioStreamConfig: the section's MID (empty: SessionConfig::mid_video) and the
+  // sync group (VideoReceiveStreamInterface::Config::sync_group).
+  std::string mid;
+  std::string sync_group;
 };
 
 // libwebrtc call/rtp_video_sender.cc PayloadTypeSupportsSkippingFecPackets:
@@ -357,9 +375,19 @@ class Session : public MetricsSource {
   void SetExtensions(const sync::ExtensionMap& extensions) { cfg_.extensions = extensions; }
   AudioSendId AddAudioSend(const AudioStreamConfig& cfg);
   VideoSendId AddVideoSend(const VideoStreamConfig& cfg);
-  // The decoder is not owned and must outlive the session.
+  // The decoder is not owned and must outlive the session (or the stream, once removed).
   AudioRecvId AddAudioReceive(const AudioStreamConfig& cfg, AudioDecoder* decoder);
   VideoRecvId AddVideoReceive(const VideoStreamConfig& cfg);
+  // Call::DestroyAudioReceiveStream / DestroyVideoReceiveStream (call/call.cc:858-889, 1032-1046), for a remote
+  // track that went away on renegotiation (C18, #1160), at any time: the stream leaves the demuxer and the RTCP
+  // reports, its synchronizer pairing is redone (ConfigureSync), and it is destroyed. Its id is not reused, and
+  // calls with it afterwards do nothing (GetAudio plays silence, TakeVideoFrames returns nothing). False for an
+  // unknown or already removed id.
+  bool RemoveAudioReceive(AudioRecvId id);
+  bool RemoveVideoReceive(VideoRecvId id);
+  // Whether the id names a receive stream that was added and not removed.
+  bool HasAudioReceive(AudioRecvId id) const;
+  bool HasVideoReceive(VideoRecvId id) const;
 
   // --- Egress -----------------------------------------------------------------
   // Each 10 ms capture frame of an audio stream as it goes to the encoder
@@ -472,11 +500,16 @@ class Session : public MetricsSource {
   const RtpSender& audio_sender(AudioSendId id) const { return *audio_send_[static_cast<size_t>(id.index)].sender; }
   const RtpReceiver& video_receiver(VideoRecvId id) const { return *video_recv_[static_cast<size_t>(id.index)].receiver; }
   const RtpReceiver& audio_receiver(AudioRecvId id) const { return *audio_recv_[static_cast<size_t>(id.index)].receiver; }
-  // The A/V synchronizer; null unless SessionConfig::av_sync and both an audio and a video receive stream exist.
-  const sync::RtpStreamsSynchronizer* av_sync() const { return av_sync_.get(); }
-  // The receive streams the synchronizer reads (nullptr until both exist), for the sync trace rows (#895).
+  // The A/V synchronizer of the first video receive stream that has one; null unless SessionConfig::av_sync and
+  // both an audio and a video receive stream of a group exist.
+  const sync::RtpStreamsSynchronizer* av_sync() const;
+  // The receive streams that synchronizer reads (nullptr until both exist), for the sync trace rows (#895).
   const sync::Syncable* sync_audio() const;
   const sync::Syncable* sync_video() const;
+  // A video receive stream's own synchronizer (C18: one per remote participant), and the audio receive stream it
+  // is paired with; null / nullopt when it is not synced.
+  const sync::RtpStreamsSynchronizer* av_sync(VideoRecvId id) const;
+  std::optional<AudioRecvId> synced_audio(VideoRecvId id) const;
   const cc::TransportFeedbackBuilder& transport_feedback() const { return tcc_; }
   void ExportMetrics(MetricsWriter& w) const override;
   // A getStats-style snapshot of every stream (stats_report.h, issue #988), computed now: it reads
@@ -551,19 +584,6 @@ class Session : public MetricsSource {
   // video streams' ExpectedPerPacketOverhead, averaged, given to the send side with
   // SendSideConfig::expected_packet_overhead (issue #577).
   void UpdateVideoPacketOverhead();
-  struct RecvStream {
-    std::unique_ptr<RtpReceiver> receiver;
-    uint32_t ssrc = 0;
-    uint32_t rtx_ssrc = 0;
-    // Audio NACK: the receive module's ModuleRtpRtcpImpl2::SendNACK state (rtp_rtcp_impl2.cc:573-631).
-    // libwebrtc starts nack_last_time_sent_full_ms_ at 0 on a wall clock far from 0, so the first
-    // list is always sent in full; minus infinity does that on a clock that starts at 0.
-    Timestamp nack_last_time_sent_full = Timestamp::MinusInfinity();
-    uint16_t nack_last_seq_number_sent = 0;
-    const video::FreezeDetector* freeze_detector = nullptr;  // GetStats only (SetFreezeDetector).
-  };
-  // ChannelReceive::OnRtpPacket's rtp_rtcp_->SendNACK for an audio receive stream.
-  void SendAudioNack(RecvStream& r, const std::vector<uint16_t>& nack_list, Timestamp now);
   // A receive stream as call/syncable.h's Syncable.
   class SyncableStream : public sync::Syncable {
    public:
@@ -578,6 +598,30 @@ class Session : public MetricsSource {
     RtpReceiver* r_;
     uint32_t ssrc_;
   };
+  struct RecvStream {
+    // Null once the stream is removed (RemoveAudioReceive / RemoveVideoReceive); ids stay stable.
+    std::unique_ptr<RtpReceiver> receiver;
+    uint32_t ssrc = 0;
+    uint32_t rtx_ssrc = 0;
+    int sink = -1;           // The demuxer sink.
+    std::string mid;         // The MID it is demuxed by (empty: none), for GetStats.
+    std::string sync_group;  // AudioStreamConfig / VideoStreamConfig::sync_group.
+    // The stream as a Syncable (with SessionConfig::av_sync); video: its own synchronizer (VideoReceiveStream2's
+    // rtp_stream_sync_), the audio stream it is paired with (-1: none), and whether that pairing still has to be
+    // handed to the synchronizer (ConfigureSync, which needs the time).
+    std::unique_ptr<SyncableStream> syncable;
+    std::unique_ptr<sync::RtpStreamsSynchronizer> sync;
+    int sync_audio = -1;
+    bool sync_pending = false;
+    // Audio NACK: the receive module's ModuleRtpRtcpImpl2::SendNACK state (rtp_rtcp_impl2.cc:573-631).
+    // libwebrtc starts nack_last_time_sent_full_ms_ at 0 on a wall clock far from 0, so the first
+    // list is always sent in full; minus infinity does that on a clock that starts at 0.
+    Timestamp nack_last_time_sent_full = Timestamp::MinusInfinity();
+    uint16_t nack_last_seq_number_sent = 0;
+    const video::FreezeDetector* freeze_detector = nullptr;  // GetStats only (SetFreezeDetector).
+  };
+  // ChannelReceive::OnRtpPacket's rtp_rtcp_->SendNACK for an audio receive stream.
+  void SendAudioNack(RecvStream& r, const std::vector<uint16_t>& nack_list, Timestamp now);
 
   void HandleRtcp(std::span<const uint8_t> bytes, Timestamp now);
   void HandleRtp(std::span<const uint8_t> bytes, Timestamp now);
@@ -600,7 +644,11 @@ class Session : public MetricsSource {
   RtpSender* SenderForSsrc(uint32_t ssrc);
   RtpSenderConfig SenderConfig(uint32_t ssrc, uint8_t pt, int clock, bool video, const std::string& mid) const;
   void Start(Timestamp now);
-  void MaybeCreateSync();  // The synchronizer, once both an audio and a video receive stream exist.
+  // Call::ConfigureSync for every video receive stream, after a receive stream was added or removed: the audio
+  // stream each one pairs with (see SessionConfig::av_sync). A changed pairing is handed to the synchronizer at
+  // the next Start, OnPacket or Process (ConfigurePendingSync).
+  void ConfigureSyncGroups();
+  void ConfigurePendingSync(Timestamp now);
   bool HasSendStreams() const { return !audio_send_.empty() || !video_send_.empty(); }
   // Sends the held audio frames that are due, or may go ahead within the budget (#762).
   void ReleaseHeldAudio(Timestamp now);
@@ -671,12 +719,10 @@ class Session : public MetricsSource {
   std::optional<TimeDelta> pending_rr_rtt_;
   void OnCallStatsUpdate(const std::optional<CallStats::Update>& u);
   SessionStats stats_;
-  std::unique_ptr<SyncableStream> sync_audio_, sync_video_;
   std::unique_ptr<RtcpEngine> audio_rtcp_;  // SessionConfig::audio_rtcp.
   // Simulcast (C17): the RTCP of every video send stream after the first (its own SRs), as RtpVideoSender's module per layer.
   std::vector<std::unique_ptr<RtcpEngine>> video_layer_rtcp_;
   std::unique_ptr<RtcpEngine> audio_recv_rtcp_;  // SessionConfig::audio_receive_rtcp.
-  std::unique_ptr<sync::RtpStreamsSynchronizer> av_sync_;
 };
 
 }  // namespace sm::rtp

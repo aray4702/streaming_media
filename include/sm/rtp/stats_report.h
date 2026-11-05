@@ -44,6 +44,7 @@ struct OutboundRtpStats {
 struct InboundRtpStats {
   uint32_t ssrc = 0;
   bool video = false;
+  std::string mid;  // The stream's m= section (RTCInboundRtpStreamStats::mid); empty without a MID (C18, #1160).
   uint64_t packets_received = 0;          // Media packets, RFC 3550 counting (receive statistics).
   int64_t packets_lost = 0;               // Cumulative, RFC 3550 (may be negative with duplicates).
   double fraction_lost = 0;               // Since the last report block built.

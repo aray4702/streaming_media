@@ -1,7 +1,7 @@
 // The native side of the browser interop call (C6 part 4, #1088): our C6 part 3 endpoint (pc::PeerEndpoint, #1064)
 // over real OS sockets (apps/net/os_sockets.h, #1052), driven by run_browser_call.py.
 //
-//   sm_interop_browser_peer --role=offer|answer --ip=A.B.C.D [--no-data-channel] [--mdns]
+//   sm_interop_browser_peer --role=offer|answer --ip=A.B.C.D [--no-data-channel] [--mdns] [--multistream=N]
 //
 // Signaling is line-based JSON on stdin (messages from Chrome) and stdout (messages to Chrome):
 // {"type":"offer"|"answer","sdp":...}, {"type":"candidate","candidate":...,"sdpMid":...,"sdpMLineIndex":N} and
@@ -16,6 +16,12 @@
 // Data channels (C7 part 5, #1091; built with SM_WITH_DATACHANNEL, unless --no-data-channel): as the page's peer, the
 // offerer creates the channel "sm-interop" before its offer and the answerer takes Chrome's from the data channel
 // callback; once it is open the peer sends "hello from sm" and checks that "hello from chrome" arrives.
+//
+// Multi-stream receive (C18, #1160): with --multistream=N (Chrome's multistream.html offers), Chrome sends N
+// participants' audio and video tracks on one connection and renegotiates as they join and leave; the endpoint answers
+// every offer, receives each remote track on its own stream (a decoder per audio track, A/V sync per msid stream) and
+// the verdict checks that 2N tracks were received at once, each one's media arrived, the leaving participant's two
+// tracks were removed, and the session's stats have a stream per remaining track with its MID.
 //
 // Remote mDNS candidates (#1152): the endpoint resolves Chrome's `.local` host candidates with the apps' resolver
 // (apps/net/os_dns_resolver.h, getaddrinfo on host-owned workers, polled by this loop). With --mdns (Chrome hides its
@@ -47,6 +53,7 @@
 #include "sm/p2p/stun_crypto_tls.h"
 #include "sm/pc/peer_endpoint.h"
 #include "sm/pc/webrtc_sdp.h"
+#include "sm/rtp/stats_report.h"
 #if defined(SM_WITH_DATACHANNEL) && SM_WITH_DATACHANNEL
 #include "sm/pc/sctp_data_channel.h"
 #endif
@@ -353,9 +360,11 @@ int main(int argc, char** argv) {
   bool use_dc = false;
 #endif
   bool expect_mdns = false;
+  int multistream = 0;
   for (int i = 1; i < argc; ++i) {
     const std::string a = argv[i];
     if (a == "--no-data-channel") use_dc = false;
+    else if (a.rfind("--multistream=", 0) == 0) multistream = std::stoi(a.substr(14));
     else if (a == "--mdns") expect_mdns = true;
     else if (a.rfind("--role=", 0) == 0) role = a.substr(7);
     else if (a.rfind("--ip=", 0) == 0) ip_text = a.substr(5);
@@ -386,7 +395,38 @@ int main(int argc, char** argv) {
   config.session.send_side.gcc.start_rate = DataRate::KilobitsPerSec(800);
   config.enable_data_channels = use_dc;
   config.transport.async_dns_resolver_factory = &resolver;
+  // --multistream: a decoder per remote audio track (the endpoint owns it; counts are kept by MID), lip sync per
+  // remote participant.
+  std::map<std::string, CountingDecoder*> track_decoder;
+  std::map<std::string, int> audio_frames_by_mid, video_frames_by_mid;
+  if (multistream > 0) {
+    config.session.av_sync = true;
+    config.audio_decoder_factory = [&track_decoder](const std::string& mid) -> std::unique_ptr<rtp::AudioDecoder> {
+      auto d = std::make_unique<CountingDecoder>();
+      track_decoder[mid] = d.get();
+      return d;
+    };
+  }
   PeerEndpoint ep(std::move(config), now);
+  std::map<std::string, RemoteTrack> live_tracks;
+  std::vector<std::string> tracks_added, tracks_removed;
+  size_t max_live_tracks = 0;
+  int offers_answered = 0;
+  ep.SetOnTrack([&](const RemoteTrack& t) {
+    std::fprintf(stderr, "track added: mid %s %s ssrc %u stream %s\n", t.mid.c_str(),
+                 t.kind == MediaType::AUDIO ? "audio" : "video", t.ssrc,
+                 t.stream_ids.empty() ? "-" : t.stream_ids[0].c_str());
+    tracks_added.push_back(t.mid);
+    live_tracks[t.mid] = t;
+    max_live_tracks = std::max(max_live_tracks, live_tracks.size());
+  });
+  ep.SetOnRemoveTrack([&](const RemoteTrack& t) {
+    std::fprintf(stderr, "track removed: mid %s\n", t.mid.c_str());
+    tracks_removed.push_back(t.mid);
+    if (track_decoder.count(t.mid)) audio_frames_by_mid[t.mid] = track_decoder[t.mid]->frames;
+    track_decoder.erase(t.mid);
+    live_tracks.erase(t.mid);
+  });
 
   std::vector<std::string> errors;
 #if defined(SM_WITH_DATACHANNEL) && SM_WITH_DATACHANNEL
@@ -477,6 +517,7 @@ int main(int argc, char** argv) {
           }
           send_description(*answer, "answer");
           if (!ep.SetLocalDescription(std::move(answer), now, &error)) errors.push_back("SetLocalDescription: " + error);
+          else ++offers_answered;
         }
       } else if (type == "candidate") {
         if (m["candidate"].empty()) continue;  // End of candidates.
@@ -554,8 +595,19 @@ int main(int argc, char** argv) {
         next_video += TimeDelta::Micros(66667);
       }
       if (now >= next_pull) {
-        if (ep.audio_receive()) s->GetAudio(*ep.audio_receive(), pcm, now);
-        if (ep.video_receive()) video_frames_received += static_cast<int>(s->TakeVideoFrames(*ep.video_receive()).size());
+        if (multistream > 0) {
+          for (auto& [mid, t] : live_tracks) {
+            if (t.audio) s->GetAudio(*t.audio, pcm, now);
+            if (t.video) {
+              const int got = static_cast<int>(s->TakeVideoFrames(*t.video).size());
+              video_frames_by_mid[mid] += got;
+              video_frames_received += got;
+            }
+          }
+        } else {
+          if (ep.audio_receive()) s->GetAudio(*ep.audio_receive(), pcm, now);
+          if (ep.video_receive()) video_frames_received += static_cast<int>(s->TakeVideoFrames(*ep.video_receive()).size());
+        }
         next_pull += TimeDelta::Millis(10);
       }
       ep.FlushOutgoing(now);
@@ -619,7 +671,55 @@ int main(int argc, char** argv) {
     mdns_check = std::string(",\"mdnsResolved\":") + (ok_mdns ? "true" : "false") + "},\"mdns\":\"" + state +
                  "\",\"selectedRemote\":\"" + selected_remote + "\"";
   }
-  const bool ok = ok_connected && ok_audio_in && ok_video_in && ok_media_out && ok_signaling && ok_data && ok_mdns;
+  bool ok = ok_connected && ok_audio_in && ok_video_in && ok_media_out && ok_signaling && ok_data && ok_mdns;
+  if (multistream > 0) {
+    // The tracks' media: every audio track decoded frames and every video track assembled frames.
+    for (auto& [mid, d] : track_decoder) audio_frames_by_mid[mid] = d->frames;
+    bool every_track = !tracks_added.empty();
+    std::string per_track;
+    for (const std::string& mid : tracks_added) {
+      const int frames = audio_frames_by_mid.count(mid) ? audio_frames_by_mid[mid] : video_frames_by_mid[mid];
+      every_track = every_track && frames > 0;
+      per_track += (per_track.empty() ? "" : ",") + JsonEscape(mid) + ":" + std::to_string(frames);
+    }
+    // Per-stream stats with their MIDs, and each video synced with its own participant's audio.
+    bool stats_per_track = false, sync_per_participant = !live_tracks.empty();
+    if (rtp::Session* s = ep.session()) {
+      rtp::StatsReport report;
+      if (s->GetStats(now, &report) == ObsStatus::kOk) {
+        stats_per_track = report.inbound.size() == live_tracks.size();
+        for (const auto& in : report.inbound) stats_per_track = stats_per_track && live_tracks.count(in.mid) == 1;
+      }
+      for (auto& [mid, t] : live_tracks) {
+        if (!t.video) continue;
+        const auto audio = s->synced_audio(*t.video);
+        bool paired = false;
+        for (auto& [amid, a] : live_tracks) {
+          if (a.audio && audio && a.audio->index == audio->index) paired = a.stream_ids == t.stream_ids;
+        }
+        sync_per_participant = sync_per_participant && paired;
+      }
+    }
+    const bool ok_max = max_live_tracks == static_cast<size_t>(2 * multistream);
+    const bool ok_removed = tracks_removed.size() == 2;
+    const bool ok_offers = offers_answered == 3;
+    ok = ok_connected && ok_signaling && ok_max && ok_removed && ok_offers && every_track && stats_per_track &&
+         sync_per_participant;
+    auto bb = [](bool v) { return v ? "true" : "false"; };
+    std::string errs2 = "[";
+    for (size_t i = 0; i < errors.size(); ++i) errs2 += (i ? "," : "") + JsonEscape(errors[i]);
+    errs2 += "]";
+    Emit(std::string("{\"type\":\"result\",\"ok\":") + bb(ok) + ",\"checks\":{\"connected\":" + bb(ok_connected) +
+         ",\"signaling\":" + bb(ok_signaling) + ",\"offersAnswered\":" + bb(ok_offers) + ",\"tracksAtOnce\":" +
+         bb(ok_max) + ",\"tracksRemoved\":" + bb(ok_removed) + ",\"mediaOnEveryTrack\":" + bb(every_track) +
+         ",\"statsPerTrack\":" + bb(stats_per_track) + ",\"syncPerParticipant\":" + bb(sync_per_participant) +
+         "},\"stats\":{\"maxTracks\":" + std::to_string(max_live_tracks) + ",\"added\":" +
+         std::to_string(tracks_added.size()) + ",\"removed\":" + std::to_string(tracks_removed.size()) +
+         ",\"offers\":" + std::to_string(offers_answered) + ",\"framesByMid\":{" + per_track + "},\"rtpIn\":" +
+         std::to_string(st ? st->rtp_in : 0) + ",\"unroutable\":" + std::to_string(st ? st->unroutable : 0) +
+         "},\"errors\":" + errs2 + "}");
+    return ok ? 0 : 1;
+  }
   auto b = [](bool v) { return v ? "true" : "false"; };
   std::string errs = "[";
   for (size_t i = 0; i < errors.size(); ++i) errs += (i ? "," : "") + JsonEscape(errors[i]);
