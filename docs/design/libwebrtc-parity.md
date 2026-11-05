@@ -347,7 +347,9 @@ M157 and needs an Owner decision (#1175).
 | `RemixFrame` | `audio_frame_manipulator.cc`, `audio_frame_operations.cc`, `channel_mixer.cc` | Mono and stereo as libwebrtc (`AudioFrameOperations` down-mix with an int32 sum and truncating division, in-place up-mix), and `ChannelMixer`'s VoIP case (mono into N >= 3: front left and right). The rest of `ChannelMixer` (other layouts with more than two channels) is not ported: such a frame is left out of the mix and counted in `remix_unsupported`. A call's Opus streams are mono or stereo. | ported (mono/stereo); multichannel layouts not ported | #1175 |
 
 **Where it runs.** Not in the test bench or `sm_compare` (one-to-one calls). The group-call client's playout
-(`apps/call`, C20) is meant to use it in place of its saturating sum; see #1175 for the state of that change.
+(`apps/call`, C20): `GroupPlayoutMixer` makes each remote audio track a source (by mid, as each
+`AudioReceiveStream`'s `ChannelReceive` is one), added and removed with the subscriber's tracks, and mixes mono at
+48 kHz (the Opus decoders' and the device's rate) in place of the saturating sum it had (#1175).
 
 ## 7. Video quality and processing
 
