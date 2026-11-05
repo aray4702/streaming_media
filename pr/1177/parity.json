@@ -197,7 +197,7 @@
    "metric": "sync.av_offset_p95_ms",
    "sm": 1887.42,
    "webrtc": 3445.45,
-   "band": 385.3993759162911,
+   "band": 385.40032951176596,
    "direction": "ahead",
    "seeds_agree": 9,
    "seeds": 10,
