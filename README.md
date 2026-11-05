@@ -260,8 +260,6 @@ docs/                                                    research, design, algor
 - **Android (C13)**, unplanned.
 - **Group calls, follow-ups:** a real group call from well-connected clients (the 2026-11-04 run used one MacBook on home Wi-Fi, so it measured the link, not the SFU); the AI server subscribing to audio only, so LiveKit can pause video layers no one watches; per-participant freeze and jitter-buffer stats in the native client.
 
-**Known open issues:** none. Recently fixed: ICE-TCP host candidates ([#1151](https://github.com/aray4702/streaming_media/issues/1151)), remote mDNS candidates ([#1152](https://github.com/aray4702/streaming_media/issues/1152)), bitrate recovery after the link improves ([#14](https://github.com/aray4702/streaming_media/issues/14)), test bench memory on long calls ([#633](https://github.com/aray4702/streaming_media/issues/633)).
-
 **Open questions:**
 
 - **Target hardware:** MCU or embedded Linux, and how much RAM and CPU? The algorithms need an FPU; the packet-level sections could also run on Cortex-M4F/M7-class MCUs.
