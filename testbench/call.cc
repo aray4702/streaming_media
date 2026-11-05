@@ -21,6 +21,7 @@
 #include "opus_decoder.h"
 #include "turn_detector.h"
 #include "opus_encoder.h"
+#include "sfu.h"
 #include "speech_pcm.h"
 #include "sm/audio/aec3.h"
 #include "sm/audio/agc2.h"
@@ -384,6 +385,50 @@ const std::vector<std::pair<std::string, std::string>>& MetricCatalog() {
         }
       }
     }
+    // A group call through the simulated SFU (`call sfu <N>`, C21, #1180): each receiver's view of each sender as
+    // p<i>_to_p<j>.* (sender i, receiver j, 1-based), each participant's links and totals as p<i>.*, the call as sfu.*.
+    const std::pair<const char*, const char*> sfu[] = {
+        {"p<i>_to_p<j>.audio.concealed_pct", "SFU call: i's audio at j, concealed % (as audio.concealed_pct)"},
+        {"p<i>_to_p<j>.audio.interruptions", "SFU call: i's audio at j, interruptions over 150 ms"},
+        {"p<i>_to_p<j>.audio.mouth_to_ear_p95_ms", "SFU call: i's audio at j, network plus jitter buffer delay, p95"},
+        {"p<i>_to_p<j>.video.freeze_count", "SFU call: i's video at j, freezes (WebRTC definition) while both are in the call"},
+        {"p<i>_to_p<j>.video.freeze_total_ms", "SFU call: i's video at j, total freeze time"},
+        {"p<i>_to_p<j>.video.longest_freeze_ms", "SFU call: i's video at j, longest gap between rendered frames"},
+        {"p<i>_to_p<j>.video.render_fps", "SFU call: i's video at j, rendered frames per second while both are in the call"},
+        {"p<i>_to_p<j>.video.e2e_delay_p50_ms", "SFU call: i's video at j, capture to render, median"},
+        {"p<i>_to_p<j>.video.e2e_delay_p95_ms", "SFU call: i's video at j, capture to render, p95"},
+        {"p<i>_to_p<j>.video.time_to_first_frame_ms", "SFU call: from the later of i's and j's joins to j's first frame of i"},
+        {"p<i>_to_p<j>.video.recv_height_mean", "SFU call: mean height of i's frames j rendered (the layers the SFU forwarded)"},
+        {"p<i>_to_p<j>.video.top_layer_pct", "SFU call: share of i's frames j rendered that were i's top layer"},
+        {"p<i>_to_p<j>.video.layer_switches", "SFU call: layer changes of the SFU's downtrack of i to j (not counting starts after a pause)"},
+        {"p<i>_to_p<j>.video.resumes", "SFU call: starts of the downtrack of i to j: the first, and each after the SFU paused it"},
+        {"p<i>_to_p<j>.sync.av_offset_p95_ms", "SFU call: i's audio against its video at j, p95 of the absolute offset"},
+        {"p<i>.upload_kbps", "SFU call: mean rate participant i sends (publisher media and RTCP, subscriber RTCP) while in the call"},
+        {"p<i>.download_kbps", "SFU call: mean rate that reaches participant i from the SFU while in the call"},
+        {"p<i>.uplink_loss_pct", "SFU call: packets lost or dropped on participant i's uplink"},
+        {"p<i>.downlink_loss_pct", "SFU call: packets lost or dropped on participant i's downlink"},
+        {"p<i>.uplink_queue_p95_ms", "SFU call: p95 of participant i's uplink bottleneck queue delay"},
+        {"p<i>.downlink_queue_p95_ms", "SFU call: p95 of participant i's downlink bottleneck queue delay"},
+        {"p<i>.publish_layer<l>_kbps", "SFU call: participant i's simulcast layer l, encoded rate over its time in the call"},
+        {"p<i>.publish_target_kbps", "SFU call: participant i's GoogCC target on its uplink, mean"},
+        {"p<i>.sfu_estimate_kbps", "SFU call: the SFU's bandwidth estimate of participant i's downlink (its GoogCC), mean"},
+        {"p<i>.keyframe_requests", "SFU call: keyframe requests the SFU sent participant i (layer switches, receivers' PLIs)"},
+        {"p<i>.recv_freeze_count", "SFU call: freezes of every sender's video at participant i, summed"},
+        {"p<i>.recv_freeze_total_ms", "SFU call: freeze time of every sender's video at participant i, summed"},
+        {"p<i>.recv_e2e_delay_p95_ms", "SFU call: the worst sender's video capture-to-render p95 at participant i"},
+        {"p<i>.recv_height_mean", "SFU call: mean height of the frames participant i rendered, over every sender"},
+        {"p<i>.recv_fps_mean", "SFU call: render fps at participant i, mean over its senders"},
+        {"p<i>.recv_layer_switches", "SFU call: layer changes of every downtrack to participant i, summed"},
+        {"p<i>.recv_audio_concealed_pct", "SFU call: audio concealed % at participant i, mean over its senders"},
+        {"sfu.participants", "SFU call: participants (N of call sfu N)"},
+        {"sfu.freeze_count", "SFU call: freezes of every sender at every receiver, summed"},
+        {"sfu.worst_freeze_total_ms", "SFU call: the largest p<i>_to_p<j>.video.freeze_total_ms"},
+        {"sfu.worst_e2e_delay_p95_ms", "SFU call: the largest p<i>_to_p<j>.video.e2e_delay_p95_ms"},
+        {"sfu.worst_audio_concealed_pct", "SFU call: the largest p<i>_to_p<j>.audio.concealed_pct"},
+        {"sfu.layer_switches", "SFU call: layer changes of every downtrack, summed"},
+        {"sfu.worst_time_to_first_frame_ms", "SFU call: the largest p<i>_to_p<j>.video.time_to_first_frame_ms (a join's slowest first frame)"},
+    };
+    for (const auto& [name, meaning] : sfu) all.emplace_back(name, meaning);
     const std::pair<const char*, const char*> ice[] = {
         {"setup.connected", "transport ice: 1 if every connection's ICE and DTLS-SRTP came up before the call, else 0"},
         {"setup.ice_connected_ms", "transport ice: offer to both ends' ICE writable (slowest connection)"},
@@ -1131,6 +1176,22 @@ class SendSide {
   const std::vector<int64_t>& layer_bytes() const { return layer_bytes_; }
   const std::vector<int64_t>& layer_keyframes() const { return layer_keyframes_; }
 
+  // Simulcast in a group call (C21): each layer's encoded frame as it goes to the session, with its timestamp on the
+  // wire and its capture time (the SFU forwards any layer, and the receivers' meters map it back to its capture).
+  void SetLayerFrameTap(std::function<void(int layer, uint32_t wire_ts, Timestamp capture)> tap) { layer_tap_ = std::move(tap); }
+  // The SFU pauses or resumes a layer (dynacast, #1173), as `simulcast_pause` does in a one-way call.
+  void SetLayerActive(int layer, bool active, Timestamp now) {
+    if (sc_) sc_->SetLayerActive(static_cast<size_t>(layer), active, now + clock0_);
+  }
+  std::vector<std::pair<int, int>> LayerSizes() const {
+    std::vector<std::pair<int, int>> out;
+    if (!sc_) return out;
+    for (const video::VideoStream& l : video::CreateEncoderStreams({}, s_.video_width, s_.video_height, SimulcastEncoderConfig(s_))) {
+      out.emplace_back(static_cast<int>(l.width), static_cast<int>(l.height));
+    }
+    return out;
+  }
+
   rtp::Session& session() { return session_; }
   const rtp::Session& session() const { return session_; }
   rtp::VideoSendController& video_ctl() { return *video_ctl_; }
@@ -1209,6 +1270,7 @@ class SendSide {
       // Simulcast (C17): the layer's frame on its send stream; the frame meters follow the viewed layer.
       const auto layer = static_cast<size_t>(f.layer);
       const auto frame = rtp::MakeFakeH264Frame(f.report.keyframe, static_cast<size_t>(f.report.size.bytes()));
+      if (layer_tap_) layer_tap_(f.layer, f.rtp_ts + layer_ts_offsets_[layer], f.capture);
       if (f.layer == view_) {
         const uint32_t wire_ts = f.rtp_ts + layer_ts_offsets_[layer];
         d_.frame_capture[wire_ts] = f.capture;
@@ -1554,6 +1616,7 @@ class SendSide {
   std::set<int64_t> sent_ahead_;     // Audio frames handed over ahead of their tick (#762).
   std::function<bool(Timestamp)> video_held_;
   int64_t frames_held_ = 0;  // Camera frames the app held back (SetVideoHeld).
+  std::function<void(int, uint32_t, Timestamp)> layer_tap_;
 };
 
 // The receive side of one direction (issue #745): the 10 ms audio device pull and playout, video frame handling,
@@ -1684,6 +1747,7 @@ class ReceiveSide {
                                    f.render_time.IsFinite() ? (f.render_time - rx0_).ms() : -1, at.ms(), f.render ? 1 : 0});
       }
       if (!f.render) continue;
+      if (render_tap_) render_tap_(f.rtp_timestamp, at);
       freezes_.OnFrameRendered(at);
       ++vt_row.rendered;
       if (last_render_.IsFinite())
@@ -1764,6 +1828,10 @@ class ReceiveSide {
       if (speech_loss_) speech_loss_->OnPull(playout_samples, concealment_.pull_total(), concealment_.pull_concealed());
     }
   }
+
+  // Called with each rendered frame's RTP timestamp and render time (C21: the group call's received layer).
+  void SetRenderTap(std::function<void(uint32_t rtp_timestamp, Timestamp at)> tap) { render_tap_ = std::move(tap); }
+  int64_t frames_rendered() const { return frames_rendered_; }
 
   // Measures the share of the sender's speech this side lost or concealed (#755); the meter outlives the call loop.
   void SetSpeechLoss(SpeechLossMeter* meter) { speech_loss_ = meter; }
@@ -1938,6 +2006,7 @@ class ReceiveSide {
   size_t other_rendered_ = 0;
   double last_video_delay_ = 0;
   std::function<void(uint32_t, Timestamp)> audio_tap_;
+  std::function<void(uint32_t, Timestamp)> render_tap_;
   uint32_t audio_ssrc_ = 0;
   bool muted_ = false;
 };
@@ -2669,9 +2738,533 @@ Report RunTwoWayCall(const Scenario& s, const RunOptions& opt) {
   return rep;
 }
 
+// A group call through a simulated SFU (C21, #1180): N participants, each with its own access link (`participant <i>
+// [reverse] at`), each a publisher session that sends audio and simulcast video (C17; the SendSide of a one-way call)
+// and a subscriber session that receives every other participant's audio and video through C18's multi-stream receive
+// (a ReceiveSide per remote participant on one session, each in its sync group), as LiveKit's clients have a publisher
+// and a subscriber connection. The SFU (testbench/sfu.h) terminates RTCP on both legs, forwards the layer it selects
+// per receiver from the receiver's downlink estimate, and pauses layers nobody wants (dynacast). A packet from i to j
+// crosses i's uplink, the SFU and j's downlink. Participants join and leave at their `participant <i> join|leave`
+// times; a receiver's view of a sender is measured while both are in the call.
+Report RunSfuCall(const Scenario& s, const RunOptions& opt_in) {
+  const int n = s.sfu;
+  const int64_t end_ms = s.duration.ms();
+  RunOptions opt = opt_in;  // The traces are one-way files; an SFU call writes none.
+  opt.video_trace = opt.link_trace = opt.bwe_trace = opt.audio_trace = false;
+  opt.packet_sink = nullptr;
+  Report rep;
+  rep.scenario = s;
+  Report scratch;
+  scratch.scenario = s;
+  EventLog events(64);
+  events.SetCallback([&](const Event& e) { ++rep.events[std::string(e.module) + "/" + e.name]; });
+
+  // --- Access links, as the mesh had (#1072) ------------------------------------------------------------------------
+  struct Wire {
+    Fwd w;
+    int from = -1;          // The participant that sent it (uplink).
+    bool sub_leg = false;   // The subscribe connection (else the publish one).
+  };
+  std::vector<Scenario> link_s(static_cast<size_t>(n), s);
+  for (int p = 0; p < n; ++p) {
+    Scenario& ls = link_s[static_cast<size_t>(p)];
+    for (const auto& pc : s.participant_links) {
+      if (pc.participant == p + 1) (pc.reverse ? ls.reverse : ls.forward).push_back(pc.change);
+    }
+    auto by_time = [](const LinkChange& a, const LinkChange& b) { return a.at < b.at; };
+    std::stable_sort(ls.forward.begin(), ls.forward.end(), by_time);
+    std::stable_sort(ls.reverse.begin(), ls.reverse.end(), by_time);
+  }
+  std::vector<LinkTimeline> timelines;
+  timelines.reserve(static_cast<size_t>(n));
+  std::vector<std::unique_ptr<sim::NetworkLink<Wire>>> uplink, downlink;
+  for (int p = 0; p < n; ++p) {
+    timelines.emplace_back(link_s[static_cast<size_t>(p)]);
+    const uint64_t seed = s.seed + 2000003ULL * static_cast<uint64_t>(p);
+    uplink.push_back(std::make_unique<sim::NetworkLink<Wire>>(timelines.back().forward().cfg, seed));
+    downlink.push_back(std::make_unique<sim::NetworkLink<Wire>>(timelines.back().reverse().cfg, seed + 1000003));
+  }
+  auto advance_links = [&](Timestamp at) {
+    for (int p = 0; p < n; ++p) {
+      auto [up_changed, down_changed] = timelines[static_cast<size_t>(p)].Advance(at - Timestamp::Micros(0));
+      if (up_changed) uplink[static_cast<size_t>(p)]->SetConfig(timelines[static_cast<size_t>(p)].forward().cfg);
+      if (down_changed) downlink[static_cast<size_t>(p)]->SetConfig(timelines[static_cast<size_t>(p)].reverse().cfg);
+    }
+  };
+
+  // --- Participants -------------------------------------------------------------------------------------------------
+  const int sr = AudioCodecRate(s.audio_sample_rate);
+  const size_t audio_frame_bytes = static_cast<size_t>(std::max<int64_t>(10, s.audio_bitrate.bps() / 8 / 50));
+  const DataRate audio_wire_rate =
+      s.audio ? DataRate::BitsPerSec((static_cast<int64_t>(audio_frame_bytes) * (s.red ? 2 : 1) + 12 + 4 + kUdpIpOverhead) * 8 * 50)
+              : DataRate::Zero();
+  const TimeDelta clock0 = TimeDelta::Seconds(CallClockStartSeconds(s));
+  // Each participant publishes simulcast (3 layers unless `simulcast 2`), speaks its own signal and draws its own
+  // encoder sizes (participant p takes seed + 50021 p, as the mesh did), on the call's clock.
+  std::vector<Scenario> src_s(static_cast<size_t>(n), s);
+  for (int p = 0; p < n; ++p) {
+    Scenario& ps = src_s[static_cast<size_t>(p)];
+    ps.simulcast = s.simulcast > 1 ? s.simulcast : 3;
+    ps.simulcast_view = -1;
+    ps.compare_clock_start_s = CallClockStartSeconds(s);
+    ps.seed = s.seed + 50021ULL * static_cast<uint64_t>(p);
+  }
+  Scenario sub_s = s;  // The subscriber sessions: no simulcast of their own (no RID extension).
+  sub_s.simulcast = 0;
+  struct Participant {
+    std::unique_ptr<rtp::Session> pub, sub;
+    std::unique_ptr<DirectionMeters> pub_m;
+    StreamConfigs streams;
+    std::unique_ptr<SendSide> tx;
+    std::unordered_map<uint64_t, Timestamp> capture;  // (layer << 32 | wire timestamp) -> capture time.
+    int64_t join_ms = 0, leave_ms = 0;
+    bool joined = false, left = false;
+    bool in_call() const { return joined && !left; }
+    std::vector<double> up_kbps, down_kbps, up_queue, down_queue, estimate_kbps, target_kbps;
+    int64_t up_w = 0, down_w = 0;
+    double up_cross = 0, down_cross = 0;
+    uint64_t keyframe_requests = 0;
+  };
+  std::vector<Participant> P(static_cast<size_t>(n));
+  for (int p = 0; p < n; ++p) {
+    Participant& pp = P[static_cast<size_t>(p)];
+    const Scenario& ps = src_s[static_cast<size_t>(p)];
+    const std::string cname = "p" + std::to_string(p + 1) + "@testbench";
+    rtp::SessionConfig pc = MakeSessionConfig(ps, events, 7000 + 10 * static_cast<uint32_t>(p), cname.c_str());
+    pc.audio_rtcp = true;
+    pp.pub = std::make_unique<rtp::Session>(pc);
+    pp.pub_m = std::make_unique<DirectionMeters>();
+    pp.streams = MakeStreamConfigs(ps, sr, audio_wire_rate, *pp.pub_m, 1000 * static_cast<uint32_t>(p + 1));
+    pp.tx = std::make_unique<SendSide>(ps, opt, *pp.pub, pp.streams, *pp.pub_m, sr, clock0);
+    pp.tx->SetLayerFrameTap([&pp](int layer, uint32_t ts, Timestamp cap) {
+      pp.capture[static_cast<uint64_t>(layer) << 32 | ts] = cap;
+    });
+    rtp::SessionConfig sc = MakeSessionConfig(sub_s, events, 8000 + 10 * static_cast<uint32_t>(p), "");
+    sc.av_sync = s.av_sync;
+    sc.audio_receive_rtcp = s.audio_receive_rtcp;
+    sc.rtcp.xr_rrtr = s.video;  // The subscriber measures its RTT to the SFU (which echoes DLRR).
+    pp.sub = std::make_unique<rtp::Session>(sc);
+    const auto& pr = s.presence[static_cast<size_t>(p)];
+    pp.join_ms = pr.join.ms();
+    pp.leave_ms = pr.leave ? std::min(end_ms, pr.leave->ms()) : end_ms;
+  }
+  const std::vector<std::pair<int, int>> layer_sizes = P[0].tx->LayerSizes();
+
+  // --- The SFU --------------------------------------------------------------------------------------------------------
+  SfuConfig sfu_cfg;
+  sfu_cfg.clock0 = clock0;
+  sfu_cfg.ingress = MakeSessionConfig(src_s[0], events, 0, "");
+  sfu_cfg.ingress.av_sync = false;
+  sfu_cfg.ingress.rtcp.xr_rrtr = s.video;  // As the one-way call's receiver (the SFU side of a simulcast uplink).
+  sfu_cfg.rtx_payload_type = kRtxPt;
+  sfu_cfg.egress_gcc.min_rate = s.min_rate;
+  sfu_cfg.egress_gcc.start_rate = s.start_rate;
+  sfu_cfg.dynacast = s.sfu_dynacast;
+  Sfu sfu(sfu_cfg);
+
+  // --- Receivers: one ReceiveSide per (receiver, sender) on the receiver's subscriber session --------------------------
+  struct Pair {
+    std::unique_ptr<DirectionMeters> m;
+    std::unique_ptr<StreamConfigs> streams;
+    std::unique_ptr<ReceiveSide> rx;
+    std::unordered_map<uint32_t, int> layer_of_ts;  // Downtrack timestamp -> layer forwarded.
+    int64_t start_ms = -1, end_ms = -1;
+    Timestamp first_render = Timestamp::MinusInfinity();
+    double height_sum = 0;
+    int64_t frames = 0, top_frames = 0;
+    int switches = 0, resumes = 0;
+    bool active() const { return rx && end_ms < 0; }
+  };
+  std::vector<std::vector<Pair>> pairs(static_cast<size_t>(n));  // [receiver][sender]
+  for (auto& row : pairs) row.resize(static_cast<size_t>(n));
+  auto pair_at = [&](int rcv, int snd) -> Pair& { return pairs[static_cast<size_t>(rcv)][static_cast<size_t>(snd)]; };
+  const int top_layer = src_s[0].simulcast - 1;
+  auto start_pair = [&](int rcv, int snd, int64_t t) {
+    Pair& pr = pair_at(rcv, snd);
+    if (pr.rx) return;
+    const StreamConfigs& from = P[static_cast<size_t>(snd)].streams;
+    pr.m = std::make_unique<DirectionMeters>();
+    pr.streams = std::make_unique<StreamConfigs>();
+    StreamConfigs& st = *pr.streams;
+    const std::string group = "p" + std::to_string(snd + 1);
+    st.audio = from.audio;
+    st.audio.sync_group = group;
+    st.audio_ssrc = from.audio_ssrc;
+    if (!from.layers.empty()) {
+      // The downtrack: one SSRC per track, the track's first-layer SSRC and its RTX (sfu.h).
+      st.video = from.layers[0];
+      st.video.rid.clear();
+      st.video.sync_group = group;
+      st.video_ssrc = st.video.ssrc;
+      st.rtx_ssrc = st.video.rtx_ssrc.value_or(0);
+    }
+    pr.rx = std::make_unique<ReceiveSide>(s, opt, *P[static_cast<size_t>(rcv)].sub, st, *pr.m, events, sr, clock0,
+                                          P[static_cast<size_t>(snd)].tx->audio_ts_offset());
+    pr.rx->SetRenderTap([&pr, &layer_sizes, top_layer](uint32_t ts, Timestamp at) {
+      if (!pr.first_render.IsFinite()) pr.first_render = at;
+      auto it = pr.layer_of_ts.find(ts);
+      if (it == pr.layer_of_ts.end()) return;
+      if (it->second < static_cast<int>(layer_sizes.size())) pr.height_sum += layer_sizes[static_cast<size_t>(it->second)].second;
+      ++pr.frames;
+      if (it->second == top_layer) ++pr.top_frames;
+      pr.layer_of_ts.erase(it);
+    });
+    pr.start_ms = t;
+  };
+  auto end_pair = [&](int rcv, int snd, int64_t t) {
+    Pair& pr = pair_at(rcv, snd);
+    if (!pr.active()) return;
+    if (const SfuVideoForwarder* f = sfu.forwarder(snd, rcv)) {
+      pr.switches = f->switches();
+      pr.resumes = f->resumes();
+    }
+    pr.end_ms = t;
+  };
+  sfu.on_forward_video = [&](int pub, int sub, int layer, uint32_t in_ts, uint32_t out_ts) {
+    Pair& pr = pair_at(sub, pub);
+    if (!pr.active()) return;
+    const auto& cap = P[static_cast<size_t>(pub)].capture;
+    auto c = cap.find(static_cast<uint64_t>(layer) << 32 | in_ts);
+    if (c == cap.end()) return;
+    if (pr.m->frame_capture.emplace(out_ts, c->second).second) pr.layer_of_ts[out_ts] = layer;
+  };
+
+  // --- Moving packets -------------------------------------------------------------------------------------------------
+  auto to_kind = [](SfuPacketKind k) {
+    switch (k) {
+      case SfuPacketKind::kAudio: return Kind::kAudio;
+      case SfuPacketKind::kVideo: return Kind::kVideo;
+      case SfuPacketKind::kRtx: return Kind::kRtx;
+      case SfuPacketKind::kPadding: return Kind::kPadding;
+      case SfuPacketKind::kRtcp: break;
+    }
+    return Kind::kRtcp;
+  };
+  auto flush_sfu = [&](Timestamp at) {
+    for (SfuOutgoing& o : sfu.TakeOutgoing()) {
+      const Kind k = to_kind(o.kind);
+      const auto wire = DataSize::Bytes(static_cast<int64_t>(o.bytes.size()) + kUdpIpOverhead);
+      const int32_t seq = k == Kind::kRtcp || o.bytes.size() < 4 ? -1 : RtpSeq(o.bytes);
+      downlink[static_cast<size_t>(o.to)]->Send(at, Wire{Fwd{k, std::move(o.bytes)}, -1, o.subscribe_leg}, wire, LinkKindOf(k), seq);
+    }
+  };
+  auto put_on_uplink = [&](int p, rtp::Session& from, bool sub_leg, Timestamp at) {
+    Participant& pp = P[static_cast<size_t>(p)];
+    for (auto& o : from.TakeOutgoing()) {
+      Kind kind = ToKind(o.kind);
+      if (kind == Kind::kPadding) {
+        if (auto q = RtpPacket::Parse(o.bytes); q && pp.streams.IsRtxSsrc(q->ssrc) && q->payload.size() > 2) kind = Kind::kRtx;
+      }
+      pp.up_w += o.wire_size.bytes();
+      const int32_t seq = kind == Kind::kRtcp || o.bytes.size() < 4 ? -1 : RtpSeq(o.bytes);
+      uplink[static_cast<size_t>(p)]->Send(at, Wire{Fwd{kind, std::move(o.bytes)}, p, sub_leg}, o.wire_size, LinkKindOf(kind), seq);
+    }
+  };
+  // The sender a subscriber's packet comes from, by SSRC (participant p's SSRCs are 1000 (p + 1) and up).
+  auto sender_of = [n](const std::vector<uint8_t>& b) {
+    if (b.size() < 12) return -1;
+    const int q = static_cast<int>(RtpSsrc(b) / 1000) - 1;
+    return q >= 0 && q < n ? q : -1;
+  };
+  auto render_all = [&](int p, Timestamp at) {
+    for (auto& pr : pairs[static_cast<size_t>(p)]) {
+      if (pr.active()) pr.rx->Render(at, scratch);
+    }
+  };
+
+  std::vector<SfuLayerActivity> pending_activity;
+  for (int64_t t = 0; t < end_ms; ++t) {
+    const Timestamp now = Timestamp::Millis(t);
+
+    // --- Joins and leaves -------------------------------------------------------------------------------------------
+    for (int p = 0; p < n; ++p) {
+      Participant& pp = P[static_cast<size_t>(p)];
+      if (!pp.joined && t >= pp.join_ms && t < pp.leave_ms) {
+        pp.joined = true;
+        SfuPublisher pub;
+        if (s.audio) pub.audio = pp.streams.audio;
+        if (s.video) pub.layers = pp.streams.layers;
+        sfu.Join(p, pub, s.sfu_max_layer, now);
+        for (int q = 0; q < n; ++q) {
+          if (q == p || !P[static_cast<size_t>(q)].in_call()) continue;
+          start_pair(p, q, t);
+          start_pair(q, p, t);
+        }
+      } else if (pp.in_call() && t >= pp.leave_ms) {
+        for (int q = 0; q < n; ++q) {
+          if (q == p) continue;
+          end_pair(p, q, t);
+          end_pair(q, p, t);
+        }
+        pp.keyframe_requests = sfu.keyframe_requests(p);
+        pp.left = true;
+        sfu.Leave(p, now);
+      }
+    }
+
+    // --- Uplinks to the SFU, in time order ----------------------------------------------------------------------------
+    std::vector<std::pair<Timestamp, Wire>> hop;
+    for (auto& link : uplink) {
+      link->ReceiveEach(now, [&](Wire w, Timestamp at) {
+        if (w.w.kind != Kind::kCross) hop.emplace_back(at, std::move(w));
+      });
+    }
+    std::stable_sort(hop.begin(), hop.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
+    for (auto& [at, w] : hop) {
+      advance_links(at);
+      if (w.sub_leg) {
+        sfu.OnSubscribePacket(w.from, w.w.bytes, at);
+      } else {
+        sfu.OnPublishPacket(w.from, w.w.bytes, at);
+      }
+      flush_sfu(at);
+    }
+
+    // --- Downlinks to the participants --------------------------------------------------------------------------------
+    for (int p = 0; p < n; ++p) {
+      Participant& pp = P[static_cast<size_t>(p)];
+      std::vector<std::pair<Timestamp, Wire>> in;
+      downlink[static_cast<size_t>(p)]->ReceiveEach(now, [&](Wire w, Timestamp at) {
+        if (w.w.kind == Kind::kCross) return;
+        pp.down_w += static_cast<int64_t>(w.w.bytes.size()) + kUdpIpOverhead;
+        in.emplace_back(at, std::move(w));
+      });
+      if (!pp.in_call()) continue;
+      for (auto& [at, w] : in) {
+        if (!w.sub_leg) {
+          // The SFU's ingress RTCP to this participant's publisher.
+          pp.tx->OnFeedback(w.w.bytes, at, scratch);
+          pp.pub->Process(at + clock0);
+          put_on_uplink(p, *pp.pub, false, at);
+          pp.tx->OnEvents(at);
+          pp.tx->PollPendingFrame(at);
+          continue;
+        }
+        const int q = w.w.kind == Kind::kRtcp ? -1 : sender_of(w.w.bytes);
+        if (q >= 0 && pair_at(p, q).active()) {
+          pair_at(p, q).rx->OnPacket(w.w, at);
+        } else {
+          pp.sub->OnPacket(w.w.bytes, at + clock0);
+        }
+        pp.sub->Process(at + clock0);
+        put_on_uplink(p, *pp.sub, true, at);
+        render_all(p, at);
+      }
+    }
+
+    // --- Link timeline, dynacast and capture ------------------------------------------------------------------------
+    advance_links(now);
+    for (auto it = pending_activity.begin(); it != pending_activity.end();) {
+      if (it->at > now) {
+        ++it;
+        continue;
+      }
+      if (P[static_cast<size_t>(it->publisher)].in_call()) P[static_cast<size_t>(it->publisher)].tx->SetLayerActive(it->layer, it->active, now);
+      it = pending_activity.erase(it);
+    }
+    for (int p = 0; p < n; ++p) {
+      Participant& pp = P[static_cast<size_t>(p)];
+      if (!pp.in_call()) continue;
+      pp.tx->OnEvents(now);
+      // The participant's own clock starts when it joins: its capture grid runs from there.
+      pp.tx->CaptureAudio(t - pp.join_ms, now);
+      pp.tx->CaptureVideo(t - pp.join_ms, now);
+      while (pp.tx->EncodedDue(now).IsFinite()) pp.tx->FinishOldestEncode();
+    }
+
+    // --- Cross traffic on every access link, then the queues are sampled ---------------------------------------------
+    for (int p = 0; p < n; ++p) {
+      Participant& pp = P[static_cast<size_t>(p)];
+      const size_t q = static_cast<size_t>(p);
+      const LinkState* states[2] = {&timelines[q].forward(), &timelines[q].reverse()};
+      sim::NetworkLink<Wire>* links[2] = {uplink[q].get(), downlink[q].get()};
+      double* debt[2] = {&pp.up_cross, &pp.down_cross};
+      for (int l = 0; l < 2; ++l) {
+        if (states[l]->cross.bps() <= 0) continue;
+        *debt[l] += static_cast<double>(states[l]->cross.bps()) / 8 / 1000;
+        while (*debt[l] >= 1200) {
+          *debt[l] -= 1200;
+          links[l]->Send(now, Wire{}, DataSize::Bytes(1200));
+        }
+      }
+      if (t % 10 == 0 && pp.in_call()) {
+        pp.up_queue.push_back(QueueDelayMs(*uplink[q], timelines[q].forward(), now));
+        pp.down_queue.push_back(QueueDelayMs(*downlink[q], timelines[q].reverse(), now));
+      }
+    }
+
+    // --- Each participant's sessions: timers, render, the audio device's 10 ms pulls, then its packets go out ------
+    for (int p = 0; p < n; ++p) {
+      Participant& pp = P[static_cast<size_t>(p)];
+      if (!pp.in_call()) continue;
+      pp.pub->Process(now + clock0);
+      put_on_uplink(p, *pp.pub, false, now);
+      pp.tx->OnEvents(now);
+      pp.tx->PollPendingFrame(now);
+      pp.sub->Process(now + clock0);
+      for (auto& pr : pairs[static_cast<size_t>(p)]) {
+        if (!pr.active()) continue;
+        pr.rx->Render(now, scratch);
+        pr.rx->PullAudio(t, now, scratch);
+      }
+      pp.sub->TakeEvents();
+      put_on_uplink(p, *pp.sub, true, now);
+    }
+
+    // --- The SFU's timers ---------------------------------------------------------------------------------------------
+    sfu.Process(now);
+    flush_sfu(now);
+    for (const SfuLayerActivity& a : sfu.TakeLayerActivity()) pending_activity.push_back(a);
+
+    // --- Measurement every 100 ms -------------------------------------------------------------------------------------
+    if (t % 100 != 99) continue;
+    for (int p = 0; p < n; ++p) {
+      Participant& pp = P[static_cast<size_t>(p)];
+      if (pp.in_call()) {
+        pp.up_kbps.push_back(static_cast<double>(pp.up_w) * 8 / 100);
+        pp.down_kbps.push_back(static_cast<double>(pp.down_w) * 8 / 100);
+        pp.estimate_kbps.push_back(sfu.estimate(p).kbps());
+        pp.target_kbps.push_back(pp.pub->rates().target.kbps());
+      }
+      pp.up_w = pp.down_w = 0;
+    }
+    if (t % 1000 == 999) {
+      // The capture times the receivers may still look up: the last 10 s.
+      for (Participant& pp : P) {
+        std::erase_if(pp.capture, [&](const auto& kv) { return kv.second < now - TimeDelta::Seconds(10); });
+        pp.pub_m->frame_capture.clear();
+        pp.pub_m->frame_times.clear();
+      }
+    }
+  }
+  for (int p = 0; p < n; ++p) {
+    if (!P[static_cast<size_t>(p)].in_call()) continue;
+    for (int q = 0; q < n; ++q) {
+      if (q != p) end_pair(p, q, end_ms);
+    }
+    P[static_cast<size_t>(p)].keyframe_requests = sfu.keyframe_requests(p);
+  }
+
+  // --- Summary per receiver and sender: p<i>_to_p<j>.* -------------------------------------------------------------
+  auto& m = rep.metrics;
+  m["sfu.participants"] = n;
+  double freeze_sum = 0, worst_freeze = 0, worst_e2e = 0, worst_conceal = 0, switches_sum = 0, worst_ttff = 0;
+  struct RecvTotals {
+    double freezes = 0, freeze_ms = 0, e2e_max = 0, height_sum = 0, frames = 0, fps_sum = 0, switches = 0, conceal_sum = 0;
+    int senders = 0;
+  };
+  std::vector<RecvTotals> recv(static_cast<size_t>(n));
+  for (int j = 0; j < n; ++j) {
+    for (int i = 0; i < n; ++i) {
+      Pair& pr = pair_at(j, i);
+      if (!pr.rx) continue;
+      const int64_t window = std::max<int64_t>(1, pr.end_ms - pr.start_ms);
+      Report d;
+      d.scenario = s;
+      pr.rx->AddMetrics(pr.end_ms, pr.rx->frames_rendered(), d);
+      const std::string prefix = "p" + std::to_string(i + 1) + "_to_p" + std::to_string(j + 1) + ".";
+      auto take = [&](const char* name) {
+        auto it = d.metrics.find(name);
+        if (it != d.metrics.end()) m[prefix + name] = it->second;
+      };
+      for (const char* name : {"audio.concealed_pct", "audio.interruptions", "audio.mouth_to_ear_p95_ms", "video.freeze_count",
+                               "video.freeze_total_ms", "video.longest_freeze_ms", "video.e2e_delay_p50_ms",
+                               "video.e2e_delay_p95_ms", "sync.av_offset_p95_ms"}) {
+        take(name);
+      }
+      RecvTotals& r = recv[static_cast<size_t>(j)];
+      ++r.senders;
+      if (s.audio) {
+        const double c = d.metrics["audio.concealed_pct"];
+        r.conceal_sum += c;
+        worst_conceal = std::max(worst_conceal, c);
+      }
+      if (s.video) {
+        if (pr.rx->frames_rendered() == 0) {
+          // Nothing rendered in the window: one freeze as long as the window (AddMetrics counts from the call's start).
+          m[prefix + "video.freeze_count"] = 1;
+          m[prefix + "video.freeze_total_ms"] = m[prefix + "video.longest_freeze_ms"] = static_cast<double>(window);
+        }
+        const double fps = static_cast<double>(pr.rx->frames_rendered()) * 1000.0 / static_cast<double>(window);
+        m[prefix + "video.render_fps"] = fps;
+        m[prefix + "video.time_to_first_frame_ms"] =
+            pr.first_render.IsFinite() ? static_cast<double>(pr.first_render.ms() - pr.start_ms) : static_cast<double>(window);
+        worst_ttff = std::max(worst_ttff, m[prefix + "video.time_to_first_frame_ms"]);
+        m[prefix + "video.recv_height_mean"] = pr.frames ? pr.height_sum / static_cast<double>(pr.frames) : 0;
+        m[prefix + "video.top_layer_pct"] = pr.frames ? 100.0 * static_cast<double>(pr.top_frames) / static_cast<double>(pr.frames) : 0;
+        m[prefix + "video.layer_switches"] = pr.switches;
+        m[prefix + "video.resumes"] = pr.resumes;
+        const double fc = m[prefix + "video.freeze_count"], ft = m[prefix + "video.freeze_total_ms"];
+        const double e2e = m.count(prefix + "video.e2e_delay_p95_ms") ? m[prefix + "video.e2e_delay_p95_ms"] : 0;
+        freeze_sum += fc;
+        worst_freeze = std::max(worst_freeze, ft);
+        worst_e2e = std::max(worst_e2e, e2e);
+        switches_sum += pr.switches;
+        r.freezes += fc;
+        r.freeze_ms += ft;
+        r.e2e_max = std::max(r.e2e_max, e2e);
+        r.height_sum += pr.height_sum;
+        r.frames += static_cast<double>(pr.frames);
+        r.fps_sum += fps;
+        r.switches += pr.switches;
+      }
+    }
+  }
+  if (s.video) {
+    m["sfu.freeze_count"] = freeze_sum;
+    m["sfu.worst_freeze_total_ms"] = worst_freeze;
+    m["sfu.worst_e2e_delay_p95_ms"] = worst_e2e;
+    m["sfu.layer_switches"] = switches_sum;
+    m["sfu.worst_time_to_first_frame_ms"] = worst_ttff;
+  }
+  if (s.audio) m["sfu.worst_audio_concealed_pct"] = worst_conceal;
+
+  // --- Summary per participant: its links, what it publishes, what it receives: p<i>.* --------------------------------
+  auto loss_pct = [](const sim::LinkStats& ls) {
+    return ls.sent ? 100.0 * static_cast<double>(ls.lost + ls.queue_dropped) / static_cast<double>(ls.sent) : 0;
+  };
+  for (int p = 0; p < n; ++p) {
+    Participant& pp = P[static_cast<size_t>(p)];
+    const std::string pre = "p" + std::to_string(p + 1) + ".";
+    m[pre + "upload_kbps"] = Mean(pp.up_kbps);
+    m[pre + "download_kbps"] = Mean(pp.down_kbps);
+    m[pre + "uplink_loss_pct"] = loss_pct(uplink[static_cast<size_t>(p)]->stats());
+    m[pre + "downlink_loss_pct"] = loss_pct(downlink[static_cast<size_t>(p)]->stats());
+    m[pre + "uplink_queue_p95_ms"] = Percentile(pp.up_queue, 95);
+    m[pre + "downlink_queue_p95_ms"] = Percentile(pp.down_queue, 95);
+    m[pre + "publish_target_kbps"] = Mean(pp.target_kbps);
+    m[pre + "sfu_estimate_kbps"] = Mean(pp.estimate_kbps);
+    m[pre + "keyframe_requests"] = static_cast<double>(pp.keyframe_requests);
+    if (s.video && pp.joined) {
+      const double secs = static_cast<double>(std::max<int64_t>(1, (pp.left ? pp.leave_ms : end_ms) - pp.join_ms)) / 1000.0;
+      const auto& bytes = pp.tx->layer_bytes();
+      for (size_t l = 0; l < bytes.size(); ++l) {
+        m[pre + "publish_layer" + std::to_string(l) + "_kbps"] = static_cast<double>(bytes[l]) * 8 / secs / 1000;
+      }
+      const RecvTotals& r = recv[static_cast<size_t>(p)];
+      m[pre + "recv_freeze_count"] = r.freezes;
+      m[pre + "recv_freeze_total_ms"] = r.freeze_ms;
+      m[pre + "recv_e2e_delay_p95_ms"] = r.e2e_max;
+      m[pre + "recv_height_mean"] = r.frames > 0 ? r.height_sum / r.frames : 0;
+      m[pre + "recv_fps_mean"] = r.senders ? r.fps_sum / r.senders : 0;
+      m[pre + "recv_layer_switches"] = r.switches;
+    }
+    if (s.audio) {
+      const RecvTotals& r = recv[static_cast<size_t>(p)];
+      m[pre + "recv_audio_concealed_pct"] = r.senders ? r.conceal_sum / r.senders : 0;
+    }
+  }
+  size_t speech_pcm_bytes = 0;
+  for (const Participant& pp : P) speech_pcm_bytes += pp.tx->speech_pcm_peak_bytes();
+  rep.bench["bench.speech_pcm_peak_kb"] = static_cast<double>(speech_pcm_bytes) / 1024;
+  EvaluateExpectations(rep);
+  return rep;
+}
+
 }  // namespace
 
 Report RunCall(const Scenario& s, const RunOptions& opt) {
+  if (s.sfu > 0) return RunSfuCall(s, opt);
   if (s.two_way) return RunTwoWayCall(s, opt);
   Report rep;
   rep.scenario = s;

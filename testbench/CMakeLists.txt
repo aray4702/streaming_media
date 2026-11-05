@@ -5,7 +5,7 @@
 enable_language(C)
 include(${PROJECT_SOURCE_DIR}/cmake/SmOpus.cmake)
 sm_add_opus()
-add_library(sm_testbench_lib STATIC scenario.cc call.cc turn_detector.cc ai_source.cc ice_transport.cc ice_turn_tls.cc)
+add_library(sm_testbench_lib STATIC scenario.cc call.cc sfu.cc turn_detector.cc ai_source.cc ice_transport.cc ice_turn_tls.cc)
 target_include_directories(sm_testbench_lib PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(sm_testbench_lib PUBLIC sm::loss sm::timing sm::cc sm::audio sm::video sm::rtp sm_opus)
 # `transport ice` (#1087): calls set up through the C6 part 3 endpoint (ICE, DTLS-SRTP, SDP); needs TLS (not wasm).
@@ -38,9 +38,10 @@ if(SM_BUILD_TESTS)
             ${PROJECT_SOURCE_DIR}/tests/unit/testbench/ai_source_test.cc
             ${PROJECT_SOURCE_DIR}/tests/unit/testbench/ice_overhead_test.cc
             ${PROJECT_SOURCE_DIR}/tests/unit/testbench/speech_pcm_test.cc
+            ${PROJECT_SOURCE_DIR}/tests/unit/testbench/sfu_test.cc
     SUITES TestbenchMetrics OpusEncoder OpusDecoder EncoderModel TestbenchRtcpSeed TestbenchAvSyncRtcp TestbenchEventTiming
            TestbenchCallMode TurnDetector TestbenchAiSource TestbenchIceOverhead TestbenchIceExtensions
-           TestbenchSpeechPcm)
+           TestbenchSpeechPcm TestbenchSfu)
   # sm_testbench refuses `two_way_video` in a one-way call with a clear error (issues #743, #747).
   file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/two_way_rejected.scn "name two_way_rejected\ntwo_way_video up\nduration 2s\n")
   add_test(NAME unit.testbench.two_way_rejected

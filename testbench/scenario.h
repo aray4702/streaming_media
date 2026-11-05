@@ -73,6 +73,32 @@ struct Scenario {
   // `two_way_video both|up|down` (issue #747): in a two-way call with video, which directions send it: both (the
   // default), up (user to AI) or down (AI to user). Only for `call two-way`.
   bool video_up = true, video_down = true;
+  // `call sfu <N>` (C21, #1180): a group call of N = 2..6 participants through a simulated SFU (testbench/sfu.h,
+  // modelled on LiveKit). Each participant publishes audio and simulcast video (`simulcast`, 3 layers unless set) on
+  // its own access link and receives every other participant's audio and selected video layer through C18's
+  // multi-stream receive. Its uplink follows the `at` lines, its downlink the `reverse at` lines, each overridden per
+  // participant by `participant <i> [reverse] at ...`. 0: not an SFU call.
+  int sfu = 0;
+  // `participant <i> [reverse] at <time> key=value...` (as the mesh had, #1072): participant i's (1-based) uplink or
+  // downlink, applied after the scenario's own lines at the same time, in file order.
+  struct ParticipantChange {
+    int participant = 1;
+    bool reverse = false;  // The downlink.
+    LinkChange change;
+  };
+  std::vector<ParticipantChange> participant_links;
+  // `participant <i> join <time>` / `participant <i> leave <time>`: when participant i joins (default 0) and leaves
+  // (default: stays to the end). Index 0 is participant 1.
+  struct Presence {
+    TimeDelta join = TimeDelta::Zero();
+    std::optional<TimeDelta> leave;
+    bool operator==(const Presence&) const = default;
+  };
+  std::vector<Presence> presence = std::vector<Presence>(6);
+  // `sfu_max_layer 0|1|2`: the highest simulcast layer each subscriber asks for (LiveKit's adaptive stream asks by
+  // tile size; default 2, the top). `sfu_dynacast on|off` (default on): the SFU pauses the layers nobody asks for.
+  int sfu_max_layer = 2;
+  bool sfu_dynacast = true;
   // `transport direct|ice` (issue #1087): with `ice`, the call's connection (the one-way or the two-way call's) is
   // set up through the full stack, between two C6 part 3 endpoints: offer/answer and trickled candidates, ICE on an
   // emulated network with NATs, STUN and TURN, DTLS, and the call's media as SRTP over the bundled transport, on the scenario's links (testbench/ice_transport.h). Direct (the default) sends the media

@@ -317,8 +317,33 @@ ParseResult ParseScenario(const std::string& text) {
       if (v < 1 || v > 1000000) return fail("usage: compare_clock_start <1..1000000 seconds> (the RTCP interval seed)");
       s.compare_clock_start_s = v;
     } else if (key == "call") {
-      if (!need(2) || (tok[1] != "one-way" && tok[1] != "two-way")) return fail("usage: call one-way|two-way");
+      const int sfu_n = tok.size() == 3 && tok[1] == "sfu" && tok[2].size() == 1 ? std::atoi(tok[2].c_str()) : 0;
+      const bool is_sfu = sfu_n >= 2 && sfu_n <= 6;
+      if (!is_sfu && (!need(2) || (tok[1] != "one-way" && tok[1] != "two-way"))) return fail("usage: call one-way|two-way|sfu <2..6>");
       s.two_way = tok[1] == "two-way";
+      s.sfu = is_sfu ? sfu_n : 0;
+    } else if (key == "participant") {
+      const int i = tok.size() >= 3 && tok[1].size() == 1 ? std::atoi(tok[1].c_str()) : 0;
+      if (i < 1 || i > 6) return fail("usage: participant <1..6> [reverse] at <time> key=value... | join <time> | leave <time>");
+      if (tok[2] == "join" || tok[2] == "leave") {
+        TimeDelta t;
+        if (tok.size() != 4 || !ParseTime(tok[3], &t)) return fail("usage: participant <1..6> join|leave <time>");
+        auto& p = s.presence[static_cast<size_t>(i - 1)];
+        (tok[2] == "join" ? p.join : p.leave.emplace()) = t;
+      } else {
+        Scenario::ParticipantChange pc;
+        std::string err;
+        pc.participant = i;
+        pc.reverse = Lower(tok[2]) == "reverse";
+        if (!ParseChange(tok, pc.reverse ? 3 : 2, &pc.change, &err)) return fail(err);
+        s.participant_links.push_back(pc);
+      }
+    } else if (key == "sfu_max_layer") {
+      const int v = need(2) && tok[1].size() == 1 ? std::atoi(tok[1].c_str()) : -1;
+      if (v < 0 || v > 2 || tok[1][0] < '0' || tok[1][0] > '2') return fail("usage: sfu_max_layer 0|1|2");
+      s.sfu_max_layer = v;
+    } else if (key == "sfu_dynacast") {
+      if (!need(2) || !ParseBool(tok[1], &s.sfu_dynacast)) return fail("usage: sfu_dynacast on|off");
     } else if (key == "two_way_video") {
       if (!need(2) || (tok[1] != "both" && tok[1] != "up" && tok[1] != "down")) return fail("usage: two_way_video both|up|down");
       s.video_up = tok[1] != "down";
@@ -612,6 +637,14 @@ std::string FormatScenario(const Scenario& s) {
   o += "duration " + FormatTime(s.duration) + "\n";
   o += "seed " + std::to_string(s.seed) + "\n";
   if (s.two_way != d.two_way) o += std::string("call ") + (s.two_way ? "two-way" : "one-way") + "\n";
+  if (s.sfu != d.sfu) o += "call sfu " + std::to_string(s.sfu) + "\n";
+  for (size_t i = 0; i < s.presence.size(); ++i) {
+    const auto& p = s.presence[i];
+    if (p.join != TimeDelta::Zero()) o += "participant " + std::to_string(i + 1) + " join " + FormatTime(p.join) + "\n";
+    if (p.leave) o += "participant " + std::to_string(i + 1) + " leave " + FormatTime(*p.leave) + "\n";
+  }
+  if (s.sfu_max_layer != d.sfu_max_layer) o += "sfu_max_layer " + std::to_string(s.sfu_max_layer) + "\n";
+  if (s.sfu_dynacast != d.sfu_dynacast) o += std::string("sfu_dynacast ") + (s.sfu_dynacast ? "on" : "off") + "\n";
   if (s.video_up != d.video_up || s.video_down != d.video_down) {
     o += std::string("two_way_video ") + (s.video_up && s.video_down ? "both" : s.video_up ? "up" : "down") + "\n";
   }
@@ -692,11 +725,41 @@ std::string FormatScenario(const Scenario& s) {
   }
   for (const auto& c : s.forward) o += FormatChange(c) + "\n";
   for (const auto& c : s.reverse) o += "reverse " + FormatChange(c) + "\n";
+  for (const auto& pc : s.participant_links) {
+    o += "participant " + std::to_string(pc.participant) + (pc.reverse ? " reverse " : " ") + FormatChange(pc.change) + "\n";
+  }
   for (const auto& e : s.expectations) o += "expect " + e.metric + " " + ToString(e.op) + " " + FormatNumber(e.value) + "\n";
   return o;
 }
 
 std::string UnsupportedReason(const Scenario& s) {
+  if (s.sfu > 0) {
+    // A group call (C21) is made of the participants' publish and subscribe connections through the SFU: the AI
+    // side's features, the one-way call's SFU knobs and the one-to-one transport don't apply.
+    if (s.two_way) return "call sfu is a call mode of its own: not with call two-way";
+    if (!(s.video_up && s.video_down) || s.up_audio_nack || s.down_audio_nack) return "two_way_video and audio NACK need call two-way";
+    if (!s.turns.empty() || s.ai_source) return "turn, barge-in and ai_source need call two-way";
+    if (s.transport_ice) return "transport ice: an SFU call runs direct";
+    if (s.host_rtt_inf || s.host_rtt || !s.simulcast_active.empty()) return "host_rtt and simulcast_pause/resume need a one-way call";
+    if (s.simulcast == 2 && s.sfu_max_layer > 1) return "sfu_max_layer 2 needs simulcast 3";
+    for (const auto& pc : s.participant_links) {
+      if (pc.participant > s.sfu) return "participant " + std::to_string(pc.participant) + " is not in a call of " + std::to_string(s.sfu);
+    }
+    for (size_t i = 0; i < s.presence.size(); ++i) {
+      const auto& p = s.presence[i];
+      if (static_cast<int>(i) >= s.sfu && (p.join != TimeDelta::Zero() || p.leave)) {
+        return "participant " + std::to_string(i + 1) + " is not in a call of " + std::to_string(s.sfu);
+      }
+      if (p.leave && *p.leave <= p.join) return "participant " + std::to_string(i + 1) + " leaves before it joins";
+      if (p.join >= s.duration) return "participant " + std::to_string(i + 1) + " joins after the call";
+    }
+  } else {
+    if (!s.participant_links.empty()) return "participant links need call sfu <N>";
+    for (const auto& p : s.presence) {
+      if (p.join != TimeDelta::Zero() || p.leave) return "participant join and leave need call sfu <N>";
+    }
+    if (s.sfu_max_layer != 2 || !s.sfu_dynacast) return "sfu_max_layer and sfu_dynacast need call sfu <N>";
+  }
   if (!s.transport_ice && (s.ice_nat[0] >= 0 || s.ice_nat[1] >= 0 || s.ice_turn > 0 || !s.ice_stun || s.ice_fail)) {
     return "nat, turn udp|tcp|tls, stun and ice_fail need transport ice";
   }

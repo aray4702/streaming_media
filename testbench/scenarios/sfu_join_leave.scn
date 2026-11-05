@@ -1,0 +1,16 @@
+name sfu_join_leave
+describe Group call through the simulated SFU (C21, #1180): four people start, a fifth joins at 10 s and a sixth at 15 s, the second leaves at 25 s; joins and leaves renegotiate the receivers' streams (C18) and dynacast pauses and resumes nothing while someone subscribes
+duration 35s
+call sfu 6
+compare off  # sm_compare runs one-way calls only: libwebrtc's side has no SFU (C21)
+participant 5 join 10s
+participant 6 join 15s
+participant 2 leave 25s
+at 0s capacity=5000kbps delay=15ms queue=200ms
+reverse at 0s capacity=25000kbps delay=15ms queue=200ms
+# Seeds 1-5 (C21): every join renders its first frames within a second (168-780 ms), and nobody freezes.
+expect sfu.worst_time_to_first_frame_ms < 1500
+expect sfu.freeze_count <= 2
+expect sfu.worst_e2e_delay_p95_ms < 250
+expect sfu.worst_audio_concealed_pct < 1
+expect p5.recv_fps_mean >= 29

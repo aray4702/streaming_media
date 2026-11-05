@@ -1,0 +1,42 @@
+name sfu_6_mixed_links
+describe Group call of 6 through the simulated SFU (C21, #1180): two home broadband links, an office link, a weak mobile link, a downlink that drops from 20 Mbps to 1.5 Mbps for 15 s, and a lossy link; each publishes 3 simulcast layers and the SFU picks a layer per receiver from its downlink estimate
+duration 40s
+call sfu 6
+compare off  # sm_compare runs one-way calls only: libwebrtc's side has no SFU (C21)
+# Every participant's default: home broadband, 5 Mbps up, 25 Mbps down.
+at 0s capacity=5000kbps delay=15ms queue=200ms
+reverse at 0s capacity=25000kbps delay=15ms queue=200ms
+# 2: faster home broadband.
+participant 2 at 0s capacity=10000kbps delay=10ms
+participant 2 reverse at 0s capacity=50000kbps delay=10ms
+# 3: office, 20 Mbps both ways.
+participant 3 at 0s capacity=20000kbps delay=8ms
+participant 3 reverse at 0s capacity=20000kbps delay=8ms
+# 4: weak mobile, 600 kbps up, 1.5 Mbps down, deep buffers and jitter.
+participant 4 at 0s capacity=600kbps delay=50ms jitter=8ms queue=400ms
+participant 4 reverse at 0s capacity=1500kbps delay=50ms jitter=8ms queue=400ms
+# 5: its downlink drops to 1.5 Mbps from 15 s to 30 s.
+participant 5 reverse at 0s capacity=20000kbps
+participant 5 reverse at 15s capacity=1500kbps
+participant 5 reverse at 30s capacity=20000kbps
+# 6: lossy, 3% random loss each way.
+participant 6 at 0s loss=3%
+participant 6 reverse at 0s loss=3%
+# Seeds 1-5 (C21): the broadband receivers get every sender near the top layer, smoothly.
+expect p1.recv_height_mean >= 500
+expect p2.recv_freeze_total_ms <= 1000
+expect p3.recv_fps_mean >= 29
+# The weak mobile: its 600 kbps uplink carries no top layer, and its 1.5 Mbps downlink gets the bottom layers only,
+# without queueing delay building up.
+expect p4.publish_layer2_kbps < 50
+expect p4.recv_height_mean <= 200
+expect p4.recv_fps_mean >= 15
+expect p4.recv_e2e_delay_p95_ms < 400
+# The downlink drop: the SFU moves participant 5 to lower layers instead of filling its queue (seeds 1-5: 242-325 ms).
+expect p5.recv_height_mean < 450
+expect p5.recv_e2e_delay_p95_ms < 500
+expect p5.downlink_loss_pct < 5
+# The lossy link: lower layers (its estimate follows the loss), video keeps its frame rate.
+expect p6.recv_height_mean < 500
+expect p6.recv_fps_mean >= 29
+expect sfu.worst_audio_concealed_pct < 2

@@ -379,11 +379,50 @@ SM_TEST(TestbenchCallMode, UpAudioNackResendsTheUsersLostAudio) {
   SM_EXPECT_TRUE(on.metrics.at("up.repair.overhead_pct") > 0);
 }
 
-// C16 (Owner, #1160): the mesh of 3-4 (#1072) is dropped for an SFU, so `call mesh` and `participant` no longer parse.
+// C16 (Owner, #1160): the mesh of 3-4 (#1072) is dropped for an SFU, so `call mesh` no longer parses. Its per-participant
+// links came back with the SFU call (C21, #1180): `participant` parses, and runs only with `call sfu <N>`.
 SM_TEST(TestbenchCallMode, MeshIsNotACallMode) {
-  for (const char* bad : {"call mesh 3\n", "call mesh 4\n", "participant 2 at 0s loss=1%\n"}) {
+  for (const char* bad : {"call mesh 3\n", "call mesh 4\n"}) {
     SM_EXPECT_FALSE(ParseScenario(bad).scenario.has_value());
   }
   SM_EXPECT_TRUE(ParseScenario("call one-way\n").scenario.has_value());
   SM_EXPECT_TRUE(ParseScenario("call two-way\n").scenario.has_value());
+  auto links = ParseScenario("participant 2 at 0s loss=1%\n");
+  SM_ASSERT_TRUE(links.scenario.has_value());
+  SM_EXPECT_TRUE(UnsupportedReason(*links.scenario).find("call sfu") != std::string::npos);
+}
+
+// C21 (#1180): `call sfu <N>`, per-participant links, joins and leaves, the subscribers' layer and dynacast parse,
+// round-trip and are checked.
+SM_TEST(TestbenchCallMode, SfuCallParsesAndRoundTrips) {
+  auto parsed = ParseScenario(
+      "name g\ncall sfu 4\nduration 20s\nparticipant 3 join 5s\nparticipant 2 leave 15s\nsfu_max_layer 1\nsfu_dynacast off\n"
+      "at 0s capacity=5000kbps\nparticipant 4 at 0s capacity=600kbps\nparticipant 4 reverse at 10s loss=3%\n");
+  SM_ASSERT_TRUE(parsed.scenario.has_value());
+  const Scenario& s = *parsed.scenario;
+  SM_EXPECT_EQ(s.sfu, 4);
+  SM_EXPECT_FALSE(s.two_way);
+  SM_EXPECT_EQ(s.presence[2].join, sm::TimeDelta::Seconds(5));
+  SM_ASSERT_TRUE(s.presence[1].leave.has_value());
+  SM_EXPECT_EQ(*s.presence[1].leave, sm::TimeDelta::Seconds(15));
+  SM_EXPECT_EQ(s.sfu_max_layer, 1);
+  SM_EXPECT_FALSE(s.sfu_dynacast);
+  SM_ASSERT_EQ(s.participant_links.size(), 2u);
+  SM_EXPECT_TRUE(s.participant_links[1].reverse);
+  SM_EXPECT_TRUE(UnsupportedReason(s).empty());
+  const std::string text = FormatScenario(s);
+  auto again = ParseScenario(text);
+  SM_ASSERT_TRUE(again.scenario.has_value());
+  SM_EXPECT_TRUE(FormatScenario(*again.scenario) == text);
+  for (const char* bad : {"call sfu 1\n", "call sfu 7\n", "call sfu\n", "participant 7 at 0s loss=1%\n",
+                          "participant 2 join\n", "sfu_max_layer 3\n", "sfu_dynacast maybe\n"}) {
+    SM_EXPECT_FALSE(ParseScenario(bad).scenario.has_value());
+  }
+  for (const char* unsupported : {"call sfu 3\nparticipant 4 at 0s loss=1%\n", "call sfu 3\nparticipant 2 join 5s\nparticipant 2 leave 4s\n",
+                                  "call sfu 3\nsimulcast_pause 2 at 1s\n", "call sfu 3\ntransport ice\n", "sfu_max_layer 1\n",
+                                  "participant 2 leave 5s\n"}) {
+    auto p = ParseScenario(unsupported);
+    SM_ASSERT_TRUE(p.scenario.has_value());
+    SM_EXPECT_FALSE(UnsupportedReason(*p.scenario).empty());
+  }
 }
