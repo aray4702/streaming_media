@@ -317,22 +317,8 @@ ParseResult ParseScenario(const std::string& text) {
       if (v < 1 || v > 1000000) return fail("usage: compare_clock_start <1..1000000 seconds> (the RTCP interval seed)");
       s.compare_clock_start_s = v;
     } else if (key == "call") {
-      const bool mesh = tok.size() == 3 && tok[1] == "mesh" && (tok[2] == "3" || tok[2] == "4");
-      if (!mesh && (!need(2) || (tok[1] != "one-way" && tok[1] != "two-way"))) {
-        return fail("usage: call one-way|two-way|mesh 3|mesh 4");
-      }
+      if (!need(2) || (tok[1] != "one-way" && tok[1] != "two-way")) return fail("usage: call one-way|two-way");
       s.two_way = tok[1] == "two-way";
-      s.mesh = mesh ? std::atoi(tok[2].c_str()) : 0;
-    } else if (key == "participant") {
-      Scenario::ParticipantChange pc;
-      std::string err;
-      pc.participant = tok.size() >= 2 ? std::atoi(tok[1].c_str()) : 0;
-      if (pc.participant < 1 || pc.participant > 4 || tok[1] != std::to_string(pc.participant)) {
-        return fail("usage: participant <1..4> [reverse] at <time> key=value...");
-      }
-      pc.reverse = tok.size() >= 3 && Lower(tok[2]) == "reverse";
-      if (!ParseChange(tok, pc.reverse ? 3 : 2, &pc.change, &err)) return fail(err);
-      s.participant_links.push_back(pc);
     } else if (key == "two_way_video") {
       if (!need(2) || (tok[1] != "both" && tok[1] != "up" && tok[1] != "down")) return fail("usage: two_way_video both|up|down");
       s.video_up = tok[1] != "down";
@@ -608,7 +594,6 @@ std::string FormatScenario(const Scenario& s) {
   o += "duration " + FormatTime(s.duration) + "\n";
   o += "seed " + std::to_string(s.seed) + "\n";
   if (s.two_way != d.two_way) o += std::string("call ") + (s.two_way ? "two-way" : "one-way") + "\n";
-  if (s.mesh != d.mesh) o += "call mesh " + std::to_string(s.mesh) + "\n";
   if (s.video_up != d.video_up || s.video_down != d.video_down) {
     o += std::string("two_way_video ") + (s.video_up && s.video_down ? "both" : s.video_up ? "up" : "down") + "\n";
   }
@@ -683,27 +668,11 @@ std::string FormatScenario(const Scenario& s) {
   }
   for (const auto& c : s.forward) o += FormatChange(c) + "\n";
   for (const auto& c : s.reverse) o += "reverse " + FormatChange(c) + "\n";
-  for (const auto& pc : s.participant_links) {
-    o += "participant " + std::to_string(pc.participant) + (pc.reverse ? " reverse " : " ") + FormatChange(pc.change) + "\n";
-  }
   for (const auto& e : s.expectations) o += "expect " + e.metric + " " + ToString(e.op) + " " + FormatNumber(e.value) + "\n";
   return o;
 }
 
 std::string UnsupportedReason(const Scenario& s) {
-  if (s.mesh > 0) {
-    // A mesh call (#1072) is made of two-way sessions between people: the AI side's features don't apply.
-    if (!(s.video_up && s.video_down)) return "two_way_video needs call two-way: a mesh call sends video to every peer";
-    if (s.up_audio_nack || s.down_audio_nack) return "up_audio_nack and down_audio_nack need call two-way";
-    if (!s.turns.empty()) return "turn and barge-in need call two-way";
-    if (s.ai_source) return "ai_source needs call two-way: it is the AI endpoint's source";
-    if (s.host_rtt_inf || s.host_rtt) return "host_rtt and host_rtt_inf need a one-way or two-way call";
-    for (const auto& pc : s.participant_links) {
-      if (pc.participant > s.mesh) return "participant " + std::to_string(pc.participant) + " is not in a mesh of " + std::to_string(s.mesh);
-    }
-  } else if (!s.participant_links.empty()) {
-    return "participant links need call mesh 3|4";
-  }
   if (!s.transport_ice && (s.ice_nat[0] >= 0 || s.ice_nat[1] >= 0 || s.ice_turn > 0 || !s.ice_stun || s.ice_fail)) {
     return "nat, turn udp|tcp|tls, stun and ice_fail need transport ice";
   }

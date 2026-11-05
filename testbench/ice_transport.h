@@ -10,9 +10,9 @@
 //
 // Where the scenario's links sit: every datagram that reaches a side's host (from the other side, or from the
 // STUN or TURN server) crosses the scenario's link toward that side last, as on an access link. The emulated
-// network's own links take no time; the call's forward and reverse links (or a mesh's uplink and downlink) carry
-// the datagrams, with the same impairments, queue and traces as a direct call's packets. So a relayed call's
-// packets cross the scenario's link once, as a direct call's do.
+// network's own links take no time; the call's forward and reverse links carry the datagrams, with the same
+// impairments, queue and traces as a direct call's packets. So a relayed call's packets cross the scenario's link
+// once, as a direct call's do.
 //
 // The call starts after setup: Connect() runs the signaling, ICE and DTLS over a private copy of the scenario's
 // links at their first settings, and the media phase starts at call time 0 with both sides connected. The
