@@ -8,6 +8,8 @@
 #include "sm/video/orientation.h"
 #include "sm/video/quality_convergence.h"
 #include "sm/video/quality_scaler.h"
+#include "sm/video/simulcast.h"
+#include "sm/video/simulcast_rate_allocator.h"
 #include "sm_bench.h"
 
 using namespace sm;
@@ -87,6 +89,26 @@ SM_BENCH(video, QualityScaler_frame) {
     t += 33;
   }
   st.BudgetNsPerItem(100);
+}
+
+SM_BENCH(video, SimulcastRateAllocator_3layers_update) {
+  // 7.9: one rate update for a 720p camera sent as three H.264 layers
+  // (320x180, 640x360, 1280x720, as EncoderStreamFactory configures them):
+  // SimulcastRateAllocator splits a target that sweeps 100 kbps .. 4 Mbps,
+  // switching layers on and off with its hysteresis.
+  VideoEncoderConfig ec;
+  ec.codec_type = VideoCodecType::kH264;
+  ec.number_of_streams = 3;
+  ec.simulcast_layers.resize(3);
+  const auto streams = CreateEncoderStreams({}, 1280, 720, ec);
+  SimulcastRateAllocator a(SetupCodec(ec, streams));
+  int64_t kbps = 100;
+  for (auto _ : st) {
+    bench::DoNotOptimize(a.Allocate(DataRate::KilobitsPerSec(kbps), 30).GetSpatialLayerSum(2));
+    kbps = kbps >= 4000 ? 100 : kbps + 37;
+  }
+  // Measured 96 ns per update on an Apple M4 (Release): 10x that.
+  st.BudgetNsPerItem(1000);
 }
 
 // --- Quality ------------------------------------------------------------------
