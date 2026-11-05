@@ -2,13 +2,15 @@
 // pc/sdp_offer_answer.cc and pc/peer_connection.cc (compare/webrtc/reference/pc/) over JsepTransportController
 // (sm/pc/jsep_transport_controller.h), with the library's RTP session (sm/rtp/session.h) as the media channels.
 //
-// What it does, as libwebrtc does for C6's subset (one audio and one video transceiver, Unified Plan):
+// What it does, as libwebrtc does (Unified Plan):
 // - CreateOffer / CreateAnswer through MediaSessionDescriptionFactory (#1063) with the engines' default codecs
 //   (Opus; H.264 constrained baseline with RTX) and header extensions, BUNDLE and rtcp-mux, a fresh 64-bit session
-//   id and version 2 (WebRtcSessionDescriptionFactory). The answer follows the offer's m= sections: audio and video
-//   are answered (sendrecv while this end sends), the data section as below, and any other section is rejected.
+//   id and version 2 (WebRtcSessionDescriptionFactory). The answer follows the offer's m= sections: each audio and
+//   video section is answered with its transceiver (below), the data section as below, and any other section is
+//   rejected.
 // - SetLocalDescription / SetRemoteDescription check the signaling state (stable -> have-local-offer or
-//   have-remote-offer -> stable), apply the description to the transports, record the payload types
+//   have-remote-offer -> stable, again and again for subsequent offers from either side), apply the description to
+//   the transports, record the payload types
 //   (SdpPayloadTypeSuggester) and, after a local description, start ICE gathering. Candidates in a remote
 //   description are added (UseCandidatesInRemoteDescription).
 // - AddIceCandidate adds a trickled candidate to the transport of its mid (or of its m-line index); a candidate for
@@ -16,7 +18,8 @@
 //   and m-line index (OnIceCandidate).
 // - When an answer is applied, the RTP session is configured from the negotiated sections, as the voice and video
 //   channels are by SetLocalContent / SetRemoteContent: the send streams take the local section's SSRCs (video with
-//   its RTX SSRC from the FID group), the receive streams the remote section's, both the answer's payload types
+//   its RTX SSRC from the FID group), the receive streams the remote sections' (one per remote track), all the
+//   answer's payload types
 //   (Opus; the first H.264 and its RTX), the negotiated header extensions (one id map: BUNDLE requires the same
 //   ids), the MIDs when the MID extension is negotiated, NACK as negotiated for H.264, and the CNAME of the local
 //   stream. Each section's demuxer sink (its MID and the remote SSRCs) and header extension map are registered on
