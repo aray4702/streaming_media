@@ -96,6 +96,18 @@ target_link_libraries(sm_apm_compare PRIVATE sm_all ${WEBRTC_DIR}/lib/libwebrtc.
 target_link_options(sm_apm_compare PRIVATE -nostdlib++)
 # Prints the table after every build, so the compare job's log carries it.
 add_custom_command(TARGET sm_apm_compare POST_BUILD COMMAND sm_apm_compare VERBATIM)
+# Group-call mixing (#1175, F6.13): this library's AudioMixerImpl port and libwebrtc's, bit for bit on the
+# E2E_AudioMixer scenarios. It runs after every build and fails it on any difference.
+add_executable(sm_mixer_compare mixer_compare.cc)
+target_include_directories(sm_mixer_compare PRIVATE ${SM_ROOT}/tests/e2e ${WEBRTC_DIR}/include
+                           ${WEBRTC_DIR}/include/third_party/abseil-cpp)
+target_compile_definitions(sm_mixer_compare PRIVATE WEBRTC_POSIX)
+target_link_libraries(sm_mixer_compare PRIVATE sm_all ${WEBRTC_DIR}/lib/libwebrtc.a)
+target_link_options(sm_mixer_compare PRIVATE -nostdlib++)
+add_custom_command(TARGET sm_mixer_compare POST_BUILD COMMAND sm_mixer_compare VERBATIM)
+# The limiter's float arithmetic as libwebrtc's (Chromium builds with -ffp-contract=off), as src/CMakeLists.txt sets it.
+set_source_files_properties(${SM_ROOT}/src/audio/agc2.cc ${SM_ROOT}/src/audio/audio_mixer.cc PROPERTIES
+                            COMPILE_OPTIONS -ffp-contract=off)
 # Video comparison (#63, section 7): freeze detection, quality scaling and
 # frame timing, this library's modules and libwebrtc's on the same inputs.
 add_executable(sm_video_compare video_compare.cc sim_time.cc)
@@ -117,6 +129,7 @@ if(APPLE)
   target_compile_definitions(sm_compare PRIVATE WEBRTC_MAC)
   target_compile_definitions(sm_rtcp_interop PRIVATE WEBRTC_MAC)
   target_compile_definitions(sm_apm_compare PRIVATE WEBRTC_MAC)
+  target_compile_definitions(sm_mixer_compare PRIVATE WEBRTC_MAC)
   target_compile_definitions(sm_video_compare PRIVATE WEBRTC_MAC)
   target_compile_definitions(sm_ice_compare PRIVATE WEBRTC_MAC)
   foreach(fw Foundation CoreFoundation Security AudioToolbox CoreAudio CoreMedia CoreVideo VideoToolbox
@@ -124,6 +137,7 @@ if(APPLE)
     target_link_libraries(sm_compare PRIVATE "-framework ${fw}")
     target_link_libraries(sm_rtcp_interop PRIVATE "-framework ${fw}")
     target_link_libraries(sm_apm_compare PRIVATE "-framework ${fw}")
+    target_link_libraries(sm_mixer_compare PRIVATE "-framework ${fw}")
     target_link_libraries(sm_video_compare PRIVATE "-framework ${fw}")
     target_link_libraries(sm_ice_compare PRIVATE "-framework ${fw}")
   endforeach()
@@ -131,11 +145,13 @@ else()
   target_compile_definitions(sm_compare PRIVATE WEBRTC_LINUX)
   target_compile_definitions(sm_rtcp_interop PRIVATE WEBRTC_LINUX)
   target_compile_definitions(sm_apm_compare PRIVATE WEBRTC_LINUX)
+  target_compile_definitions(sm_mixer_compare PRIVATE WEBRTC_LINUX)
   target_compile_definitions(sm_video_compare PRIVATE WEBRTC_LINUX)
   target_compile_definitions(sm_ice_compare PRIVATE WEBRTC_LINUX)
   target_link_libraries(sm_compare PRIVATE pthread dl rt)
   target_link_libraries(sm_rtcp_interop PRIVATE pthread dl rt)
   target_link_libraries(sm_apm_compare PRIVATE pthread dl rt)
+  target_link_libraries(sm_mixer_compare PRIVATE pthread dl rt)
   target_link_libraries(sm_video_compare PRIVATE pthread dl rt)
   target_link_libraries(sm_ice_compare PRIVATE pthread dl rt)
 endif()

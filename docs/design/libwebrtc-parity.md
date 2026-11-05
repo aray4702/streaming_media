@@ -268,7 +268,7 @@ control, high-pass filter, voice activity, transient suppression), `common_audio
 `audio/audio_level.*`, `modules/audio_coding/codecs/cng/`, `audio/channel_send.cc`. Every row that needs one
 of them says "file needed" and is listed in the open questions.
 
-**Where it runs.** The eleven modules in `src/audio/` (6.1 to 6.9, 6.11, 6.12) are used by their unit, e2e and bench
+**Where it runs.** (The receive-side mixer, 6.13, is in 6.4 below.) The eleven modules in `src/audio/` (6.1 to 6.9, 6.11, 6.12) are used by their unit, e2e and bench
 tests only. Neither the test bench call (`testbench/call.cc`) nor the comparison harness
 (`compare/webrtc/webrtc_call.cc`) processes audio samples: both send libopus 55513e81's packets every 20 ms
 (the bench since #457) and measure the receive side; the bench's decoder is a model. The harness registers only the transport-cc extension, so the audio-level
@@ -322,6 +322,32 @@ double-talk test instead of AEC3's matched-filter delay estimate and adaptive fi
 3. **Add to #57:** `modules/audio_processing/` (aec3, ns, agc2, `high_pass_filter.*`, transient, vad),
    `common_audio/` (resampler, vad), `audio/audio_level.*`, `audio/channel_send.cc`,
    `modules/audio_coding/codecs/cng/`, `call/bitrate_allocator.cc`.
+
+### 6.4 Receive-side mixing for group calls (`AudioMixerImpl`, `src/audio/audio_mixer.cc`, #1175)
+
+Reference files: `modules/audio_mixer/` (`audio_mixer_impl.*`, `frame_combiner.*`,
+`default_output_rate_calculator.*`, `audio_frame_manipulator.*`, `output_rate_calculator.h`, their unit tests),
+`api/audio/audio_mixer.h`, `api/audio/audio_frame.*`, `audio/utility/audio_frame_operations.*`,
+`audio/utility/channel_mixer.*`, `channel_mixing_matrix.*`, `common_audio/audio_util.cc`, and the callers
+`audio/channel_receive.cc` (`GetAudioFrameWithInfo`, `PreferredSampleRate`) and `media/engine/webrtc_voice_engine.cc`
+(`AudioMixerImpl::Create()` unless the app injects a mixer). The mixer was removed in #27 under "one-to-one calls";
+the group calls of the Owner's decision on #1160 bring it back.
+
+**M157 mixes every unmuted source.** `AudioMixerImpl::GetAudioFromSources` adds every source whose
+`GetAudioFrameWithInfo` returns `kNormal`; there is no `kMaximumAmountOfMixedAudioSources` (3 loudest) selection and
+no ramp-in/out of sources in M157 (both were in older releases; `audio_frame_manipulator.cc` keeps `Ramp` and
+`AudioMixerCalculateEnergy`, which the M157 mixer doesn't call). Selecting the 3 loudest would be a deviation from
+M157 and needs an Owner decision (#1175).
+
+| Our module | libwebrtc | Difference | Status | Issue |
+|---|---|---|---|---|
+| `AudioMixerImpl` | `audio_mixer_impl.cc` | Same order per `Mix`: preferred rates, output rate, one frame from every source at that rate, `kNormal` frames to the combiner, `number_of_streams` = every registered source. No mutex or reference counting (the library is single-threaded; the caller serializes calls). The `WebRTC.Audio.AudioMixer.NewHighestSourceCount` histogram is the `max_source_count` metric. | ported | #1175 |
+| `FrameCombiner` | `frame_combiner.cc` | Same: at most one registered source copies the frame (or mutes the output); otherwise a FloatS16 sum of up to 8 channels and 480 samples per channel, AGC2's `Limiter` when `use_limiter` (the default), `FloatS16ToS16`; timestamp and NTP time the minimum, elapsed time the maximum, packet infos the union. The limiter is the library's AGC2 port, now multi-channel as libwebrtc's (peak over channels, one gain for all). Bit-exact with libwebrtc's prebuilt mixer on 8 scenarios (`sm_mixer_compare`). | ported | #1175 |
+| `DefaultOutputRateCalculator` | `default_output_rate_calculator.cc` | Same: highest preferred rate rounded up to 8, 16, 32 or 48 kHz; 48 kHz with no source. | ported | #1175 |
+| `RemixFrame` | `audio_frame_manipulator.cc`, `audio_frame_operations.cc`, `channel_mixer.cc` | Mono and stereo as libwebrtc (`AudioFrameOperations` down-mix with an int32 sum and truncating division, in-place up-mix), and `ChannelMixer`'s VoIP case (mono into N >= 3: front left and right). The rest of `ChannelMixer` (other layouts with more than two channels) is not ported: such a frame is left out of the mix and counted in `remix_unsupported`. A call's Opus streams are mono or stereo. | ported (mono/stereo); multichannel layouts not ported | #1175 |
+
+**Where it runs.** Not in the test bench or `sm_compare` (one-to-one calls). The group-call client's playout
+(`apps/call`, C20) is meant to use it in place of its saturating sum; see #1175 for the state of that change.
 
 ## 7. Video quality and processing
 
@@ -1352,7 +1378,7 @@ seeds, and none on 20 for `simulcast_capacity_drop_low_layer`. Differences:
 | Several video streams' FEC | One `FecControllerDefault` for the stream | One per layer | Off beside NACK for H.264 (`ShouldDisableRedAndUlpfec`) |
 | Every encoding inactive | `VideoSendStreamImpl` stops the stream (out of the allocator, no padding) | Nothing is encoded; the stream stays in the allocator with its last limits | Remaining work (#1173); an SFU pauses the layers no one watches, not usually all of them |
 | Quality scaling with one active layer | `is_quality_scaling_allowed` when `NumActiveStreams == 1` (the SFU paused the others) | Stays off for simulcast | Remaining work (#1173) |
-| Random loss (`3%`, 100 ms RTT, top layer measured) | longest freeze 181 ms, count 1.3 (10 seeds) | 312 ms, 2.0 | Open on #1162; no such scenario is in the suite until it is found |
+| Random loss (`3%`, 100 ms RTT, top layer measured; `issue_1171_simulcast_random_loss`) | longest freeze 234 ms, 1.9 freezes (200 seeds; 181 ms, 1.3 on seeds 1-10) | 235 ms, 1.7 (312 ms, 2.0 on seeds 1-10 before #1171) | Not a gap (#1171): ten seeds do not settle these freezes (a packet whose retransmissions are lost too); every 20- and 40-seed window of 200 is level, so the scenario runs 40 seeds (`compare_seeds 40`). The padding stream on the way: `PacketRouter::SendPacket`'s `last_send_module_` (pad on the layer that last sent media) is ported, padding 2.2 -> 1.7 kbps against 1.7 |
 
 ## Open questions for the Owner
 

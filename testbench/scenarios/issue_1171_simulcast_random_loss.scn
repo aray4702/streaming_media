@@ -1,0 +1,17 @@
+name issue_1171_simulcast_random_loss
+describe Simulcast send (C17, #1171): three layers on a 4 Mbps link with 3% random loss and 50 ms one-way delay (100 ms RTT); the receiver views the top layer
+duration 30s
+simulcast 3
+at 0s capacity=4000kbps delay=50ms loss=3% queue=300ms
+# The freezes here come from a packet whose retransmissions are lost too, so ten seeds do not settle their means:
+# on seeds 1-10 libwebrtc M157 is lucky (longest freeze 181 ms, three seeds with none; ours 312), on seeds 121-130
+# the other way round, and on 200 seeds the two are level (longest freeze 235 vs 234 ms, 1.7 vs 1.9 freezes; 227
+# ms before #1171's padding fix). 40 seeds, as the other loss scenarios (program.md 6.1), settle every 20-seed
+# window of the 200.
+compare_seeds 40
+# Both stacks on seeds 1-200: longest freeze at most 644 / 601 ms, freeze total 1729 / 1902 ms, render rate at least
+# 22.4 / 22.3 fps (a seed whose top layer starts late), no audio interruption.
+expect video.longest_freeze_ms < 1000
+expect video.freeze_total_ms < 2500
+expect video.render_fps >= 20
+expect audio.interruptions == 0

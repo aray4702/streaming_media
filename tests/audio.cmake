@@ -14,6 +14,7 @@ sm_add_test_exe(sm_unit_audio LABEL unit DEPS sm::audio
     unit/audio/agc2_rnn_vad_test.cc
     unit/audio/agc2_test.cc
     unit/audio/agc_manager_test.cc
+    unit/audio/audio_mixer_test.cc
     unit/audio/clipping_predictor_test.cc
     unit/audio/dtx_level_mixer_test.cc
     unit/audio/filters_test.cc
@@ -38,9 +39,12 @@ sm_add_test_exe(sm_unit_audio LABEL unit DEPS sm::audio
     Agc1VoiceActivity
     Agc2RnnVad
     AlignmentMixer
+    AudioFrameManipulator
     AudioLevel
+    AudioMixer
     CascadedBiquadFilter
     ConfigSelector
+    FrameCombiner
     GainController2
     Hpf
     MultiChannelContentDetector
@@ -54,9 +58,11 @@ sm_add_test_exe(sm_unit_audio LABEL unit DEPS sm::audio
 sm_add_test_exe(sm_e2e_audio LABEL e2e DEPS sm::audio
   SOURCES
     e2e/audio_e2e_test.cc
+    e2e/audio_mixer_e2e_test.cc
   SUITES
     E2E_Apm
     E2E_AudioLevel
+    E2E_AudioMixer
     E2E_EchoCanceller
     E2E_EchoDelay
     E2E_GainControl
