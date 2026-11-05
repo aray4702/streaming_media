@@ -704,6 +704,16 @@ void Session::SetVideoEncodingData(VideoSendId id, int width, int height, int nu
       static_cast<size_t>(std::max(num_temporal_layers, 0)), static_cast<size_t>(cfg_.send_side.max_packet_size));
 }
 
+void Session::SetVideoSendActive(VideoSendId id, bool active) {
+  if (id.index < 0 || static_cast<size_t>(id.index) >= video_send_.size()) return;
+  video_send_[static_cast<size_t>(id.index)].active = active;
+}
+
+bool Session::video_send_active(VideoSendId id) const {
+  if (id.index < 0 || static_cast<size_t>(id.index) >= video_send_.size()) return false;
+  return video_send_[static_cast<size_t>(id.index)].active;
+}
+
 int Session::SentFrameRate(SendStream& v, Timestamp now) {
   // SendStatisticsProxy::GetSendFrameRate (send_statistics_proxy.cc:1234-1237), which
   // VideoSendStreamImpl::OnBitrateUpdated gives RtpVideoSender (video_send_stream_impl.cc:901).

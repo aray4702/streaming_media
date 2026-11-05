@@ -1310,6 +1310,12 @@ class SendSide {
   void SetVideoHeld(std::function<bool(Timestamp)> held) { video_held_ = std::move(held); }
 
   void CaptureVideo(int64_t t, Timestamp now) {
+    // Simulcast (issue #1173): the SFU pauses or resumes a layer (RtpEncodingParameters::active) at its time.
+    while (sc_ && next_simulcast_active_ < s_.simulcast_active.size() &&
+           s_.simulcast_active[next_simulcast_active_].at.ms() <= t) {
+      const Scenario::SimulcastActive& a = s_.simulcast_active[next_simulcast_active_++];
+      sc_->SetLayerActive(static_cast<size_t>(a.layer), a.active, now + clock0_);
+    }
     if (!(s_.video && t >= next_frame_ms_)) return;
     if (video_held_ && video_held_(now)) {
       ++frames_held_;
@@ -1526,6 +1532,7 @@ class SendSide {
   std::optional<rtp::VideoSendController> video_ctl_;
   // Simulcast (C17).
   std::optional<rtp::SimulcastSendController> sc_;
+  size_t next_simulcast_active_ = 0;  // The next of Scenario::simulcast_active to apply.
   std::vector<rtp::VideoSendId> layer_sends_;
   std::vector<uint32_t> layer_ts_offsets_;
   std::vector<int64_t> layer_frames_, layer_bytes_, layer_keyframes_;

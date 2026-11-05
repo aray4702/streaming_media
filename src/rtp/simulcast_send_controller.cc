@@ -64,6 +64,13 @@ SimulcastSendController::SimulcastSendController(SimulcastSendControllerConfig c
     l.id = id;
     layers_.push_back(l);
   }
+  // The encodings' active state (issue #1173): inactive if the config or the session (a remote description
+  // applied before) says so; the session holds it from here on.
+  for (size_t i = 0; i < layers_.size() && i < cfg_.encoder.simulcast_layers.size(); ++i) {
+    const bool active = cfg_.encoder.simulcast_layers[i].active && session_.video_send_active(layers_[i].id);
+    cfg_.encoder.simulcast_layers[i].active = active;
+    session_.SetVideoSendActive(layers_[i].id, active);
+  }
 }
 
 // RateStatistics::Rate then ::Update over captured frames, as VideoSendController::UpdateFrameRate.
@@ -84,15 +91,40 @@ void SimulcastSendController::UpdateFrameRate(Timestamp now) {
   frame_times_ms_.push_back(t);
 }
 
-void SimulcastSendController::Reconfigure(int width, int height, Timestamp now) {
-  // VideoStreamEncoder::ReconfigureEncoder: the streams for the new size, the codec, a new rate allocator and
-  // bitrate adjuster, the frame dropper reset, and every layer's next frame a keyframe.
+bool SimulcastRequiresEncoderReset(const video::VideoCodec& prev, const video::VideoCodec& next) {
+  // Does not check the max/min bitrate or the max frame rate.
+  if (next.codec_type != prev.codec_type || next.width != prev.width || next.height != prev.height ||
+      next.qp_max != prev.qp_max || next.number_of_simulcast_streams != prev.number_of_simulcast_streams ||
+      next.mode != prev.mode) {
+    return true;
+  }
+  if (next.codec_temporal_layers != prev.codec_temporal_layers) return true;  // VideoCodecH264 / VP8 settings.
+  for (size_t i = 0; i < next.number_of_simulcast_streams; ++i) {
+    const video::SimulcastStream& n = next.simulcast_stream[i];
+    const video::SimulcastStream& p = prev.simulcast_stream[i];
+    if (!n.active) continue;  // No need to reset when the stream is inactive.
+    if (!p.active || n.width != p.width || n.height != p.height ||
+        n.number_of_temporal_layers != p.number_of_temporal_layers || n.qp_max != p.qp_max) {
+      return true;
+    }
+    // SetRates can only represent max_framerate for one layer.
+    if (n.max_framerate != p.max_framerate && n.max_framerate != static_cast<double>(next.max_framerate)) return true;
+  }
+  return false;
+}
+
+void SimulcastSendController::Reconfigure(int width, int height, bool size_changed, Timestamp now) {
+  // VideoStreamEncoder::ReconfigureEncoder: the streams for the size, the codec, a new rate allocator and bitrate
+  // adjuster, the frame dropper reset, and, when the encoder is re-initialized, every layer's next frame a keyframe.
   const bool first = configured_width_ == 0;
   configured_width_ = width;
   configured_height_ = height;
   ++reconfigurations_;
+  const video::VideoCodec prev_codec = codec_;
   streams_ = video::CreateEncoderStreams(cfg_.trials, width, height, cfg_.encoder);
   codec_ = video::SetupCodec(cfg_.encoder, streams_, session_.rates().video_target);
+  const bool reset = first || size_changed || SimulcastRequiresEncoderReset(prev_codec, codec_);
+  if (reset && !first) ++encoder_resets_;
   allocator_ = std::make_unique<video::SimulcastRateAllocator>(codec_, cfg_.trials.base_heavy_tl3_rate_allocation);
   std::vector<DataRate> mins(layers_.size(), DataRate::Zero());
   for (size_t i = 0; i < layers_.size() && i < codec_.number_of_simulcast_streams; ++i) {
@@ -104,6 +136,7 @@ void SimulcastSendController::Reconfigure(int width, int height, Timestamp now) 
   dropper_.Reset();
   for (size_t i = 0; i < layers_.size(); ++i) {
     Layer& l = layers_[i];
+    if (!reset) continue;  // The encoder keeps its streams; SetRates pauses an inactive one (UpdateRates).
     l.next_key = true;
     // SimulcastEncoderAdapter::InitEncode: a stream the codec has no room for (the layer count is limited by
     // the resolution) or that is inactive is not sent.
@@ -114,13 +147,48 @@ void SimulcastSendController::Reconfigure(int width, int height, Timestamp now) 
   const SimulcastAllocationLimits lim = SimulcastAllocationLimitsFor(
       streams_, DataRate::BitsPerSec(std::max(cfg_.encoder.max_bitrate_bps, 0)), false,
       cfg_.encoder.content_type == video::VideoEncoderConfig::ContentType::kScreen);
-  session_.send_side().SetVideoAllocationLimits(lim.min, lim.max, lim.pad_up);
+  // With no active stream VideoSendStreamImpl stops the stream instead (not ported): the limits stay.
+  if (!lim.max.IsZero()) session_.send_side().SetVideoAllocationLimits(lim.min, lim.max, lim.pad_up);
   if (!streams_.empty()) {
     for (const Layer& l : layers_) session_.SetVideoEncodingData(l.id, streams_[0].width, streams_[0].height);
   }
   session_.send_side().OnVideoEncoderReconfigured(now);
   SM_EVENT(cfg_.events, now, "simulcast_send", first ? "configured" : "reconfigured", static_cast<double>(streams_.size()),
            lim.max.kbps());
+}
+
+bool SimulcastSendController::layer_active(size_t layer) const {
+  return layer < cfg_.encoder.simulcast_layers.size() && cfg_.encoder.simulcast_layers[layer].active;
+}
+
+void SimulcastSendController::SetLayerActive(size_t layer, bool active, Timestamp now) {
+  if (layer >= layers_.size()) return;
+  session_.SetVideoSendActive(layers_[layer].id, active);
+  SyncLayerActive(now);
+}
+
+void SimulcastSendController::SyncLayerActive(Timestamp now) {
+  // WebRtcVideoSendStream::SetRtpParameters: a change of an encoding's active state reconfigures the encoder
+  // (CreateVideoEncoderConfig copies it into simulcast_layers[i].active).
+  bool changed = false;
+  const size_t n = std::min(layers_.size(), cfg_.encoder.simulcast_layers.size());
+  for (size_t i = 0; i < n; ++i) {
+    const bool active = session_.video_send_active(layers_[i].id);
+    if (cfg_.encoder.simulcast_layers[i].active == active) continue;
+    cfg_.encoder.simulcast_layers[i].active = active;
+    changed = true;
+    ++active_changes_;
+    SM_EVENT(cfg_.events, now, "simulcast_send", active ? "layer_activated" : "layer_deactivated", static_cast<double>(i), 0);
+  }
+  // VideoStreamEncoder::ConfigureEncoder: without a frame yet, the first frame's ReconfigureEncoder takes the
+  // config; with one, ReconfigureEncoder runs now, and with a rate already set the new allocator's allocation goes
+  // to the encoder at once (SetEncoderRates with the last rate settings).
+  if (!changed || configured_width_ == 0) return;
+  Reconfigure(configured_width_, configured_height_, /*size_changed=*/false, now);
+  if (rates_set_) UpdateRates(session_.rates(), input_fps(), now);
+  // VideoSendStreamImpl::OnEncoderConfigurationChanged, posted to the worker queue: the allocator gets the new
+  // limits (no frame is being packetized here, so it runs now).
+  session_.send_side().RunPendingReconfigure(now);
 }
 
 void SimulcastSendController::UpdateRates(const SendRates& rates, double fps, Timestamp now) {
@@ -227,9 +295,10 @@ SimulcastEncodeDecision SimulcastSendController::OnCapturedFrame(const CapturedF
   // reconfigures the encoder.
   const bool cwnd_drop = session_.send_side().DropCapturedFrame();
   bool reconfigured = false;
+  SyncLayerActive(now);
   if (!cwnd_drop && frame.width > 0 && frame.height > 0 &&
       (frame.width != configured_width_ || frame.height != configured_height_)) {
-    Reconfigure(frame.width, frame.height, now);
+    Reconfigure(frame.width, frame.height, /*size_changed=*/true, now);
     reconfigured = true;
   }
   session_.Start(now);
@@ -273,6 +342,7 @@ SimulcastEncodeDecision SimulcastSendController::OnCapturedFrame(const CapturedF
 }
 
 std::optional<SimulcastEncodeDecision> SimulcastSendController::MaybeEncodePendingFrame(Timestamp now) {
+  SyncLayerActive(now);
   const SendRates rates = session_.rates();
   // OnBitrateUpdated: the allocation arrives (UpdateBitrateAllocation and SetEncoderRates at its time).
   if (allocator_ && rates.video_allocation_updates != 0 && rates.video_allocation_updates != allocation_updates_seen_ &&
@@ -362,6 +432,8 @@ void SimulcastSendController::ExportMetrics(MetricsWriter& w) const {
   w.Counter("reconfigurations", reconfigurations_);
   w.Counter("pending_dropped", pending_dropped_);
   w.Counter("pending_encoded", pending_encoded_);
+  w.Counter("active_changes", active_changes_);
+  w.Counter("encoder_resets", encoder_resets_);
   w.Gauge("streams", static_cast<double>(streams_.size()));
   w.Gauge("active_layers", static_cast<double>(active_layers()));
   for (size_t i = 0; i < layers_.size(); ++i) {
