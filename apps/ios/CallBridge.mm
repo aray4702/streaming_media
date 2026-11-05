@@ -437,7 +437,9 @@ std::string PercentEncode(NSString* s) {
       if (_wsClosed) client->OnSignalingClosed(now);
       if (_hangupRequested.exchange(false)) client->Hangup(now);
       const sm::Timestamp next = client->Step(now);
-      client->Wait(now, next - now);
+      // Wait stamps arrivals from the clock it is given (#1168): read it after Step's work.
+      const sm::Timestamp before_wait = Now();
+      client->Wait(before_wait, next - before_wait);
     }
   });
 }

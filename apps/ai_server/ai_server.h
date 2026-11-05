@@ -174,7 +174,8 @@ class AiServer {
   bool Start(Timestamp now);
   // Signaling, endpoints and audio due by `now`. Returns when it next needs to run.
   Timestamp Step(Timestamp now);
-  // Waits up to `wait` for the calls' sockets (and at most 5 ms, so that the WebSockets are polled too).
+  // Waits up to `wait` for the calls' sockets (and at most 5 ms, so that the WebSockets are polled too). `now` is the
+  // clock at this call: packets are stamped from it (OsSocketServer::Poll, #1168).
   void Wait(Timestamp now, TimeDelta wait);
   // Ends every call, logging its metrics.
   void Shutdown(Timestamp now);

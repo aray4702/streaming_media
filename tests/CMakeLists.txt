@@ -124,6 +124,10 @@ if(SM_WITH_TLS)
     sm_add_test_exe(sm_unit_os_dns LABEL unit DEPS sm_os_sockets
       SOURCES unit/net/os_dns_resolver_test.cc
       SUITES OsDnsResolver)
+    # The OS sockets' datagram arrival times (#1168): the time Poll reads a datagram, not the time before its wait.
+    sm_add_test_exe(sm_unit_os_sockets LABEL unit DEPS sm_os_sockets
+      SOURCES unit/net/os_sockets_test.cc
+      SUITES OsSockets)
     add_executable(sm_interop_coturn interop/coturn_test.cc)
     target_link_libraries(sm_interop_coturn PRIVATE sm_test_framework sm_os_sockets)
     sm_configure_target(sm_interop_coturn)

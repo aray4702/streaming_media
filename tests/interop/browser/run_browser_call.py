@@ -341,9 +341,15 @@ def main():
     profile = tempfile.mkdtemp(prefix='sm-chrome-')
     print('chrome: %s' % chrome)
     print('page:   %s' % url)
-    proc = subprocess.Popen(chrome_command(chrome, profile, url, media=not args.mdns),
-                            stdout=subprocess.DEVNULL,
-                            stderr=subprocess.PIPE if not args.verbose else None)
+    cmd = chrome_command(chrome, profile, url, media=not args.mdns)
+    chrome_log = None
+    if args.bwe_kbps and not args.verbose:
+        # Chrome's probe results (WebRTC's ProbeBitrateEstimator and ProbeController log lines), printed when the
+        # estimate check fails (#1168): they show what Chrome measured from the peer's transport-cc feedback.
+        cmd[1:1] = ['--enable-logging=stderr', '--vmodule=probe_bitrate_estimator=1,probe_controller=1']
+        chrome_log = open(os.path.join(profile, 'chrome_stderr.log'), 'w+')
+    proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL,
+                            stderr=chrome_log or (subprocess.DEVNULL if not args.verbose else None))
     page = None
     try:
         page = relay.result.get(timeout=args.timeout)
@@ -355,6 +361,11 @@ def main():
             proc.wait(timeout=10)
         except subprocess.TimeoutExpired:
             proc.kill()
+        probe_log = []
+        if chrome_log:
+            chrome_log.seek(0)
+            probe_log = [l.rstrip() for l in chrome_log if 'probe_' in l]
+            chrome_log.close()
         shutil.rmtree(profile, ignore_errors=True)
 
     native = None
@@ -370,7 +381,12 @@ def main():
     if page and args.bwe_kbps:
         checks = page.get('checks', {})
         others_ok = bool(checks) and all(v for k, v in checks.items() if k != 'bweRampsUp')
-        ok = others_ok and bwe_check(args, page.get('bweTrace') or [])
+        bwe_ok = bwe_check(args, page.get('bweTrace') or [])
+        if not bwe_ok:
+            print("Chrome's probes (%d log lines):" % len(probe_log))
+            for line in probe_log[:60]:
+                print('[chrome] ' + line[line.find('probe_'):])
+        ok = others_ok and bwe_ok
     if page:
         for line in page.get('log', []):
             print('[page] ' + line)

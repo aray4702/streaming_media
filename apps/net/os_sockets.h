@@ -7,8 +7,10 @@
 // The library reads no clock and starts no thread; the test's event loop
 // plays libwebrtc's PhysicalSocketServer: Poll(now, wait) waits on every open
 // socket with poll(2) and raises the read, write, connect and close events
-// (PhysicalSocket's dispatcher), passing the `now` the loop read from its
-// clock. TCP sockets are made by the library's CreateClientTcpSocket, which
+// (PhysicalSocket's dispatcher). `now` is the loop's clock when it calls Poll;
+// an event or datagram gets the time Poll handles it, `now` plus the time
+// since the call on the steady clock, as libwebrtc's AsyncUDPSocket stamps a
+// datagram with the clock when it reads it (#1168). TCP sockets are made by the library's CreateClientTcpSocket, which
 // adds the STUN framing and, for TLS, the SSL adapter, as
 // BasicPacketSocketFactory does over PhysicalSocket.
 //
@@ -55,7 +57,7 @@ class OsUdpSocket final : public p2p::AsyncPacketSocket {
  private:
   friend class OsSocketServer;
   OsUdpSocket(OsSocketServer* server, int fd, p2p::SocketAddress local) : server_(server), fd_(fd), local_(local) {}
-  void OnReadable(Timestamp now);
+  void OnReadable();
 
   OsSocketServer* server_;
   int fd_;
@@ -115,7 +117,12 @@ class OsSocketServer final : public p2p::PacketSocketFactory, public p2p::Stream
                                                                 const p2p::PacketSocketTcpOptions& options) override;
   std::unique_ptr<p2p::Socket> CreateStreamSocket(p2p::IpFamily family) override;
 
-  // Waits up to `wait` for socket events and dispatches them with `now`.
+  // Waits up to `wait` for socket events and dispatches them. `now` is the caller's clock at this call (read it
+  // just before); each event and each datagram's arrival_time is `now` plus the steady-clock time Poll has run
+  // until it is handled (read, for a datagram), never `now` itself (#1168). Stamping every datagram with `now`,
+  // the time before the wait, put a packet that arrived 8 ms into a 10 ms wait 8 ms early, and gave a batch
+  // drained together one arrival time. The sender's congestion control reads these arrival times back from
+  // transport-wide feedback, and its probes (15-20 ms clusters) measured the link rate from them.
   void Poll(Timestamp now, TimeDelta wait);
 
   // Every packet socket the factory hands out is wrapped so that a test can
@@ -129,9 +136,15 @@ class OsSocketServer final : public p2p::PacketSocketFactory, public p2p::Stream
   friend class OsTcpSocket;
   std::unique_ptr<p2p::AsyncPacketSocket> Wrap(std::unique_ptr<p2p::AsyncPacketSocket> socket);
 
+  // The caller's clock now: the `now` Poll was given plus the steady time since.
+  Timestamp ReadTime() const;
+  static int64_t SteadyMicros();
+
   std::set<OsUdpSocket*> udp_;
   std::set<OsTcpSocket*> tcp_;
   Tap tap_;
+  Timestamp poll_now_ = Timestamp::Micros(0);
+  int64_t poll_start_us_ = 0;
 };
 
 // sockaddr_in conversions.
