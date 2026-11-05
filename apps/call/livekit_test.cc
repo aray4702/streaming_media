@@ -8,8 +8,16 @@
 // - LiveKitClient.GroupState (C20, #1172): participants joining and leaving (ParticipantUpdate), the active speaker
 //   from SpeakersChanged, our mute and video-off announced with MuteTrackRequest, a server mute applied, and
 //   LiveKit's data-only first subscriber offer answered on a second connection (target SUBSCRIBER).
+// - LiveKitClient.GroupPlayoutLimitsFiveLoudTalkers (#1175): the group playout mixer (libwebrtc M157's AudioMixerImpl)
+//   with five loud talkers: all five in the mix, none clipped (the limiter, where a plain sum saturates), and a talker
+//   who leaves is removed.
 // The live path (a LiveKit server, Chrome and the AI server) is interop.WebApp.group_native and
 // interop.WebApp.group_all (apps/web/test_group_call.py).
+#include <algorithm>
+#include <cmath>
+#include <cstdio>
+#include <numbers>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -383,4 +391,121 @@ SM_TEST(LiveKitClient, GroupState) {
     SM_EXPECT_TRUE(client.stats().state != apps::CallState::kEnded);
   }
   client.Hangup(now);
+}
+
+namespace {
+
+constexpr double kTalkerHz[5] = {300, 500, 700, 1100, 1300};  // One tone per talker.
+constexpr double kTalkerAmplitude = 0.8;                      // -1.9 dBFS each.
+
+double TalkerSample(int talker, size_t n) {
+  return kTalkerAmplitude * std::sin(2 * std::numbers::pi * kTalkerHz[talker] * static_cast<double>(n) /
+                                     apps::GroupPlayoutMixer::kSampleRateHz);
+}
+
+// The power of `x` at `hz` (Goertzel), relative to a full-scale sine's.
+double ToneDb(std::span<const float> x, double hz) {
+  const double c = 2 * std::cos(2 * std::numbers::pi * hz / apps::GroupPlayoutMixer::kSampleRateHz);
+  double s1 = 0, s2 = 0;
+  for (float v : x) {
+    const double s0 = v + c * s1 - s2;
+    s2 = s1;
+    s1 = s0;
+  }
+  const double n = static_cast<double>(x.size());
+  return 10 * std::log10((s1 * s1 + s2 * s2 - c * s1 * s2) / (n * n / 4));
+}
+
+bool AtRail(float v) { return std::abs(v) >= 32767.f / 32768.f; }
+
+// Samples at full scale, and flat tops (runs of at least two at full scale), as tests/e2e/mixer_sims.h counts them.
+size_t RailSamples(std::span<const float> x) { return static_cast<size_t>(std::count_if(x.begin(), x.end(), AtRail)); }
+size_t FlatTops(std::span<const float> x) {
+  size_t runs = 0, len = 0;
+  for (float v : x) {
+    len = AtRail(v) ? len + 1 : 0;
+    if (len == 2) ++runs;
+  }
+  return runs;
+}
+
+}  // namespace
+
+SM_TEST(LiveKitClient, GroupPlayoutLimitsFiveLoudTalkers) {
+  constexpr size_t k10ms = apps::GroupPlayoutMixer::k10ms;
+  apps::GroupPlayoutMixer mixer;
+  size_t sample = 0;
+  int calls[5] = {};
+  std::vector<float> out, sum;
+  // 10 ms of the first `talkers`: the mixer's output in `out`, and in `sum` what the app played before #1175 (the
+  // float sum, saturated).
+  auto ten_ms = [&](int talkers) {
+    for (int t = 0; t < talkers; ++t) {
+      mixer.Track("mid" + std::to_string(t), 1000 + t, [&, t, start = sample](std::span<float> x) {
+        ++calls[t];
+        for (size_t i = 0; i < x.size(); ++i) x[i] = static_cast<float>(TalkerSample(t, start + i));
+      });
+    }
+    std::vector<float> pcm(k10ms, 1.f);
+    mixer.Mix(pcm);
+    for (size_t i = 0; i < k10ms; ++i) {
+      double plain = 0;
+      for (int t = 0; t < talkers; ++t) plain += TalkerSample(t, sample + i);
+      out.push_back(pcm[i]);
+      sum.push_back(static_cast<float>(std::clamp(plain, -1.0, 1.0)));
+    }
+    sample += k10ms;
+  };
+
+  // One second of all five.
+  for (int f = 0; f < 100; ++f) ten_ms(5);
+  const audio::AudioMixerStats& stats = mixer.mixer().stats();
+  SM_EXPECT_EQ(mixer.num_sources(), size_t{5});
+  SM_EXPECT_EQ(stats.last_mixed_sources, size_t{5});
+  SM_EXPECT_EQ(stats.last_output_rate_hz, 48000);
+  SM_EXPECT_GE(stats.limited_mixes, uint64_t{99});
+  for (int c : calls) SM_EXPECT_EQ(c, 100);
+  float peak = 0;
+  for (float v : out) peak = std::max(peak, std::abs(v));
+  const size_t sum_flat = FlatTops(sum), mix_flat = FlatTops(out);
+  const size_t sum_rail = RailSamples(sum), mix_rail = RailSamples(out);
+  std::printf("five talkers: plain sum %zu flat tops (%zu samples at full scale), mixer %zu (%zu); mixer peak %.4f\n",
+              sum_flat, sum_rail, mix_flat, mix_rail, peak);
+  // The sum flattens hundreds of peaks. The limiter's saturation region scales a peak to exactly full scale
+  // (interpolated_gain_curve.cc), so a peak may touch it for a sample or two, as in libwebrtc (E2E_AudioMixer's
+  // criterion): 100 times fewer flat tops, 20 times fewer samples at full scale.
+  SM_EXPECT_GT(sum_flat, size_t{500});
+  SM_EXPECT_LE(mix_flat * 100, sum_flat);
+  SM_EXPECT_LE(mix_rail * 20, sum_rail);
+  SM_EXPECT_GT(peak, 0.5f);  // And still loud.
+  // Every talker is in the mix (M157 mixes every source; there is no "3 loudest"), at about the same level.
+  const std::span<const float> settled(out.begin() + 10 * k10ms, out.end());
+  double lo = 0, hi = -1e9;
+  for (int t = 0; t < 5; ++t) {
+    const double db = ToneDb(settled, kTalkerHz[t]);
+    std::printf("  %4.0f Hz: %.1f dB\n", kTalkerHz[t], db);
+    lo = std::min(lo, db);
+    hi = std::max(hi, db);
+  }
+  SM_EXPECT_GT(lo, -26.0);
+  SM_EXPECT_LT(hi - lo, 1.0);
+
+  // The fifth talker leaves: removed at the next Mix, never asked again, and gone from the mix.
+  out.clear();
+  for (int f = 0; f < 50; ++f) ten_ms(4);
+  SM_EXPECT_EQ(mixer.num_sources(), size_t{4});
+  SM_EXPECT_EQ(mixer.mixer().num_sources(), size_t{4});
+  SM_EXPECT_EQ(calls[4], 100);
+  SM_EXPECT_EQ(calls[0], 150);
+  const std::span<const float> after(out.begin() + 10 * k10ms, out.end());
+  const double gone = ToneDb(after, kTalkerHz[4]), staying = ToneDb(after, kTalkerHz[0]);
+  std::printf("  after the fifth leaves: %.0f Hz %.1f dB, %.0f Hz %.1f dB\n", kTalkerHz[4], gone, kTalkerHz[0],
+              staying);
+  SM_EXPECT_LT(gone - staying, -40.0);
+
+  // Everyone leaves: silence.
+  out.clear();
+  ten_ms(0);
+  SM_EXPECT_EQ(mixer.num_sources(), size_t{0});
+  for (float v : out) SM_EXPECT_EQ(v, 0.f);
 }

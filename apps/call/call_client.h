@@ -47,8 +47,8 @@
 //     OnRemoveTrack). A track is mapped to its participant by its msid (LiveKit's stream id "PA_<sid>|TR_<sid>", the
 //     track id the track sid) and the participants' TrackInfo from the JoinResponse and ParticipantUpdates.
 //   Media of a group: each remote audio track decodes with its own Opus decoder (the endpoint's decoder factory), and
-//   the played-out audio is the sum of every remote stream's 10 ms (up to 5; libwebrtc's AudioMixerImpl and its
-//   limiter are not in compare/webrtc/reference, so this is a plain saturating mix); each remote video track decodes
+//   the played-out audio is libwebrtc M157's AudioMixerImpl over every remote stream (GroupPlayoutMixer, #1175: each
+//   track a source, mono at 48 kHz, summed in FloatS16 with AGC2's limiter); each remote video track decodes
 //   with its own VideoToolbox decoder, and its latest frame is kept per participant (TakeParticipantVideo). Video
 //   subscriptions ask for `livekit_receive_width` x `livekit_receive_height` (UpdateTrackSettings), from which the
 //   server picks a simulcast layer, as the SDKs' adaptive stream does for a tile of that size.
@@ -79,6 +79,7 @@
 #include "livekit_proto.h"
 #include "os_dns_resolver.h"
 #include "os_sockets.h"
+#include "sm/audio/audio_mixer.h"
 #include "sm/core/units.h"
 #include "sm/p2p/port_allocator.h"
 #include "sm/video/frame.h"
@@ -154,6 +155,40 @@ struct GroupParticipant {
   int video_width = 0, video_height = 0;
   double video_fps = 0;  // Decoded, over the last second.
   std::string ToJson() const;
+};
+
+// A group call's playout (#1175): libwebrtc M157's AudioMixerImpl, as WebRtcVoiceEngine mixes a call's
+// AudioReceiveStreams. Every remote audio track is a source (AudioMixerSource, as ChannelReceive), every source that
+// plays is in the mix (M157 picks no loudest few), and FrameCombiner sums them in FloatS16 with AGC2's limiter once
+// more than one is registered, so loud talkers together don't clip. Mono at 48 kHz, the Opus decoders' and the
+// device's rate. Each 10 ms the caller names the tracks it has (Track), then mixes (Mix); a track not named since the
+// last Mix leaves the mixer.
+class GroupPlayoutMixer {
+ public:
+  static constexpr int kSampleRateHz = 48000;
+  static constexpr size_t k10ms = kSampleRateHz / 100;
+  // A track's next 10 ms (k10ms samples, floats in [-1, 1]) into `x`; called from Mix.
+  using GetAudio = std::function<void(std::span<float> x)>;
+
+  // The track `key` (its mid) plays this 10 ms; added on first use.
+  void Track(const std::string& key, uint32_t ssrc, GetAudio get_audio);
+  // Removes the tracks not named since the last Mix, then mixes 10 ms of the rest into `pcm` ([-1, 1] floats).
+  void Mix(std::span<float> pcm);
+  size_t num_sources() const { return sources_.size(); }
+  const audio::AudioMixerImpl& mixer() const { return mixer_; }
+
+ private:
+  struct Source : audio::AudioMixerSource {
+    AudioFrameInfo GetAudioFrameWithInfo(int sample_rate_hz, audio::AudioFrame* frame) override;
+    uint32_t Ssrc() const override { return ssrc; }
+    int PreferredSampleRate() const override { return kSampleRateHz; }
+    uint32_t ssrc = 0;
+    GetAudio get_audio;
+    bool named = false;
+  };
+  std::map<std::string, std::unique_ptr<Source>> sources_;  // Outlive the mixer, which points at them.
+  audio::AudioMixerImpl mixer_;
+  audio::AudioFrame frame_;
 };
 
 // The capture chain of libwebrtc's iOS client (#1124): WebRtcVoiceEngine::ApplyOptions under WEBRTC_IOS sets

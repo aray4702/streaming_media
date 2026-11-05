@@ -358,6 +358,8 @@ struct CallClient::LiveKit {
   std::vector<std::string> settings_sent;
   std::map<std::string, GroupParticipant> stats;  // identity -> the last second's receive stats
   Timestamp next_refresh = Timestamp::MinusInfinity();
+  // The playout mix (#1175): one mixer source per remote audio track, by mid.
+  GroupPlayoutMixer mixing;
 };
 
 // --- CallStats -------------------------------------------------------------------------------------------------------
@@ -959,24 +961,69 @@ void CallClient::RefreshGroup(Timestamp now) {
 void CallClient::MixGroupAudio(std::span<float> pcm, Timestamp now) {
   std::fill(pcm.begin(), pcm.end(), 0.f);
   if (!sub_ || !sub_->session()) return;
-  std::array<float, k10ms> x{};
+  // Every remote audio track is a mixer source, as each AudioReceiveStream is one of libwebrtc's AudioMixerImpl
+  // (#1175): sources come and go with the subscriber's tracks. A source's 10 ms is ChannelReceive::
+  // GetAudioFrameWithInfo's: the track's jitter buffer, which also feeds the meters and the remote-audio sink.
+  rtp::Session* session = sub_->session();
   for (const pc::RemoteTrack& t : sub_->remote_tracks()) {
     if (!t.audio) continue;
-    x.fill(0.f);
-    const timing::AudioOperation op = sub_->session()->GetAudio(*t.audio, x, now);
-    const std::string identity = TrackIdentity(t.track_id, t.stream_ids);
-    double energy = 0;
-    for (float v : x) energy += static_cast<double>(v) * v;
-    const double rms = std::sqrt(energy / k10ms);
-    LiveKit::Meter& m = lk_->meters[identity];
-    m.level = std::max(rms, m.level * 0.9);  // Fast attack, about 100 ms decay.
-    if (rms > 0.01) m.last_loud = now;       // -40 dBFS, as sm_call_smoke's "audio playing".
-    if (remote_audio_sink_ && !identity.empty()) {
-      remote_audio_sink_(identity, x, op == timing::AudioOperation::kExpand, now);
-    }
-    for (size_t i = 0; i < pcm.size() && i < k10ms; ++i) pcm[i] += x[i];
+    lk_->mixing.Track(t.mid, t.ssrc,
+                      [this, session, id = *t.audio, identity = TrackIdentity(t.track_id, t.stream_ids),
+                       now](std::span<float> x) {
+                        const timing::AudioOperation op = session->GetAudio(id, x, now);
+                        double energy = 0;
+                        for (float v : x) energy += static_cast<double>(v) * v;
+                        const double rms = std::sqrt(energy / static_cast<double>(x.size()));
+                        LiveKit::Meter& m = lk_->meters[identity];
+                        m.level = std::max(rms, m.level * 0.9);  // Fast attack, about 100 ms decay.
+                        if (rms > 0.01) m.last_loud = now;       // -40 dBFS, as sm_call_smoke's "audio playing".
+                        if (remote_audio_sink_ && !identity.empty()) {
+                          remote_audio_sink_(identity, x, op == timing::AudioOperation::kExpand, now);
+                        }
+                      });
   }
-  for (float& v : pcm) v = std::clamp(v, -1.f, 1.f);
+  lk_->mixing.Mix(pcm);
+}
+
+// --- GroupPlayoutMixer -----------------------------------------------------------------------------------------------
+
+void GroupPlayoutMixer::Track(const std::string& key, uint32_t ssrc, GetAudio get_audio) {
+  std::unique_ptr<Source>& src = sources_[key];
+  if (!src) {
+    src = std::make_unique<Source>();
+    mixer_.AddSource(src.get());
+  }
+  src->ssrc = ssrc;
+  src->get_audio = std::move(get_audio);
+  src->named = true;
+}
+
+void GroupPlayoutMixer::Mix(std::span<float> pcm) {
+  for (auto it = sources_.begin(); it != sources_.end();) {
+    if (it->second->named) {
+      it->second->named = false;
+      ++it;
+      continue;
+    }
+    mixer_.RemoveSource(it->second.get());
+    it = sources_.erase(it);
+  }
+  // Mono at the rate the sources prefer: the sum in FloatS16 and AGC2's limiter (FrameCombiner), back to [-1, 1].
+  mixer_.Mix(1, &frame_);
+  const std::span<const int16_t> d = frame_.data();
+  std::fill(pcm.begin(), pcm.end(), 0.f);
+  for (size_t i = 0; i < pcm.size() && i < d.size(); ++i) pcm[i] = static_cast<float>(d[i]) / 32768.f;
+}
+
+audio::AudioMixerSource::AudioFrameInfo GroupPlayoutMixer::Source::GetAudioFrameWithInfo(int sample_rate_hz,
+                                                                                         audio::AudioFrame* frame) {
+  // 10 ms at kSampleRateHz, the only rate PreferredSampleRate asks for.
+  std::array<float, k10ms> x{};
+  if (get_audio) get_audio(x);
+  std::array<int16_t, k10ms> s16{};
+  for (size_t i = 0; i < k10ms; ++i) s16[i] = audio::FloatS16ToS16(x[i] * 32768.f);  // FloatToS16 (audio_util.h).
+  frame->UpdateFrame(0, s16.data(), k10ms, sample_rate_hz, 1);
+  return AudioFrameInfo::kNormal;
 }
 
 std::vector<GroupParticipant> CallClient::participants() const {
