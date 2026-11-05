@@ -256,7 +256,9 @@ void InterleaveToAudioFrame(std::span<const float> mixing, size_t spc, size_t nu
 }  // namespace
 
 FrameCombiner::FrameCombiner(bool use_limiter)
-    : limiter_(static_cast<int>(kMaximumChannelSize)), use_limiter_(use_limiter) {
+    : limiter_(static_cast<int>(kMaximumChannelSize)),
+      use_limiter_(use_limiter),
+      mixing_buffer_(std::make_unique<MixingBuffer>()) {
   static_assert(kMaximumChannelSize * kMaximumNumberOfChannels <= AudioFrame::kMaxDataSizeSamples);
 }
 
@@ -294,7 +296,7 @@ void FrameCombiner::Combine(std::span<AudioFrame* const> mix_list_in, size_t num
   // libwebrtc DCHECKs this and clamps in release builds (FrameCombinerDeathTest.DebugBuildCrashesWithHighRate).
   assert(samples_per_channel <= kMaximumChannelSize);
   samples_per_channel = std::min(samples_per_channel, kMaximumChannelSize);
-  const std::span<float> mixing(mixing_buffer_.data(), samples_per_channel * number_of_channels);
+  const std::span<float> mixing(mixing_buffer_->data(), samples_per_channel * number_of_channels);
   MixToFloatFrame(mix_list, mixing, samples_per_channel, number_of_channels);
 
   if (use_limiter_) {

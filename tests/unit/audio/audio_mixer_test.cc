@@ -106,19 +106,20 @@ SM_TEST(AudioMixer, UpdatesSourceCountHistogram) {
   constexpr int kGroup1 = 5;
   constexpr int kGroup2 = 3;
   AudioMixerImpl mixer;
-  FakeSource participants[kGroup1 + kGroup2];
+  // On the heap: each source holds a 15 KB AudioFrame, and 8 of them overflow Emscripten's 64 KB stack.
+  std::vector<FakeSource> participants(kGroup1 + kGroup2);
   for (int i = 0; i < kGroup1; ++i) {
-    SM_EXPECT_TRUE(mixer.AddSource(&participants[i]));
+    SM_EXPECT_TRUE(mixer.AddSource(&participants[static_cast<size_t>(i)]));
     SM_EXPECT_EQ(mixer.stats().max_source_count, static_cast<size_t>(i + 1));
   }
-  for (int i = 0; i < kGroup1; ++i) mixer.RemoveSource(&participants[i]);
+  for (int i = 0; i < kGroup1; ++i) mixer.RemoveSource(&participants[static_cast<size_t>(i)]);
   // Adding the first group again adds nothing new.
   for (int i = 0; i < kGroup1; ++i) {
-    SM_EXPECT_TRUE(mixer.AddSource(&participants[i]));
+    SM_EXPECT_TRUE(mixer.AddSource(&participants[static_cast<size_t>(i)]));
     SM_EXPECT_EQ(mixer.stats().max_source_count, static_cast<size_t>(kGroup1));
   }
   for (int i = kGroup1; i < kGroup1 + kGroup2; ++i) {
-    SM_EXPECT_TRUE(mixer.AddSource(&participants[i]));
+    SM_EXPECT_TRUE(mixer.AddSource(&participants[static_cast<size_t>(i)]));
     SM_EXPECT_EQ(mixer.stats().max_source_count, static_cast<size_t>(i + 1));
   }
 }

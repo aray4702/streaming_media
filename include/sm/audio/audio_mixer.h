@@ -173,8 +173,11 @@ class FrameCombiner {
  private:
   agc2::Limiter limiter_;
   const bool use_limiter_;
-  // Deinterleaved FloatS16: channel c at [c * spc, (c + 1) * spc).
-  std::array<float, kMaximumChannelSize * kMaximumNumberOfChannels> mixing_buffer_{};
+  // Deinterleaved FloatS16: channel c at [c * spc, (c + 1) * spc). libwebrtc keeps it inline, but
+  // its mixer only lives on the heap (AudioMixerImpl::Create); this one may be a local, and 15 KB
+  // inline would take a quarter of Emscripten's 64 KB default stack (#1177).
+  using MixingBuffer = std::array<float, kMaximumChannelSize * kMaximumNumberOfChannels>;
+  std::unique_ptr<MixingBuffer> mixing_buffer_;
   std::vector<AudioFrame*> kept_;  // The frames RemixFrame could remix.
   uint64_t remix_unsupported_ = 0;
 };
