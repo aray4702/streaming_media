@@ -1511,7 +1511,10 @@ ALGORITHMS = [
                "`PushSincResampler` now also takes as int16, as libwebrtc. Differences: scratch buffers are members "
                "rather than malloc'ed per call, and the fixed-point sums wrap explicitly where libwebrtc relies on "
                "overflow under RTC_NO_SANITIZE (same output); the ARM/MIPS assembly variants are not ported. The "
-               "library's v1 Kaiser `Resampler` was retired in #565.",
+               "library's v1 Kaiser `Resampler` was retired in #565. "
+               "The native allpass keeps its filter state in local variables during each filter loop, which is "
+               "faster than libwebrtc's code on AArch64 (where clang pairs libwebrtc's per-sample state accesses "
+               "into ldp/stp), with bit-exact output (Owner, 2026-11-05).",
          verification="#565: `SplResampler` is bit-exact with libwebrtc's own `resampler.cc` and `resample*.c` "
                       "compiled from `reference/`, on all 94 rate pairs and channel counts that take 10 ms blocks "
                       "(8, 11, 16, 22, 32, 44, 48 and 96 kHz, mono and stereo; golden hashes in "
