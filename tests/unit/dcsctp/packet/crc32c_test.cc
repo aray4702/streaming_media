@@ -12,7 +12,9 @@
 #include "sm/dcsctp/packet/crc32c.h"
 
 #include <array>
+#include <cstddef>
 #include <cstdint>
+#include <span>
 
 #include "gmock_lite.h"
 
@@ -57,6 +59,30 @@ SM_TEST(DcsctpCrc32Test, TestVectors) {
   SM_EXPECT_EQ(GenerateCrc32C(k32Incrementing), 0x4e79dd46U);
   SM_EXPECT_EQ(GenerateCrc32C(k32Decrementing), 0x5cdb3f11U);
   SM_EXPECT_EQ(GenerateCrc32C(kISCSICommandPDU), 0x563a96d9U);
+}
+
+// Not in libwebrtc: GenerateCrc32C takes 8 bytes per step (CRC instructions
+// or slicing-by-8) and the rest bytewise, so check every length up to 80 at
+// every alignment against the bitwise definition of CRC-32C.
+SM_TEST(DcsctpCrc32Test, MatchesBitwiseForAllLengthsAndAlignments) {
+  std::array<uint8_t, 96> buf{};
+  uint32_t seed = 12345;
+  for (uint8_t& b : buf) {
+    seed = seed * 1664525u + 1013904223u;
+    b = static_cast<uint8_t>(seed >> 24);
+  }
+  for (size_t offset = 0; offset < 8; ++offset) {
+    for (size_t len = 0; offset + len <= 88; ++len) {
+      uint32_t crc = 0xFFFFFFFFu;
+      for (size_t i = 0; i < len; ++i) {
+        crc ^= buf[offset + i];
+        for (int bit = 0; bit < 8; ++bit) crc = (crc & 1) ? (crc >> 1) ^ 0x82F63B78u : crc >> 1;
+      }
+      crc ^= 0xFFFFFFFFu;
+      const uint32_t expected = (crc >> 24) | ((crc >> 8) & 0xFF00u) | ((crc << 8) & 0xFF0000u) | (crc << 24);
+      SM_EXPECT_EQ(GenerateCrc32C(std::span<const uint8_t>(buf.data() + offset, len)), expected);
+    }
+  }
 }
 
 }  // namespace
