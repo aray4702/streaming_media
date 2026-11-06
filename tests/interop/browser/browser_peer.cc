@@ -614,9 +614,12 @@ int main(int argc, char** argv) {
     }
     Timestamp next = ep.NextProcessTime(now);
     next = std::min({next, next_audio, next_video, next_pull, now + TimeDelta::Millis(10)});
-    // Poll stamps arrivals from the clock at the call (#1168), so read it fresh after this iteration's work.
+    // Poll maps arrival times onto the clock at the call (#1168), so read it fresh after this iteration's work. A
+    // datagram that arrived during the work keeps its kernel time, down to the `now` the endpoint was last given
+    // (#1190): on a loaded host this thread is often descheduled before it gets to Poll.
+    const Timestamp worked = now;
     now = Now();
-    sockets.Poll(now, std::clamp(next - now, TimeDelta::Zero(), TimeDelta::Millis(10)));
+    sockets.Poll(now, std::clamp(next - now, TimeDelta::Zero(), TimeDelta::Millis(10)), worked);
     now = Now();
     resolver.Poll(now);
   }

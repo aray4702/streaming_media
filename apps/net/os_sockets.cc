@@ -7,6 +7,8 @@
 #include <netinet/tcp.h>
 #include <poll.h>
 #include <sys/socket.h>
+#include <sys/time.h>
+#include <sys/uio.h>
 #include <unistd.h>
 
 #include <algorithm>
@@ -14,6 +16,7 @@
 #include <cerrno>
 #include <chrono>
 #include <cstring>
+#include <optional>
 #include <utility>
 
 #include "sm/p2p/async_tcp_socket.h"
@@ -165,14 +168,30 @@ void OsUdpSocket::OnReadable() {
   std::array<uint8_t, 65536> buf;
   while (fd_ >= 0 && server_) {
     sockaddr_in from{};
-    socklen_t len = sizeof(from);
-    const ssize_t n = ::recvfrom(fd_, buf.data(), buf.size(), 0, reinterpret_cast<sockaddr*>(&from), &len);
+    iovec iov{buf.data(), buf.size()};
+    alignas(cmsghdr) char control[CMSG_SPACE(sizeof(timeval))];
+    msghdr msg{};
+    msg.msg_name = &from;
+    msg.msg_namelen = sizeof(from);
+    msg.msg_iov = &iov;
+    msg.msg_iovlen = 1;
+    msg.msg_control = control;
+    msg.msg_controllen = sizeof(control);
+    const ssize_t n = ::recvmsg(fd_, &msg, 0);
     if (n < 0) return;
+    // The kernel's receive time (SO_TIMESTAMP), when it gave one (#1190): see OsSocketServer::Poll.
+    std::optional<int64_t> kernel_us;
+    for (cmsghdr* c = CMSG_FIRSTHDR(&msg); c != nullptr; c = CMSG_NXTHDR(&msg, c)) {
+      if (c->cmsg_level == SOL_SOCKET && c->cmsg_type == SCM_TIMESTAMP && c->cmsg_len >= CMSG_LEN(sizeof(timeval))) {
+        timeval tv;
+        std::memcpy(&tv, CMSG_DATA(c), sizeof(tv));
+        kernel_us = int64_t{tv.tv_sec} * 1'000'000 + tv.tv_usec;
+      }
+    }
     p2p::ReceivedPacket p;
     p.payload = std::span<const uint8_t>(buf.data(), static_cast<size_t>(n));
     p.source_address = FromSockaddr(&from);
-    // The time it was read, not the time Poll was called (#1168): see OsSocketServer::Poll.
-    p.arrival_time = server_->ReadTime();
+    p.arrival_time = server_->ArrivalTime(kernel_us);
     NotifyPacketReceived(p);
   }
 }
@@ -318,6 +337,10 @@ std::unique_ptr<p2p::AsyncPacketSocket> OsSocketServer::CreateUdpSocket(const So
   const int fd = ::socket(AF_INET, SOCK_DGRAM, 0);
   if (fd < 0) return nullptr;
   NonBlocking(fd);
+  // Each datagram carries the kernel's receive time (#1190), which libwebrtc's PhysicalSocket also reads
+  // (SCM_TIMESTAMP). Where the option is refused, datagrams are stamped when read.
+  const int on = 1;
+  setsockopt(fd, SOL_SOCKET, SO_TIMESTAMP, &on, sizeof(on));
   bool bound = false;
   if (min_port == 0 && max_port == 0) {
     sockaddr_in sin;
@@ -359,7 +382,7 @@ std::unique_ptr<p2p::AsyncPacketSocket> OsSocketServer::CreateClientTcpSocket(
   return Wrap(p2p::CreateClientTcpSocket(*this, now, local_address, remote_address, options));
 }
 
-void OsSocketServer::Poll(Timestamp now, TimeDelta wait) {
+void OsSocketServer::Poll(Timestamp now, TimeDelta wait, std::optional<Timestamp> earliest) {
   std::vector<pollfd> fds;
   std::vector<std::pair<OsUdpSocket*, OsTcpSocket*>> owners;
   for (OsUdpSocket* s : udp_) {
@@ -374,6 +397,7 @@ void OsSocketServer::Poll(Timestamp now, TimeDelta wait) {
   }
   const int timeout_ms = static_cast<int>(std::max<int64_t>(0, wait.ms()));
   poll_now_ = now;
+  poll_floor_ = std::min(now, earliest.value_or(now));
   poll_start_us_ = SteadyMicros();
   if (::poll(fds.data(), fds.size(), timeout_ms) <= 0) return;
   for (size_t i = 0; i < fds.size(); ++i) {
@@ -382,7 +406,7 @@ void OsSocketServer::Poll(Timestamp now, TimeDelta wait) {
     if (OsUdpSocket* u = owners[i].first) {
       if (udp_.count(u) && u->fd_ == fds[i].fd) u->OnReadable();
     } else if (OsTcpSocket* t = owners[i].second) {
-      if (tcp_.count(t) && t->fd_ == fds[i].fd) t->OnEvents(ReadTime(), fds[i].revents);
+      if (tcp_.count(t) && t->fd_ == fds[i].fd) t->OnEvents(ArrivalTime(std::nullopt), fds[i].revents);
     }
   }
 }
@@ -394,6 +418,26 @@ int64_t OsSocketServer::SteadyMicros() {
 
 Timestamp OsSocketServer::ReadTime() const {
   return poll_now_ + TimeDelta::Micros(std::max<int64_t>(0, SteadyMicros() - poll_start_us_));
+}
+
+int64_t OsSocketServer::WallMicros() {
+  timeval tv;
+  gettimeofday(&tv, nullptr);
+  return int64_t{tv.tv_sec} * 1'000'000 + tv.tv_usec;
+}
+
+Timestamp OsSocketServer::ArrivalTime(std::optional<int64_t> kernel_us) {
+  const Timestamp read = ReadTime();
+  Timestamp t = read;
+  if (kernel_us) {
+    // How long the datagram waited in the socket, measured on the kernel's clock (SO_TIMESTAMP's is the wall
+    // clock), taken off the read time on the caller's clock: never before Poll's `earliest`, never after the read.
+    t -= TimeDelta::Micros(std::clamp<int64_t>(WallMicros() - *kernel_us, 0, (read - poll_floor_).us()));
+  }
+  // The callbacks see their times in the order they run, across sockets too (the ICE code takes them as `now`).
+  if (last_arrival_ <= read) t = std::max(t, last_arrival_);
+  last_arrival_ = t;
+  return t;
 }
 
 }  // namespace sm::interop

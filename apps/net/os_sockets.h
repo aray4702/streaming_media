@@ -8,9 +8,10 @@
 // plays libwebrtc's PhysicalSocketServer: Poll(now, wait) waits on every open
 // socket with poll(2) and raises the read, write, connect and close events
 // (PhysicalSocket's dispatcher). `now` is the loop's clock when it calls Poll;
-// an event or datagram gets the time Poll handles it, `now` plus the time
-// since the call on the steady clock, as libwebrtc's AsyncUDPSocket stamps a
-// datagram with the clock when it reads it (#1168). TCP sockets are made by the library's CreateClientTcpSocket, which
+// an event gets the time Poll handles it, `now` plus the time since the call
+// on the steady clock (#1168), and a datagram the kernel's receive time moved
+// onto that clock, as libwebrtc's PhysicalSocket and AsyncUDPSocket do (#1190;
+// see Poll). TCP sockets are made by the library's CreateClientTcpSocket, which
 // adds the STUN framing and, for TLS, the SSL adapter, as
 // BasicPacketSocketFactory does over PhysicalSocket.
 //
@@ -22,6 +23,7 @@
 #include <functional>
 #include <map>
 #include <memory>
+#include <optional>
 #include <set>
 #include <span>
 #include <string>
@@ -118,12 +120,18 @@ class OsSocketServer final : public p2p::PacketSocketFactory, public p2p::Stream
   std::unique_ptr<p2p::Socket> CreateStreamSocket(p2p::IpFamily family) override;
 
   // Waits up to `wait` for socket events and dispatches them. `now` is the caller's clock at this call (read it
-  // just before); each event and each datagram's arrival_time is `now` plus the steady-clock time Poll has run
-  // until it is handled (read, for a datagram), never `now` itself (#1168). Stamping every datagram with `now`,
-  // the time before the wait, put a packet that arrived 8 ms into a 10 ms wait 8 ms early, and gave a batch
-  // drained together one arrival time. The sender's congestion control reads these arrival times back from
-  // transport-wide feedback, and its probes (15-20 ms clusters) measured the link rate from them.
-  void Poll(Timestamp now, TimeDelta wait);
+  // just before); each event is stamped with `now` plus the steady-clock time Poll has run until it is handled.
+  // The sender's congestion control reads datagram arrival times back from transport-wide feedback, and its
+  // probes (15-20 ms clusters) measure the link rate from them, so a datagram gets the time it arrived:
+  //  * the kernel's receive time (SO_TIMESTAMP), as libwebrtc's PhysicalSocket reads it, moved onto the caller's
+  //    clock, so a datagram that waited in the socket while this thread was not running keeps its own time (#1190:
+  //    on a loaded host, a probe cluster read in one batch measured 0 ms or 20-30 Mbps and Chrome discarded it);
+  //  * never after the read, and never before `earliest`: the caller's clock at its last call into whatever
+  //    receives the datagrams (default `now`; it must not be later than `now`). A datagram that arrived during the
+  //    caller's work since then keeps that time, not the time of this call;
+  //  * where the kernel gives no time, the time it is read (#1168: stamping every datagram with `now`, the time
+  //    before the wait, put a packet that arrived 8 ms into a 10 ms wait 8 ms early).
+  void Poll(Timestamp now, TimeDelta wait, std::optional<Timestamp> earliest = std::nullopt);
 
   // Every packet socket the factory hands out is wrapped so that a test can
   // see the messages each one sends and receives (whole STUN or ChannelData
@@ -138,12 +146,19 @@ class OsSocketServer final : public p2p::PacketSocketFactory, public p2p::Stream
 
   // The caller's clock now: the `now` Poll was given plus the steady time since.
   Timestamp ReadTime() const;
+  // The time of an event handled now, or of a datagram read now: its kernel receive time (SO_TIMESTAMP, wall-clock
+  // microseconds) moved onto the caller's clock, else ReadTime(). Within [poll_floor_, ReadTime()], and not before
+  // the previous one.
+  Timestamp ArrivalTime(std::optional<int64_t> kernel_us);
   static int64_t SteadyMicros();
+  static int64_t WallMicros();
 
   std::set<OsUdpSocket*> udp_;
   std::set<OsTcpSocket*> tcp_;
   Tap tap_;
   Timestamp poll_now_ = Timestamp::Micros(0);
+  Timestamp poll_floor_ = Timestamp::Micros(0);  // Poll's `earliest`.
+  Timestamp last_arrival_ = Timestamp::MinusInfinity();
   int64_t poll_start_us_ = 0;
 };
 
