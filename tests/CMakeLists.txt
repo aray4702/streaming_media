@@ -124,7 +124,8 @@ if(SM_WITH_TLS)
     sm_add_test_exe(sm_unit_os_dns LABEL unit DEPS sm_os_sockets
       SOURCES unit/net/os_dns_resolver_test.cc
       SUITES OsDnsResolver)
-    # The OS sockets' datagram arrival times (#1168): the time Poll reads a datagram, not the time before its wait.
+    # The OS sockets' datagram arrival times: the time Poll reads a datagram, not the time before its wait (#1168),
+    # and the kernel's receive time for one that waited in the socket while the loop was busy (#1190).
     sm_add_test_exe(sm_unit_os_sockets LABEL unit DEPS sm_os_sockets
       SOURCES unit/net/os_sockets_test.cc
       SUITES OsSockets)

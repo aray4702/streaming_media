@@ -7,11 +7,15 @@
 # On a loaded CI Mac, Chrome's own ramp is sometimes slow (#1132), so the
 # self-test records Chrome <-> Chrome's estimate and a call with our endpoint
 # that did not reach 1500 kbps is judged against it (bwe_check in
-# run_browser_call.py). The browser tests run serially (nothing else loads the
-# host) and give the estimate 20 s. Our peer's arrival times must be the times
-# it read each datagram (#1168: stamped with the time before poll(2), Chrome's
-# probes toward it measured low and its estimate stalled at 957 kbps); when the
-# check fails, the driver prints Chrome's probe results.
+# run_browser_call.py), measured again right after that call if the earlier one
+# ramped, so both run under the same load (#1190). The browser tests run
+# serially (nothing else loads the host) and give the estimate 20 s. Our peer's arrival times must be the times
+# each datagram arrived (#1168: stamped with the time before poll(2), Chrome's
+# probes toward it measured low and its estimate stalled at 957 kbps; #1190:
+# stamped when read, a probe cluster that waited in the socket while the loaded
+# runner ran something else was read as one batch, and Chrome discarded it), so
+# the OS sockets take the kernel's receive time; when the check fails, the
+# driver prints Chrome's probe results.
 set(SM_BROWSER_BWE --bwe-kbps=1500 --bwe-seconds=20 --timeout=60
     --bwe-reference=${CMAKE_CURRENT_BINARY_DIR}/chrome_bwe_reference.json)
 find_package(Python3 COMPONENTS Interpreter)

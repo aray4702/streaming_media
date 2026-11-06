@@ -232,6 +232,26 @@ BWE_SHARE = 0.8         # a call that did not ramp must end at >= this share of 
 BWE_REFERENCE_AGE = 900  # seconds: a reference from an earlier ctest run is not used
 
 
+def measure_reference(args):
+    """Runs the Chrome <-> Chrome self-test now, in the same role, and returns its record, or None (#1190)."""
+    fd, path = tempfile.mkstemp(prefix='sm-bwe-reference-', suffix='.json')
+    os.close(fd)
+    cmd = [sys.executable, os.path.abspath(__file__), '--self', '--role=' + args.role,
+           '--bwe-kbps=%d' % args.bwe_kbps, '--bwe-seconds=%g' % args.bwe_seconds, '--timeout=%g' % args.timeout,
+           '--bwe-reference=' + path]
+    try:
+        subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=args.timeout + 30)
+        with open(path) as f:
+            return json.load(f)
+    except (OSError, ValueError, subprocess.TimeoutExpired):
+        return None
+    finally:
+        try:
+            os.remove(path)
+        except OSError:
+            pass
+
+
 def bwe_check(args, trace):
     """Chrome's send-side estimate ramps up (#1125), judged against Chrome <-> Chrome (#1132).
 
@@ -241,10 +261,15 @@ def bwe_check(args, trace):
     a call does not reach --bwe-kbps:
       * the self-test (Chrome <-> Chrome, the host's reference) passes if Chrome's
         estimate did not fall below BWE_SHARE of where it started;
-      * a call with our endpoint passes only if the self-test in the same ctest run
-        did not reach --bwe-kbps either, and our call's last estimate is at least
-        BWE_SHARE of the self-test's last one. #1125 (feedback Chrome ignored) fell
-        from 300 to 84 kbps, so it still fails.
+      * a call with our endpoint passes only if Chrome <-> Chrome did not reach
+        --bwe-kbps either, and our call's last estimate is at least BWE_SHARE of
+        Chrome <-> Chrome's last one. #1125 (feedback Chrome ignored) fell from 300
+        to 84 kbps, so it still fails.
+    The reference is the self-test earlier in the same ctest run. When it ramped and
+    our call did not, the self-test is run again right away (#1190), so both calls
+    are judged under the same load: a CI runner's load changes within minutes, and
+    on a loaded one Chrome's own pacer sent its first 900 kbps probe at 654 kbps.
+    Our call still fails whenever Chrome <-> Chrome ramps on the host at that time.
     """
     kbps = [k for _, k in trace]
     ramped = any(k >= args.bwe_kbps for k in kbps)
@@ -269,6 +294,17 @@ def bwe_check(args, trace):
             ref = json.load(f)
         if time.time() - ref.get('time', 0) > BWE_REFERENCE_AGE:
             ref = None
+    if ref is not None and ref['ramped']:
+        print('NOTE: the estimate did not reach %d kbps (last %d kbps), though Chrome <-> Chrome did earlier in '
+              'this run; running Chrome <-> Chrome again now' % (args.bwe_kbps, last))
+        now_ref = measure_reference(args)
+        if now_ref is None:
+            print('NOTE: Chrome <-> Chrome gave no result now; judged against the earlier one')
+        else:
+            ref = now_ref
+            print('NOTE: Chrome <-> Chrome now: %s, last %d kbps' %
+                  ('reached %d kbps' % args.bwe_kbps if ref['ramped'] else 'did not reach %d kbps' % args.bwe_kbps,
+                   ref['last']))
     if ref is None:
         print('FAIL: the estimate did not reach %d kbps (last %d kbps), and no Chrome <-> Chrome reference '
               'from this run' % (args.bwe_kbps, last))

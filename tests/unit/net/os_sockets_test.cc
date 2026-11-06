@@ -104,3 +104,98 @@ SM_TEST(OsSockets, ArrivalSpacingFollowsTheSender) {
   }
   SM_EXPECT_GE((arrivals[1] - arrivals[0]).us(), 0);
 }
+
+namespace {
+
+// Sends one datagram from `fd` to `to` (127.0.0.1) now, and returns the steady time just before the send.
+int64_t SendNow(int fd, uint16_t to) {
+  sockaddr_in sin;
+  interop::ToSockaddr(p2p::SocketAddress("127.0.0.1", to), &sin);
+  const uint8_t data[100] = {};
+  const int64_t sent_at = SteadyMicros();
+  ::sendto(fd, data, sizeof(data), 0, reinterpret_cast<sockaddr*>(&sin), sizeof(sin));
+  return sent_at;
+}
+
+}  // namespace
+
+// #1190: four datagrams 5 ms apart, the last three queued while the receiving thread is busy with the first (its
+// callback takes 40 ms, as a thread descheduled on a loaded host does), are read in one batch. Each keeps its kernel
+// receive time, so their spacing follows the sender's. Stamped when read, the three were microseconds apart, and
+// Chrome discarded such a probe cluster (receive interval 0 us, or a rate 10-20 times the send rate).
+SM_TEST(OsSockets, DatagramsReadInOneBatchKeepTheirSpacing) {
+  interop::OsSocketServer server;
+  std::unique_ptr<p2p::AsyncPacketSocket> rx = server.CreateUdpSocket(p2p::SocketAddress("127.0.0.1", 0), 0, 0);
+  SM_ASSERT_TRUE(rx != nullptr);
+  std::vector<Timestamp> arrivals;
+  rx->RegisterReceivedPacketCallback([&](p2p::AsyncPacketSocket*, const p2p::ReceivedPacket& p) {
+    arrivals.push_back(p.arrival_time);
+    if (arrivals.size() == 1) std::this_thread::sleep_for(std::chrono::milliseconds(40));
+  });
+
+  const Timestamp base = Timestamp::Seconds(100);
+  const int64_t t0 = SteadyMicros();
+  int64_t sent[4] = {};
+  std::thread sender([&] {
+    const int fd = ::socket(AF_INET, SOCK_DGRAM, 0);
+    const uint16_t port = rx->GetLocalAddress().port();
+    std::this_thread::sleep_for(std::chrono::milliseconds(15));
+    for (int i = 0; i < 4; ++i) {
+      if (i > 0) std::this_thread::sleep_for(std::chrono::milliseconds(5));
+      sent[i] = SendNow(fd, port);
+    }
+    ::close(fd);
+  });
+  while (arrivals.size() < 4 && SteadyMicros() - t0 < 5'000'000) {
+    server.Poll(base + TimeDelta::Micros(SteadyMicros() - t0), TimeDelta::Seconds(1));
+  }
+  const int64_t returned_at = SteadyMicros();
+  sender.join();
+  SM_ASSERT_EQ(arrivals.size(), size_t{4});
+  for (int i = 0; i < 4; ++i) {
+    SM_EXPECT_GE((arrivals[i] - base).us(), sent[i] - t0);
+    SM_EXPECT_LE((arrivals[i] - base).us(), returned_at - t0);
+  }
+  // The three read together were sent 5 ms apart (more if the sender overslept): their arrivals within 2 ms of that.
+  for (int i = 2; i < 4; ++i) {
+    SM_EXPECT_NEAR(static_cast<double>((arrivals[i] - arrivals[i - 1]).us()),
+                   static_cast<double>(sent[i] - sent[i - 1]), 2000.0);
+  }
+}
+
+// #1190: a datagram that arrives while the caller works between two Polls (here it sleeps 30 ms) is read by the
+// next Poll. Given `earliest`, the `now` of that work, it keeps its kernel time, about 30 ms before the Poll's `now`;
+// without it, it gets the Poll's `now`.
+SM_TEST(OsSockets, DatagramArrivingBeforePollKeepsItsTimeDownToEarliest) {
+  for (const bool with_earliest : {true, false}) {
+    interop::OsSocketServer server;
+    std::unique_ptr<p2p::AsyncPacketSocket> rx = server.CreateUdpSocket(p2p::SocketAddress("127.0.0.1", 0), 0, 0);
+    SM_ASSERT_TRUE(rx != nullptr);
+    std::vector<Timestamp> arrivals;
+    rx->RegisterReceivedPacketCallback(
+        [&](p2p::AsyncPacketSocket*, const p2p::ReceivedPacket& p) { arrivals.push_back(p.arrival_time); });
+
+    // The loop's clock: `base` at steady time t0, when its work ran.
+    const Timestamp base = Timestamp::Seconds(100);
+    const int64_t t0 = SteadyMicros();
+    const int fd = ::socket(AF_INET, SOCK_DGRAM, 0);
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    const int64_t sent_at = SendNow(fd, rx->GetLocalAddress().port());
+    ::close(fd);
+    std::this_thread::sleep_for(std::chrono::milliseconds(30));
+    const Timestamp now = base + TimeDelta::Micros(SteadyMicros() - t0);
+    if (with_earliest) {
+      server.Poll(now, TimeDelta::Seconds(1), base);
+    } else {
+      server.Poll(now, TimeDelta::Seconds(1));
+    }
+    SM_ASSERT_EQ(arrivals.size(), size_t{1});
+    if (with_earliest) {
+      SM_EXPECT_GE((arrivals[0] - base).us(), sent_at - t0);
+      SM_EXPECT_LE((arrivals[0] - base).us(), sent_at - t0 + 2000);
+      SM_EXPECT_LT(arrivals[0], now - TimeDelta::Millis(20));
+    } else {
+      SM_EXPECT_GE(arrivals[0], now);
+    }
+  }
+}
