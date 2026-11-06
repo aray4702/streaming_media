@@ -101,26 +101,45 @@ void UpsampleBy2(const int16_t* in, size_t len, int16_t* out, int32_t* st) {
 
 constexpr int16_t kResampleAllpass[2][3] = {{821, 6110, 12382}, {3050, 9368, 15063}};
 
-// One three-section allpass chain on state s[0..3], as every filter loop in
+// One three-section allpass chain, as every filter loop in
 // resample_by_2_internal.c writes it out: the first section rounds the
 // difference, the other two truncate it (`>> 14`, then +1 if negative).
-int32_t Allpass(int32_t x, int32_t* s, const int16_t* k) {
-  int32_t diff = Sub(x, s[1]);
-  diff = Add(diff, 1 << 13) >> 14;
-  int32_t tmp1 = MulAdd(s[0], diff, k[0]);
-  s[0] = x;
-  diff = Sub(tmp1, s[2]);
-  diff = diff >> 14;
-  if (diff < 0) diff += 1;
-  int32_t tmp0 = MulAdd(s[1], diff, k[1]);
-  s[1] = tmp1;
-  diff = Sub(tmp0, s[3]);
-  diff = diff >> 14;
-  if (diff < 0) diff += 1;
-  s[3] = MulAdd(s[2], diff, k[2]);
-  s[2] = tmp0;
-  return s[3];
-}
+//
+// libwebrtc reads and writes the four state words through `state` on every
+// sample. Here they live in locals for the whole loop: loaded once by the
+// constructor, written back once by Store(). The integer operations and their
+// order are libwebrtc's, so the output is bit-exact; only the memory traffic
+// differs. On AArch64 clang pairs libwebrtc's per-sample state accesses into
+// ldp/stp, which serializes the updates from one sample to the next (about
+// 2.3x slower on the Apple M4); in registers they don't round-trip memory.
+class AllpassChain {
+ public:
+  AllpassChain(const int32_t* s, const int16_t* k) : s0_(s[0]), s1_(s[1]), s2_(s[2]), s3_(s[3]), k_(k) {}
+
+  int32_t operator()(int32_t x) {
+    int32_t diff = Sub(x, s1_);
+    diff = Add(diff, 1 << 13) >> 14;
+    int32_t tmp1 = MulAdd(s0_, diff, k_[0]);
+    s0_ = x;
+    diff = Sub(tmp1, s2_);
+    diff = diff >> 14;
+    if (diff < 0) diff += 1;
+    int32_t tmp0 = MulAdd(s1_, diff, k_[1]);
+    s1_ = tmp1;
+    diff = Sub(tmp0, s3_);
+    diff = diff >> 14;
+    if (diff < 0) diff += 1;
+    s3_ = MulAdd(s2_, diff, k_[2]);
+    s2_ = tmp0;
+    return s3_;
+  }
+
+  void Store(int32_t* s) const { s[0] = s0_, s[1] = s1_, s[2] = s2_, s[3] = s3_; }
+
+ private:
+  int32_t s0_, s1_, s2_, s3_;
+  const int16_t* k_;
+};
 
 int32_t ShortToQ15(int16_t v) { return Shl(v, 15) + (1 << 14); }
 
@@ -134,10 +153,14 @@ int16_t ClampW16(int32_t v) {
 void DownBy2IntToShort(int32_t* in, int32_t len, int16_t* out, int32_t* state) {
   len >>= 1;
   // lower allpass filter (operates on even input samples)
-  for (int32_t i = 0; i < len; i++) in[i << 1] = Allpass(in[i << 1], &state[0], kResampleAllpass[1]) >> 1;
+  AllpassChain lower(&state[0], kResampleAllpass[1]);
+  for (int32_t i = 0; i < len; i++) in[i << 1] = lower(in[i << 1]) >> 1;
+  lower.Store(&state[0]);
   ++in;
   // upper allpass filter (operates on odd input samples)
-  for (int32_t i = 0; i < len; i++) in[i << 1] = Allpass(in[i << 1], &state[4], kResampleAllpass[0]) >> 1;
+  AllpassChain upper(&state[4], kResampleAllpass[0]);
+  for (int32_t i = 0; i < len; i++) in[i << 1] = upper(in[i << 1]) >> 1;
+  upper.Store(&state[4]);
   --in;
   // combine allpass outputs
   for (int32_t i = 0; i < len; i += 2) {
@@ -149,28 +172,39 @@ void DownBy2IntToShort(int32_t* in, int32_t len, int16_t* out, int32_t* state) {
 // interpolator; input int16; output int32 (normalized, len*2).
 void UpBy2ShortToInt(const int16_t* in, int32_t len, int32_t* out, int32_t* state) {
   // upper allpass filter (generates odd output samples)
-  for (int32_t i = 0; i < len; i++) out[i << 1] = Allpass(ShortToQ15(in[i]), &state[4], kResampleAllpass[0]) >> 15;
+  AllpassChain upper(&state[4], kResampleAllpass[0]);
+  for (int32_t i = 0; i < len; i++) out[i << 1] = upper(ShortToQ15(in[i])) >> 15;
+  upper.Store(&state[4]);
   ++out;
   // lower allpass filter (generates even output samples)
-  for (int32_t i = 0; i < len; i++) out[i << 1] = Allpass(ShortToQ15(in[i]), &state[0], kResampleAllpass[1]) >> 15;
+  AllpassChain lower(&state[0], kResampleAllpass[1]);
+  for (int32_t i = 0; i < len; i++) out[i << 1] = lower(ShortToQ15(in[i])) >> 15;
+  lower.Store(&state[0]);
 }
 
 // interpolator; input int32 (Q15 + offset); output int16 (saturated).
 void UpBy2IntToShort(const int32_t* in, int32_t len, int16_t* out, int32_t* state) {
-  for (int32_t i = 0; i < len; i++) out[i << 1] = ClampW16(Allpass(in[i], &state[4], kResampleAllpass[0]) >> 15);
+  AllpassChain upper(&state[4], kResampleAllpass[0]);
+  for (int32_t i = 0; i < len; i++) out[i << 1] = ClampW16(upper(in[i]) >> 15);
+  upper.Store(&state[4]);
   ++out;
-  for (int32_t i = 0; i < len; i++) out[i << 1] = ClampW16(Allpass(in[i], &state[0], kResampleAllpass[1]) >> 15);
+  AllpassChain lower(&state[0], kResampleAllpass[1]);
+  for (int32_t i = 0; i < len; i++) out[i << 1] = ClampW16(lower(in[i]) >> 15);
+  lower.Store(&state[0]);
 }
 
 // decimator; input int16; output int32 (Q15 + offset, len/2).
 void DownBy2ShortToInt(const int16_t* in, int32_t len, int32_t* out, int32_t* state) {
   len >>= 1;
   // lower allpass filter (operates on even input samples)
-  for (int32_t i = 0; i < len; i++) out[i] = Allpass(ShortToQ15(in[i << 1]), &state[0], kResampleAllpass[1]) >> 1;
+  AllpassChain lower(&state[0], kResampleAllpass[1]);
+  for (int32_t i = 0; i < len; i++) out[i] = lower(ShortToQ15(in[i << 1])) >> 1;
+  lower.Store(&state[0]);
   ++in;
   // upper allpass filter (operates on odd input samples)
-  for (int32_t i = 0; i < len; i++)
-    out[i] = Add(out[i], Allpass(ShortToQ15(in[i << 1]), &state[4], kResampleAllpass[0]) >> 1);
+  AllpassChain upper(&state[4], kResampleAllpass[0]);
+  for (int32_t i = 0; i < len; i++) out[i] = Add(out[i], upper(ShortToQ15(in[i << 1])) >> 1);
+  upper.Store(&state[4]);
 }
 
 // lowpass filter; input int16; output int32 (normalized). State 16.
@@ -179,22 +213,28 @@ void LPBy2ShortToInt(const int16_t* in, int32_t len, int32_t* out, int32_t* stat
   // lower allpass filter: odd input -> even output samples
   ++in;
   int32_t tmp0 = state[12];  // initial state of polyphase delay element
+  AllpassChain lower_even(&state[0], kResampleAllpass[1]);
   for (int32_t i = 0; i < len; i++) {
-    out[i << 1] = Allpass(tmp0, &state[0], kResampleAllpass[1]) >> 1;
+    out[i << 1] = lower_even(tmp0) >> 1;
     tmp0 = ShortToQ15(in[i << 1]);
   }
+  lower_even.Store(&state[0]);
   --in;
   // upper allpass filter: even input -> even output samples
-  for (int32_t i = 0; i < len; i++)
-    out[i << 1] = Add(out[i << 1], Allpass(ShortToQ15(in[i << 1]), &state[4], kResampleAllpass[0]) >> 1) >> 15;
+  AllpassChain upper_even(&state[4], kResampleAllpass[0]);
+  for (int32_t i = 0; i < len; i++) out[i << 1] = Add(out[i << 1], upper_even(ShortToQ15(in[i << 1])) >> 1) >> 15;
+  upper_even.Store(&state[4]);
   // switch to odd output samples
   ++out;
   // lower allpass filter: even input -> odd output samples
-  for (int32_t i = 0; i < len; i++) out[i << 1] = Allpass(ShortToQ15(in[i << 1]), &state[8], kResampleAllpass[1]) >> 1;
+  AllpassChain lower_odd(&state[8], kResampleAllpass[1]);
+  for (int32_t i = 0; i < len; i++) out[i << 1] = lower_odd(ShortToQ15(in[i << 1])) >> 1;
+  lower_odd.Store(&state[8]);
   // upper allpass filter: odd input -> odd output samples
   ++in;
-  for (int32_t i = 0; i < len; i++)
-    out[i << 1] = Add(out[i << 1], Allpass(ShortToQ15(in[i << 1]), &state[12], kResampleAllpass[0]) >> 1) >> 15;
+  AllpassChain upper_odd(&state[12], kResampleAllpass[0]);
+  for (int32_t i = 0; i < len; i++) out[i << 1] = Add(out[i << 1], upper_odd(ShortToQ15(in[i << 1])) >> 1) >> 15;
+  upper_odd.Store(&state[12]);
 }
 
 // lowpass filter; input int32 (Q15 + offset); output int32 (normalized). State 16.
@@ -203,22 +243,28 @@ void LPBy2IntToInt(const int32_t* in, int32_t len, int32_t* out, int32_t* state)
   // lower allpass filter: odd input -> even output samples
   ++in;
   int32_t tmp0 = state[12];  // initial state of polyphase delay element
+  AllpassChain lower_even(&state[0], kResampleAllpass[1]);
   for (int32_t i = 0; i < len; i++) {
-    out[i << 1] = Allpass(tmp0, &state[0], kResampleAllpass[1]) >> 1;
+    out[i << 1] = lower_even(tmp0) >> 1;
     tmp0 = in[i << 1];
   }
+  lower_even.Store(&state[0]);
   --in;
   // upper allpass filter: even input -> even output samples
-  for (int32_t i = 0; i < len; i++)
-    out[i << 1] = Add(out[i << 1], Allpass(in[i << 1], &state[4], kResampleAllpass[0]) >> 1) >> 15;
+  AllpassChain upper_even(&state[4], kResampleAllpass[0]);
+  for (int32_t i = 0; i < len; i++) out[i << 1] = Add(out[i << 1], upper_even(in[i << 1]) >> 1) >> 15;
+  upper_even.Store(&state[4]);
   // switch to odd output samples
   ++out;
   // lower allpass filter: even input -> odd output samples
-  for (int32_t i = 0; i < len; i++) out[i << 1] = Allpass(in[i << 1], &state[8], kResampleAllpass[1]) >> 1;
+  AllpassChain lower_odd(&state[8], kResampleAllpass[1]);
+  for (int32_t i = 0; i < len; i++) out[i << 1] = lower_odd(in[i << 1]) >> 1;
+  lower_odd.Store(&state[8]);
   // upper allpass filter: odd input -> odd output samples
   ++in;
-  for (int32_t i = 0; i < len; i++)
-    out[i << 1] = Add(out[i << 1], Allpass(in[i << 1], &state[12], kResampleAllpass[0]) >> 1) >> 15;
+  AllpassChain upper_odd(&state[12], kResampleAllpass[0]);
+  for (int32_t i = 0; i < len; i++) out[i << 1] = Add(out[i << 1], upper_odd(in[i << 1]) >> 1) >> 15;
+  upper_odd.Store(&state[12]);
 }
 
 // ---- resample_fractional.c ----
