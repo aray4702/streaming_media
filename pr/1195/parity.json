@@ -719,7 +719,7 @@
   {
    "scenario": "issue_536_loss20_av_sync",
    "metric": "sync.av_offset_p95_ms",
-   "sm": 354.767,
+   "sm": 354.763,
    "webrtc": 1172.84,
    "band": 652.427009233847,
    "direction": "ahead",
