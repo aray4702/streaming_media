@@ -181,6 +181,8 @@ SM_TEST(OsSockets, DatagramArrivingBeforePollKeepsItsTimeDownToEarliest) {
     const int fd = ::socket(AF_INET, SOCK_DGRAM, 0);
     std::this_thread::sleep_for(std::chrono::milliseconds(5));
     const int64_t sent_at = SendNow(fd, rx->GetLocalAddress().port());
+    // The kernel stamps a loopback datagram inside sendto, which a loaded host may start late: bound it by its return.
+    const int64_t send_returned = SteadyMicros();
     ::close(fd);
     std::this_thread::sleep_for(std::chrono::milliseconds(30));
     const Timestamp now = base + TimeDelta::Micros(SteadyMicros() - t0);
@@ -192,7 +194,7 @@ SM_TEST(OsSockets, DatagramArrivingBeforePollKeepsItsTimeDownToEarliest) {
     SM_ASSERT_EQ(arrivals.size(), size_t{1});
     if (with_earliest) {
       SM_EXPECT_GE((arrivals[0] - base).us(), sent_at - t0);
-      SM_EXPECT_LE((arrivals[0] - base).us(), sent_at - t0 + 2000);
+      SM_EXPECT_LE((arrivals[0] - base).us(), send_returned - t0 + 2000);
       SM_EXPECT_LT(arrivals[0], now - TimeDelta::Millis(20));
     } else {
       SM_EXPECT_GE(arrivals[0], now);
