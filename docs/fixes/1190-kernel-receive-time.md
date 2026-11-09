@@ -150,3 +150,32 @@ benchmarks not built), and so do the 21 tests over the OS sockets (OS
 sockets, resolver, browser, web app, real calls, AI server, call client)
 after the last change. The library is unchanged, so the scenario suite and
 `compare-webrtc` are unaffected.
+
+## Follow-up: stamps early under ASan (#1195)
+
+After this fix merged, main's `sanitizers` job failed on `unit.OsSockets`
+(run 42149551785). Three tests found arrivals stamped 5-35 us earlier than
+the datagram was sent. `Poll` paired the caller's `now` with the steady
+clock only after building its pollfd vectors. Under ASan those allocations
+take tens of microseconds, so the loop's clock lagged real time by that
+much, and each kernel-stamped arrival came out early by the same amount.
+`ArrivalTime` also read the steady clock before the wall clock, so the
+time between the two reads was subtracted from the stamp as well.
+
+`Poll` now reads the steady clock as the first thing it does, and
+`ArrivalTime` reads the wall clock first, so a gap between the two reads
+makes a stamp late, never early. In the test for a datagram that arrives
+before `Poll`, the upper bound starts from when `sendto` returned. The
+kernel stamps a loopback datagram inside `sendto`, which a loaded host can
+start late.
+
+Local runs (macOS, `native-asan`, 10 CPU burners running):
+
+| Code | Runs that failed |
+|---|---|
+| main | 6 of 60 |
+| fix, under load | 0 of 100 |
+| fix, no load | 0 of 30 |
+
+As before, the test bench cannot reach OS sockets, so no scenario
+reproduces this; the unit tests are the regression tests.
