@@ -383,6 +383,11 @@ std::unique_ptr<p2p::AsyncPacketSocket> OsSocketServer::CreateClientTcpSocket(
 }
 
 void OsSocketServer::Poll(Timestamp now, TimeDelta wait, std::optional<Timestamp> earliest) {
+  // `now` is the caller's clock as it called: pair it with the steady clock before the set-up below, whose
+  // allocations take tens of microseconds on a sanitizer build and would otherwise put every stamp that early.
+  poll_start_us_ = SteadyMicros();
+  poll_now_ = now;
+  poll_floor_ = std::min(now, earliest.value_or(now));
   std::vector<pollfd> fds;
   std::vector<std::pair<OsUdpSocket*, OsTcpSocket*>> owners;
   for (OsUdpSocket* s : udp_) {
@@ -396,9 +401,6 @@ void OsSocketServer::Poll(Timestamp now, TimeDelta wait, std::optional<Timestamp
     owners.emplace_back(nullptr, s);
   }
   const int timeout_ms = static_cast<int>(std::max<int64_t>(0, wait.ms()));
-  poll_now_ = now;
-  poll_floor_ = std::min(now, earliest.value_or(now));
-  poll_start_us_ = SteadyMicros();
   if (::poll(fds.data(), fds.size(), timeout_ms) <= 0) return;
   for (size_t i = 0; i < fds.size(); ++i) {
     if (fds[i].revents == 0) continue;
@@ -427,12 +429,15 @@ int64_t OsSocketServer::WallMicros() {
 }
 
 Timestamp OsSocketServer::ArrivalTime(std::optional<int64_t> kernel_us) {
+  // The wall clock first: what passes between the two reads then makes the stamp late, never earlier than the
+  // datagram arrived.
+  const std::optional<int64_t> wall_us = kernel_us ? std::optional<int64_t>(WallMicros()) : std::nullopt;
   const Timestamp read = ReadTime();
   Timestamp t = read;
   if (kernel_us) {
     // How long the datagram waited in the socket, measured on the kernel's clock (SO_TIMESTAMP's is the wall
     // clock), taken off the read time on the caller's clock: never before Poll's `earliest`, never after the read.
-    t -= TimeDelta::Micros(std::clamp<int64_t>(WallMicros() - *kernel_us, 0, (read - poll_floor_).us()));
+    t -= TimeDelta::Micros(std::clamp<int64_t>(*wall_us - *kernel_us, 0, (read - poll_floor_).us()));
   }
   // The callbacks see their times in the order they run, across sockets too (the ICE code takes them as `now`).
   if (last_arrival_ <= read) t = std::max(t, last_arrival_);
