@@ -90,7 +90,7 @@ The library:
 | LiveKit SFU (Lightsail) | Group calls of up to 6: simulcast from each sender, the SFU picks a layer per receiver; receivers mix audio with libwebrtc's `AudioMixerImpl`. Real 6-way call: [real-group-call](docs/results/real-group-call.md) |
 
 
-On main's CI (9cd33ee2, 2026-11-08), no ctest test fails: 627 of 631 pass natively on macOS arm64 and 4 skip there (`interop.Coturn` without coturn, the three LiveKit group calls without `livekit-server`); 618 of 618 pass under ASan+UBSan and 469 of 469 on WebAssembly (Node), both on Linux; and the iOS simulator build passes its 255 tests. The last full recorded run on each platform, with test-case and benchmark counts and the `-fno-exceptions -fno-rtti` build, is in [docs/results](docs/results/README.md) (2026-11-05). Android and embedded Linux ARM are cross-built in CI.
+On main's CI (9cd33ee2, 2026-11-08), no ctest test fails: 626 of 631 pass natively on macOS arm64 and 5 skip there (`interop.Coturn` without coturn, `interop.Browser.mdns_chrome_offers`, and the three LiveKit group calls without `livekit-server`); 613 of 618 pass under ASan+UBSan, with the same 5 skipped, and 469 of 469 on WebAssembly (Node), both on Linux; and the iOS simulator build passes its 255 tests. The last full recorded run on each platform, with test-case and benchmark counts and the `-fno-exceptions -fno-rtti` build, is in [docs/results](docs/results/README.md) (2026-11-05). Android and embedded Linux ARM are cross-built in CI.
 
 **Stage 1 (parity with libwebrtc) has no open gaps** on main: see [Benchmarks](#benchmarks).
 
