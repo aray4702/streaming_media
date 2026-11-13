@@ -1,6 +1,6 @@
 [ RUN  ] WebAudioJitterBuffer.NetEqRunsAtASupportedRate
 [  OK  ] WebAudioJitterBuffer.NetEqRunsAtASupportedRate (0.0 ms)
 [ RUN  ] WebAudioJitterBuffer.PlaysAtRatesNetEqDoesNotRun
-[  OK  ] WebAudioJitterBuffer.PlaysAtRatesNetEqDoesNotRun (4.5 ms)
+[  OK  ] WebAudioJitterBuffer.PlaysAtRatesNetEqDoesNotRun (5.3 ms)
 
 2 tests run, 2 passed, 0 failed

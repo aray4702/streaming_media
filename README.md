@@ -102,7 +102,7 @@ All numbers below come from the [test bench](testbench/README.md): a whole call 
 
 The `compare-webrtc` CI job runs every one-way scenario through this library and through libwebrtc M157 over the same emulated links, 10 seeds each, and publishes the [parity report](https://raw.githubusercontent.com/aray4702/streaming_media/parity-data/parity.md) and the [side-by-side table](https://raw.githubusercontent.com/aray4702/streaming_media/parity-data/compare-webrtc.txt). On main 18404b4f (2026-11-04):
 
-- **166 scenarios: 0 behind libwebrtc, 69 cells ahead of it.** A cell counts when the means differ by more than the parity band, which is the larger of the tie floor, 5% and one standard deviation of libwebrtc's seeds.
+- **172 scenarios: 0 behind libwebrtc, 69 cells ahead of it.** A cell counts when the means differ by more than the parity band, which is the larger of the tie floor, 5% and one standard deviation of libwebrtc's seeds.
 - **The 69 ahead cells** are in 21 scenarios. Two changes beyond libwebrtc account for them, each with a switch that restores libwebrtc's behaviour:
   - **#795:** when the link shows no sign of congestion, the sender drains its queue within 150 ms instead of holding up to 2 s, and after a feedback gap the encoder ramps back up instead of jumping (`uncongested_queue_time_limit`).
   - **#14:** a recovery probe brings the rate back after the link capacity returns, in about 1.3 s instead of about 15 s (`GccConfig::recovery_probing`).
@@ -115,8 +115,8 @@ The `compare-webrtc` CI job runs every one-way scenario through this library and
   | Capacity drops and returns (`capacity_drop`) | 824 / 824 ms | 545 / 540 ms | settles in 1,340 / 14,630 ms; link use 82.8% / 54.8% |
 
   (this library / libwebrtc)
-- **The other pairs:** of the 3,609 metric/scenario pairs, 3,456 tie within the tie floor. 110 lean towards this library and 43 towards libwebrtc, all inside the band. In the first comparison (2026-10-14), libwebrtc was better on 88 pairs and this library on 51.
-- **Not compared:** `sm_compare` runs one-way calls, so it skips the 20 two-way (user and AI) scenarios and 7 that libwebrtc can't run the same way (the mesh scenarios were removed with the mesh, C16). The ICE comparison (`sm_ice_compare`) runs separately, including ICE-TCP and mDNS paths, and matches libwebrtc on every seed.
+- **The other pairs:** of the 3,678 metric/scenario pairs, 3,593 tie within the tie floor. 42 lean towards this library and 43 towards libwebrtc, all inside the band. In the first comparison (2026-10-14), libwebrtc was better on 88 pairs and this library on 51.
+- **Not compared:** `sm_compare` runs one-way calls, so it skips the 20 two-way (user and AI) scenarios and 10 that libwebrtc can't run the same way: the 5 ICE scenarios, which `sm_ice_compare` covers, the 3 LiveKit SFU group calls (C21), and 2 that check the test bench itself, a unit overflow under ASan and the bench's memory. The mesh scenarios were removed with the mesh (C16). The ICE comparison (`sm_ice_compare`) runs separately, including ICE-TCP and mDNS paths, and matches libwebrtc on every seed.
 
 A sample of the table (mean of 10 seeds, this library / libwebrtc):
 
@@ -246,7 +246,7 @@ docs/                                                    research, design, algor
 
 ## Next steps and open questions
 
-**Where it stands (2026-11-05):**
+**Where it stands (2026-11-13):**
 - **Library:** it covers sections 1-10, plus simulcast send, multi-stream receive with renegotiation, and the receive-side audio mixer. Against libwebrtc M157 it is 0 behind and 69 ahead ([Benchmarks](#benchmarks)).
 - **Apps:** the iOS app, the web app and the AI server run on real networks through the Lightsail host, for 1:1 calls and for group calls of up to 6 through LiveKit ([Status](#status)).
 - **Requirements:** 104 of 105 are done (`tools/requirements.json`); only C13 (Android) is open.

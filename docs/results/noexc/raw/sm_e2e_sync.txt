@@ -7,7 +7,7 @@
 [metric] av_offset_settled_ms=23
 [metric] av_offset_after_route_change_ms=16
 [metric] audio_min_playout_delay_ms=204
-[  OK  ] E2E_StreamSync.LipSyncAcrossPathsAndRouteChange (0.7 ms)
+[  OK  ] E2E_StreamSync.LipSyncAcrossPathsAndRouteChange (0.8 ms)
 [ RUN  ] E2E_CaptureTime.GlassToGlassLatencyThroughSfu
 [metric] latency_error_max_ms=5
 [metric] extension_send_ratio=0.0324354
@@ -17,6 +17,6 @@
 [metric] demux_by_ssrc=3940
 [metric] demux_by_mid=60
 [metric] demux_unroutable=0
-[  OK  ] E2E_HeaderExtensions.BundleDemuxOfSimulcastAudioAndRtx (2.2 ms)
+[  OK  ] E2E_HeaderExtensions.BundleDemuxOfSimulcastAudioAndRtx (2.1 ms)
 
 4 tests run, 4 passed, 0 failed

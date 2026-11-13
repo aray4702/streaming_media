@@ -35,7 +35,7 @@
 [ RUN  ] QualityConvergence.DynamicDetectionOverRefreshFrames
 [  OK  ] QualityConvergence.DynamicDetectionOverRefreshFrames (0.0 ms)
 [ RUN  ] ResourceAdaptationProcessor.DisabledByDefault
-[  OK  ] ResourceAdaptationProcessor.DisabledByDefault (0.2 ms)
+[  OK  ] ResourceAdaptationProcessor.DisabledByDefault (0.0 ms)
 [ RUN  ] ResourceAdaptationProcessor.InsufficientInput
 [  OK  ] ResourceAdaptationProcessor.InsufficientInput (0.0 ms)
 [ RUN  ] ResourceAdaptationProcessor.OveruseTriggersRestrictingResolutionInMaintainFrameRate
@@ -53,7 +53,7 @@
 [ RUN  ] ResourceAdaptationProcessor.ResourcesCanNotAdaptUpIfNeverAdaptedDown
 [  OK  ] ResourceAdaptationProcessor.ResourcesCanNotAdaptUpIfNeverAdaptedDown (0.0 ms)
 [ RUN  ] ResourceAdaptationProcessor.ResourcesCanNotAdaptUpIfNotAdaptedDownAfterReset
-[  OK  ] ResourceAdaptationProcessor.ResourcesCanNotAdaptUpIfNotAdaptedDownAfterReset (0.2 ms)
+[  OK  ] ResourceAdaptationProcessor.ResourcesCanNotAdaptUpIfNotAdaptedDownAfterReset (0.0 ms)
 [ RUN  ] ResourceAdaptationProcessor.OnlyMostLimitedResourceMayAdaptUp
 [  OK  ] ResourceAdaptationProcessor.OnlyMostLimitedResourceMayAdaptUp (0.0 ms)
 [ RUN  ] ResourceAdaptationProcessor.MultipleResourcesCanTriggerMultipleAdaptations
@@ -97,7 +97,7 @@
 [ RUN  ] Simulcast.GetConfigWithLimitedMaxLayers
 [  OK  ] Simulcast.GetConfigWithLimitedMaxLayers (0.0 ms)
 [ RUN  ] Simulcast.GetConfigForScreenshareSimulcast
-[  OK  ] Simulcast.GetConfigForScreenshareSimulcast (0.1 ms)
+[  OK  ] Simulcast.GetConfigForScreenshareSimulcast (0.0 ms)
 [ RUN  ] Simulcast.GetConfigForScreenshareSimulcastWithLimitedMaxLayers
 [  OK  ] Simulcast.GetConfigForScreenshareSimulcastWithLimitedMaxLayers (0.0 ms)
 [ RUN  ] Simulcast.AveragesBitratesForNonStandardResolution
@@ -105,7 +105,7 @@
 [ RUN  ] Simulcast.BitratesForCloseToStandardResolution
 [  OK  ] Simulcast.BitratesForCloseToStandardResolution (0.0 ms)
 [ RUN  ] Simulcast.MaxLayersWithRoundUpDisabled
-[  OK  ] Simulcast.MaxLayersWithRoundUpDisabled (0.3 ms)
+[  OK  ] Simulcast.MaxLayersWithRoundUpDisabled (0.0 ms)
 [ RUN  ] Simulcast.MaxLayersWithDefaultRoundUpRatio
 [  OK  ] Simulcast.MaxLayersWithDefaultRoundUpRatio (0.0 ms)
 [ RUN  ] Simulcast.MaxLayersWithRoundUpRatio
@@ -153,7 +153,7 @@
 [ RUN  ] SimulcastRateAllocator.NoSimulcastNoMax
 [  OK  ] SimulcastRateAllocator.NoSimulcastNoMax (0.0 ms)
 [ RUN  ] SimulcastRateAllocator.NoSimulcastWithinLimits
-[  OK  ] SimulcastRateAllocator.NoSimulcastWithinLimits (0.1 ms)
+[  OK  ] SimulcastRateAllocator.NoSimulcastWithinLimits (0.0 ms)
 [ RUN  ] SimulcastRateAllocator.NoSimulcastInactive
 [  OK  ] SimulcastRateAllocator.NoSimulcastInactive (0.0 ms)
 [ RUN  ] SimulcastRateAllocator.SingleSimulcastBelowMin

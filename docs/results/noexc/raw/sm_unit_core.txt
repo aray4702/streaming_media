@@ -5,7 +5,7 @@
 [ RUN  ] AudioFrameOperations.MuteBeginMonoLong
 [  OK  ] AudioFrameOperations.MuteBeginMonoLong (0.0 ms)
 [ RUN  ] AudioFrameOperations.MuteBeginMonoShort
-[  OK  ] AudioFrameOperations.MuteBeginMonoShort (0.0 ms)
+[  OK  ] AudioFrameOperations.MuteBeginMonoShort (0.1 ms)
 [ RUN  ] AudioFrameOperations.MuteBeginStereoLong
 [  OK  ] AudioFrameOperations.MuteBeginStereoLong (0.0 ms)
 [ RUN  ] AudioFrameOperations.MuteBeginStereoShort
@@ -121,7 +121,7 @@
 [ RUN  ] Nat.RulesMatchLibwebrtcNatTypes
 [  OK  ] Nat.RulesMatchLibwebrtcNatTypes (0.0 ms)
 [ RUN  ] Nat.Bindings
-[  OK  ] Nat.Bindings (0.1 ms)
+[  OK  ] Nat.Bindings (0.0 ms)
 [ RUN  ] Nat.Filters
 [  OK  ] Nat.Filters (0.0 ms)
 [ RUN  ] Nat.UnsolicitedInboundIsDropped
@@ -143,7 +143,7 @@
 [ RUN  ] SimNetwork.AccessLinksKeepNetworkLinkImpairments
 [  OK  ] SimNetwork.AccessLinksKeepNetworkLinkImpairments (0.0 ms)
 [ RUN  ] SimNetwork.RandomLossFollowsTheLinkConfig
-[  OK  ] SimNetwork.RandomLossFollowsTheLinkConfig (0.8 ms)
+[  OK  ] SimNetwork.RandomLossFollowsTheLinkConfig (1.0 ms)
 [ RUN  ] SimNetwork.UnknownAddressesAreUnroutable
 [  OK  ] SimNetwork.UnknownAddressesAreUnroutable (0.0 ms)
 [ RUN  ] SimNetwork.BindingIsMadeWhenTheDatagramReachesTheNat

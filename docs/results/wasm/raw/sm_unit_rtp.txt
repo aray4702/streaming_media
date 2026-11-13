@@ -19,7 +19,7 @@
 [ RUN  ] H264.LargeNalIsFragmentedWithFuA
 [  OK  ] H264.LargeNalIsFragmentedWithFuA (0.4 ms)
 [ RUN  ] H264.RoundTripAtEveryPayloadLimitAndSize
-[  OK  ] H264.RoundTripAtEveryPayloadLimitAndSize (3.1 ms)
+[  OK  ] H264.RoundTripAtEveryPayloadLimitAndSize (3.2 ms)
 [ RUN  ] H264.MultipleSlicesAndAggregationOfSmallNals
 [  OK  ] H264.MultipleSlicesAndAggregationOfSmallNals (0.1 ms)
 [ RUN  ] H264.StapAHeaderTakesTheHighestNri
@@ -73,7 +73,7 @@
 [ RUN  ] LibwebrtcDefaults.PacketsAreUpTo1460Bytes
 [  OK  ] LibwebrtcDefaults.PacketsAreUpTo1460Bytes (0.0 ms)
 [ RUN  ] LibwebrtcDefaults.RtcpIsSplitAtTheRtpPacketSize
-[  OK  ] LibwebrtcDefaults.RtcpIsSplitAtTheRtpPacketSize (0.7 ms)
+[  OK  ] LibwebrtcDefaults.RtcpIsSplitAtTheRtpPacketSize (0.8 ms)
 [ RUN  ] LibwebrtcDefaults.TheEncoderAllocationHasNoMaximumOfItsOwn
 [  OK  ] LibwebrtcDefaults.TheEncoderAllocationHasNoMaximumOfItsOwn (0.0 ms)
 [ RUN  ] LibwebrtcDefaults.TheBitrateAdjusterRunsOnAllocationUpdates
@@ -109,7 +109,7 @@
 [ RUN  ] PacketRouter.AnUnsentSlotTakesNoTransportSequenceNumber
 [  OK  ] PacketRouter.AnUnsentSlotTakesNoTransportSequenceNumber (0.1 ms)
 [ RUN  ] RtcpEngine.RandomizedIntervalsStayInRangeAndAreDeterministic
-[  OK  ] RtcpEngine.RandomizedIntervalsStayInRangeAndAreDeterministic (2.2 ms)
+[  OK  ] RtcpEngine.RandomizedIntervalsStayInRangeAndAreDeterministic (2.1 ms)
 [ RUN  ] RtcpEngine.IntervalsAreLibwebrtcsDrawsFromTheSameSeed
 [  OK  ] RtcpEngine.IntervalsAreLibwebrtcsDrawsFromTheSameSeed (0.1 ms)
 [ RUN  ] RtcpEngine.XorshiftRandomMatchesWebrtcRandom
@@ -135,7 +135,7 @@
 [ RUN  ] RtcpEngine.TransportFeedbackNeverSharesADatagramWithACompound
 [  OK  ] RtcpEngine.TransportFeedbackNeverSharesADatagramWithACompound (0.1 ms)
 [ RUN  ] RtcpEngine.TransportFeedbackAndRembSurviveARoundTrip
-[  OK  ] RtcpEngine.TransportFeedbackAndRembSurviveARoundTrip (0.5 ms)
+[  OK  ] RtcpEngine.TransportFeedbackAndRembSurviveARoundTrip (0.6 ms)
 [ RUN  ] RtcpEngine.DispatchTableSendsEachTypeToItsOwnList
 [  OK  ] RtcpEngine.DispatchTableSendsEachTypeToItsOwnList (0.4 ms)
 [ RUN  ] RtcpEngine.LossNotificationNeverRequestsAKeyframe
@@ -145,11 +145,11 @@
 [ RUN  ] RtcpEngine.RepeatedFirSequenceNumberIsIgnored
 [  OK  ] RtcpEngine.RepeatedFirSequenceNumberIsIgnored (0.1 ms)
 [ RUN  ] RtcpEngine.RttComesFromReportBlocksOfLocalStreams
-[  OK  ] RtcpEngine.RttComesFromReportBlocksOfLocalStreams (0.1 ms)
+[  OK  ] RtcpEngine.RttComesFromReportBlocksOfLocalStreams (0.2 ms)
 [ RUN  ] RtcpEngine.BlocksForOtherSsrcsGiveNoRtt
 [  OK  ] RtcpEngine.BlocksForOtherSsrcsGiveNoRtt (0.0 ms)
 [ RUN  ] RtcpEngine.MalformedDatagramsAreCountedAndHarmless
-[  OK  ] RtcpEngine.MalformedDatagramsAreCountedAndHarmless (0.8 ms)
+[  OK  ] RtcpEngine.MalformedDatagramsAreCountedAndHarmless (0.9 ms)
 [ RUN  ] RtcpEngine.ByeGoesLastInACompoundWithTheFullReport
 [  OK  ] RtcpEngine.ByeGoesLastInACompoundWithTheFullReport (0.2 ms)
 [ RUN  ] RtcpEngine.SenderReportCarriesSdesEvenWithoutACname
@@ -161,7 +161,7 @@
 [ RUN  ] RtcpEngine.FirStateIsBoundedAndOnlyTracksLocalStreams
 [  OK  ] RtcpEngine.FirStateIsBoundedAndOnlyTracksLocalStreams (1.1 ms)
 [ RUN  ] RtcpEngine.ReportIntervalFollowsTheSendBitrateRule
-[  OK  ] RtcpEngine.ReportIntervalFollowsTheSendBitrateRule (0.9 ms)
+[  OK  ] RtcpEngine.ReportIntervalFollowsTheSendBitrateRule (0.8 ms)
 [ RUN  ] RtcpEngine.ReportDueWithin100msIsSentBeforeAKeyframe
 [  OK  ] RtcpEngine.ReportDueWithin100msIsSentBeforeAKeyframe (0.1 ms)
 [ RUN  ] RtcpEngine.ReceiveOnlyRttFromRrtrAndDlrr
@@ -177,7 +177,7 @@
 [ RUN  ] RtcpSdesBye.SdesRejectsUnencodableAndMalformed
 [  OK  ] RtcpSdesBye.SdesRejectsUnencodableAndMalformed (0.1 ms)
 [ RUN  ] RtcpSdesBye.ByeByteLayout
-[  OK  ] RtcpSdesBye.ByeByteLayout (0.0 ms)
+[  OK  ] RtcpSdesBye.ByeByteLayout (0.1 ms)
 [ RUN  ] RtcpSdesBye.ByeWithoutReasonAndPadded
 [  OK  ] RtcpSdesBye.ByeWithoutReasonAndPadded (0.1 ms)
 [ RUN  ] RtcpSdesBye.ByeRejectsUnencodableAndMalformed
@@ -185,7 +185,7 @@
 [ RUN  ] RtcpSdesBye.FuzzedBytesNeverCrash
 [  OK  ] RtcpSdesBye.FuzzedBytesNeverCrash (0.1 ms)
 [ RUN  ] RtpReceiver.MalformedDatagramIsCountedAndDropped
-[  OK  ] RtpReceiver.MalformedDatagramIsCountedAndDropped (0.3 ms)
+[  OK  ] RtpReceiver.MalformedDatagramIsCountedAndDropped (0.2 ms)
 [ RUN  ] RtpReceiver.FramesInOrderAreAssembledScheduledAndRendered
 [  OK  ] RtpReceiver.FramesInOrderAreAssembledScheduledAndRendered (1.8 ms)
 [ RUN  ] RtpReceiver.LostPacketIsNackedAndRtxCompletesTheFrame
@@ -201,7 +201,7 @@
 [ RUN  ] RtpReceiver.StrictModeNeedsParameterSetsForAKeyframe
 [  OK  ] RtpReceiver.StrictModeNeedsParameterSetsForAKeyframe (0.1 ms)
 [ RUN  ] RtpReceiver.TheFrameBitstreamIsRebuiltFromThePackets
-[  OK  ] RtpReceiver.TheFrameBitstreamIsRebuiltFromThePackets (0.2 ms)
+[  OK  ] RtpReceiver.TheFrameBitstreamIsRebuiltFromThePackets (0.1 ms)
 [ RUN  ] RtpReceiver.FrameIdsAndReferencesComeFromSequenceNumbers
 [  OK  ] RtpReceiver.FrameIdsAndReferencesComeFromSequenceNumbers (0.2 ms)
 [ RUN  ] RtpReceiver.AKeyframeWhoseParameterSetPacketIsLostIsDeliveredFromItsIdr
@@ -215,25 +215,25 @@
 [ RUN  ] RtpReceiver.TransportSequenceNumbersOfEveryPacketReachTheFeedbackBuilder
 [  OK  ] RtpReceiver.TransportSequenceNumbersOfEveryPacketReachTheFeedbackBuilder (0.1 ms)
 [ RUN  ] RtpReceiver.UlpfecRecoversALostMediaPacket
-[  OK  ] RtpReceiver.UlpfecRecoversALostMediaPacket (0.4 ms)
+[  OK  ] RtpReceiver.UlpfecRecoversALostMediaPacket (0.3 ms)
 [ RUN  ] RtpReceiver.RedPacketRestoredFromRtx
 [  OK  ] RtpReceiver.RedPacketRestoredFromRtx (0.2 ms)
 [ RUN  ] RtpReceiver.AudioFramesAreDecodedIntoTheJitterBuffer
 [  OK  ] RtpReceiver.AudioFramesAreDecodedIntoTheJitterBuffer (0.8 ms)
 [ RUN  ] RtpReceiver.RedBlocksReachNetEqAsSplitRedOrders
-[  OK  ] RtpReceiver.RedBlocksReachNetEqAsSplitRedOrders (0.4 ms)
+[  OK  ] RtpReceiver.RedBlocksReachNetEqAsSplitRedOrders (0.3 ms)
 [ RUN  ] RtpReceiver.InBandFecFillsTheLostFrameWithNetEqV2
 [  OK  ] RtpReceiver.InBandFecFillsTheLostFrameWithNetEqV2 (0.7 ms)
 [ RUN  ] RtpReceiver.NetEqV2DecodesFramesAtPlayoutInTimestampOrder
 [  OK  ] RtpReceiver.NetEqV2DecodesFramesAtPlayoutInTimestampOrder (0.2 ms)
 [ RUN  ] RtpReceiver.StatisticsFeedReportBlocksAndFrameMetadataIsBounded
-[  OK  ] RtpReceiver.StatisticsFeedReportBlocksAndFrameMetadataIsBounded (17.0 ms)
+[  OK  ] RtpReceiver.StatisticsFeedReportBlocksAndFrameMetadataIsBounded (17.5 ms)
 [ RUN  ] RtpReceiver.MediaObserverSeesOriginalsAndRtxRestoresButNotPadding
 [  OK  ] RtpReceiver.MediaObserverSeesOriginalsAndRtxRestoresButNotPadding (0.2 ms)
 [ RUN  ] RtpReceiver.SyncInfoIgnoresPacketsRestoredFromRtx
 [  OK  ] RtpReceiver.SyncInfoIgnoresPacketsRestoredFromRtx (0.2 ms)
 [ RUN  ] RtpReceiver.SpsPpsTrackerDropsAnIdrStartBeforeItsParameterSetsAndAsksForAKeyframe
-[  OK  ] RtpReceiver.SpsPpsTrackerDropsAnIdrStartBeforeItsParameterSetsAndAsksForAKeyframe (0.4 ms)
+[  OK  ] RtpReceiver.SpsPpsTrackerDropsAnIdrStartBeforeItsParameterSetsAndAsksForAKeyframe (0.2 ms)
 [ RUN  ] RtpReceiver.SpsPpsTrackerPassesAKeyframeInOrder
 [  OK  ] RtpReceiver.SpsPpsTrackerPassesAKeyframeInOrder (0.1 ms)
 [ RUN  ] RtpReceiver.FrameRotationComesFromTheLastPacketsCvo
@@ -245,9 +245,9 @@
 [ RUN  ] RtpReceiver.AFullFrameBufferRefusesADeltaFrameAndAKeyframeClearsIt
 [  OK  ] RtpReceiver.AFullFrameBufferRefusesADeltaFrameAndAKeyframeClearsIt (1.7 ms)
 [ RUN  ] RtpReceiver.AfterAPacketBufferResetAnOlderIdIsRefusedUnlessItIsANewerKeyframe
-[  OK  ] RtpReceiver.AfterAPacketBufferResetAnOlderIdIsRefusedUnlessItIsANewerKeyframe (14.0 ms)
+[  OK  ] RtpReceiver.AfterAPacketBufferResetAnOlderIdIsRefusedUnlessItIsANewerKeyframe (14.2 ms)
 [ RUN  ] RtpReceiver.AFrameWithoutTheExtensionGetsTheInterpolatedCaptureTime
-[  OK  ] RtpReceiver.AFrameWithoutTheExtensionGetsTheInterpolatedCaptureTime (0.2 ms)
+[  OK  ] RtpReceiver.AFrameWithoutTheExtensionGetsTheInterpolatedCaptureTime (0.3 ms)
 [ RUN  ] RtpReceiver.SenderReportsTrainTheRemoteNtpEstimateAndTheCaptureClockOffset
 [  OK  ] RtpReceiver.SenderReportsTrainTheRemoteNtpEstimateAndTheCaptureClockOffset (0.3 ms)
 [ RUN  ] RtpReceiver.AudioInterpolatesEachPacketAndReusesTheLastSenderReport
@@ -255,11 +255,11 @@
 [ RUN  ] RtpReceiver.LastRttIsTheReportBlockRttElseThePeriodicOne
 [  OK  ] RtpReceiver.LastRttIsTheReportBlockRttElseThePeriodicOne (0.0 ms)
 [ RUN  ] RtpReceiver.DecodedAudioCarriesThePacketInfosOfItsPackets
-[  OK  ] RtpReceiver.DecodedAudioCarriesThePacketInfosOfItsPackets (0.3 ms)
+[  OK  ] RtpReceiver.DecodedAudioCarriesThePacketInfosOfItsPackets (0.2 ms)
 [ RUN  ] RtpReceiver.ASequenceNumberDiscontinuityRequestsKeyframesUntilANewerKeyframeReanchors
 [  OK  ] RtpReceiver.ASequenceNumberDiscontinuityRequestsKeyframesUntilANewerKeyframeReanchors (0.4 ms)
 [ RUN  ] RtpReceiver.AnOldPacketFarBehindIsDroppedAndH264HasNoDiscontinuityRule
-[  OK  ] RtpReceiver.AnOldPacketFarBehindIsDroppedAndH264HasNoDiscontinuityRule (0.1 ms)
+[  OK  ] RtpReceiver.AnOldPacketFarBehindIsDroppedAndH264HasNoDiscontinuityRule (0.2 ms)
 [ RUN  ] RtpReceiver.ACopyAfterAssemblyIsAssembledAgainAndTheFrameBufferDropsIt
 [  OK  ] RtpReceiver.ACopyAfterAssemblyIsAssembledAgainAndTheFrameBufferDropsIt (0.2 ms)
 [ RUN  ] RtpReceiver.TimingV1DropsACopyAfterAssemblyInThePacketBuffer
@@ -273,7 +273,7 @@
 [ RUN  ] RtpSender.NackWithoutRtxIsCountedNotAnswered
 [  OK  ] RtpSender.NackWithoutRtxIsCountedNotAnswered (0.0 ms)
 [ RUN  ] RtpSender.AudioRedCarriesThePreviousFrame
-[  OK  ] RtpSender.AudioRedCarriesThePreviousFrame (0.2 ms)
+[  OK  ] RtpSender.AudioRedCarriesThePreviousFrame (0.1 ms)
 [ RUN  ] RtpSender.SenderReportRateIsTheLastPayloadTypesRegisteredRate
 [  OK  ] RtpSender.SenderReportRateIsTheLastPayloadTypesRegisteredRate (0.0 ms)
 [ RUN  ] RtpSender.AudioMarkerOnTheFirstPacketAndAfterDtx
@@ -295,7 +295,7 @@
 [ RUN  ] RtpSender.AudioLevelByteIsWrittenWhenTheExtensionIsMapped
 [  OK  ] RtpSender.AudioLevelByteIsWrittenWhenTheExtensionIsMapped (0.1 ms)
 [ RUN  ] RtpSender.AudioLevelIsTheRmsLevelOfTheCaptureFramesSinceTheLastPacket
-[  OK  ] RtpSender.AudioLevelIsTheRmsLevelOfTheCaptureFramesSinceTheLastPacket (0.2 ms)
+[  OK  ] RtpSender.AudioLevelIsTheRmsLevelOfTheCaptureFramesSinceTheLastPacket (0.3 ms)
 [ RUN  ] RtpSender.ProcessAudioCaptureFadesOnMuteAsChannelSend
 [  OK  ] RtpSender.ProcessAudioCaptureFadesOnMuteAsChannelSend (0.2 ms)
 [ RUN  ] RtpSender.MediaHeaderSizeCountsTheExtensionsTheNextPacketCarries
@@ -351,7 +351,7 @@
 [ RUN  ] RtpSender.AbsoluteCaptureTimeNeedsTheExtensionMapped
 [  OK  ] RtpSender.AbsoluteCaptureTimeNeedsTheExtensionMapped (0.1 ms)
 [ RUN  ] RtpSender.FirstPacketReductionIsTheRoomAbsoluteCaptureTimeTakes
-[  OK  ] RtpSender.FirstPacketReductionIsTheRoomAbsoluteCaptureTimeTakes (0.1 ms)
+[  OK  ] RtpSender.FirstPacketReductionIsTheRoomAbsoluteCaptureTimeTakes (0.2 ms)
 [ RUN  ] RtpSender.AudioAbsoluteCaptureTimeInFullPrecisionPerPacket
 [  OK  ] RtpSender.AudioAbsoluteCaptureTimeInFullPrecisionPerPacket (0.1 ms)
 [ RUN  ] RtpSender.SenderReportCountsEveryPacketSentOnTheMediaAndRtxSsrcs
@@ -377,7 +377,7 @@
 [ RUN  ] SendSideController.AllocationReadsTheSendRatesAtItsOwnTime
 [  OK  ] SendSideController.AllocationReadsTheSendRatesAtItsOwnTime (0.2 ms)
 [ RUN  ] SendSideController.CwndReduceRatioStopsAtTheMinimumBitrate
-[  OK  ] SendSideController.CwndReduceRatioStopsAtTheMinimumBitrate (2.2 ms)
+[  OK  ] SendSideController.CwndReduceRatioStopsAtTheMinimumBitrate (2.3 ms)
 [ RUN  ] SendSideController.PacingSpreadsAFrameOverTime
 [  OK  ] SendSideController.PacingSpreadsAFrameOverTime (0.1 ms)
 [ RUN  ] SendSideController.ComputeRatesDividesOutProtectionAndClamps
@@ -395,7 +395,7 @@
 [ RUN  ] SendSideController.AWindowWithRepairButNoVideoIsCappedLikeLibwebrtc
 [  OK  ] SendSideController.AWindowWithRepairButNoVideoIsCappedLikeLibwebrtc (0.1 ms)
 [ RUN  ] SendSideController.RateStatisticsCountRepairThatJustStartedAtItsRateSinceItStarted
-[  OK  ] SendSideController.RateStatisticsCountRepairThatJustStartedAtItsRateSinceItStarted (0.7 ms)
+[  OK  ] SendSideController.RateStatisticsCountRepairThatJustStartedAtItsRateSinceItStarted (0.9 ms)
 [ RUN  ] SendSideController.RateStatisticsKeepTheWindowWhenTheLastRepairWasRecent
 [  OK  ] SendSideController.RateStatisticsKeepTheWindowWhenTheLastRepairWasRecent (0.3 ms)
 [ RUN  ] SendSideController.RateStatisticsOfAVideoModuleRestartARepairStreamThatPausedForAWindow
@@ -403,7 +403,7 @@
 [ RUN  ] SendSideController.RateStatisticsAndControlHandlerAreTheDefault
 [  OK  ] SendSideController.RateStatisticsAndControlHandlerAreTheDefault (0.0 ms)
 [ RUN  ] SendSideController.KeyframeFlushesQueuedVideoUnderPacerV2
-[  OK  ] SendSideController.KeyframeFlushesQueuedVideoUnderPacerV2 (0.1 ms)
+[  OK  ] SendSideController.KeyframeFlushesQueuedVideoUnderPacerV2 (0.2 ms)
 [ RUN  ] SendSideController.FlushedPacketsLeaveNoSequenceGapUnderRtxV2
 [  OK  ] SendSideController.FlushedPacketsLeaveNoSequenceGapUnderRtxV2 (0.2 ms)
 [ RUN  ] SendSideController.FlushedResendIsNotSentAgainUnderPacerV2AndRtxV2
@@ -419,11 +419,11 @@
 [ RUN  ] SendSideController.V2OverheadFollowsTheConfiguredPacketSizeAsLibwebrtc
 [  OK  ] SendSideController.V2OverheadFollowsTheConfiguredPacketSizeAsLibwebrtc (0.0 ms)
 [ RUN  ] SendSideController.ControlHandlerKeepsTheEncoderTargetUntilTheNextUpdate
-[  OK  ] SendSideController.ControlHandlerKeepsTheEncoderTargetUntilTheNextUpdate (0.2 ms)
+[  OK  ] SendSideController.ControlHandlerKeepsTheEncoderTargetUntilTheNextUpdate (0.1 ms)
 [ RUN  ] SendSideController.LinkAllocationIsTakenBeforeTheEncoderMaximumAsLibwebrtc
 [  OK  ] SendSideController.LinkAllocationIsTakenBeforeTheEncoderMaximumAsLibwebrtc (0.1 ms)
 [ RUN  ] SendSideController.LinkAllocationIsTheEncoderTargetBelowTheMaximum
-[  OK  ] SendSideController.LinkAllocationIsTheEncoderTargetBelowTheMaximum (0.1 ms)
+[  OK  ] SendSideController.LinkAllocationIsTheEncoderTargetBelowTheMaximum (0.2 ms)
 [ RUN  ] SendSideController.PostEncodeOverheadComesOffTheEncoderTargetAsLibwebrtc
 [  OK  ] SendSideController.PostEncodeOverheadComesOffTheEncoderTargetAsLibwebrtc (0.1 ms)
 [ RUN  ] SendSideController.TheReallocationAfterAReconfigurationCountsTheReconfiguringFrame
@@ -439,7 +439,7 @@
 [ RUN  ] SendSideController.EncodedFramesKeepVideoInTheAllocator
 [  OK  ] SendSideController.EncodedFramesKeepVideoInTheAllocator (0.2 ms)
 [ RUN  ] SessionMultiStream.EachRemoteStreamReachesItsOwnReceiver
-[  OK  ] SessionMultiStream.EachRemoteStreamReachesItsOwnReceiver (1.9 ms)
+[  OK  ] SessionMultiStream.EachRemoteStreamReachesItsOwnReceiver (2.0 ms)
 [ RUN  ] SessionMultiStream.EachParticipantIsItsOwnSyncGroup
 [  OK  ] SessionMultiStream.EachParticipantIsItsOwnSyncGroup (1.2 ms)
 [ RUN  ] SessionMultiStream.RemovedStreamsLeaveTheDemuxerStatsAndReports
@@ -449,15 +449,15 @@
 [ RUN  ] SessionStats.SendAndReceiveCountersMatchTheStreams
 [  OK  ] SessionStats.SendAndReceiveCountersMatchTheStreams (3.5 ms)
 [ RUN  ] SessionStats.LossIsCountedAndNackedOnTheReceiveSide
-[  OK  ] SessionStats.LossIsCountedAndNackedOnTheReceiveSide (2.3 ms)
+[  OK  ] SessionStats.LossIsCountedAndNackedOnTheReceiveSide (2.4 ms)
 [ RUN  ] SessionStats.FreezeStatsComeFromTheAppsDetector
 [  OK  ] SessionStats.FreezeStatsComeFromTheAppsDetector (0.1 ms)
 [ RUN  ] SessionStats.GetStatsChangesNothing
-[  OK  ] SessionStats.GetStatsChangesNothing (7.0 ms)
+[  OK  ] SessionStats.GetStatsChangesNothing (7.1 ms)
 [ RUN  ] Session.MediaIsRoutedToTheMatchingReceiverAndRtcpGoesToTheEngine
 [  OK  ] Session.MediaIsRoutedToTheMatchingReceiverAndRtcpGoesToTheEngine (0.4 ms)
 [ RUN  ] Session.SenderReportsCarryTheCnameAndReceiveOnlyReportsCarryNoSdes
-[  OK  ] Session.SenderReportsCarryTheCnameAndReceiveOnlyReportsCarryNoSdes (3.6 ms)
+[  OK  ] Session.SenderReportsCarryTheCnameAndReceiveOnlyReportsCarryNoSdes (3.4 ms)
 [ RUN  ] Session.NextProcessTimeWithAVideoReceiverIsItsEarliestTimer
 [  OK  ] Session.NextProcessTimeWithAVideoReceiverIsItsEarliestTimer (0.3 ms)
 [ RUN  ] Session.AvSyncPairsTheFirstAudioAndVideoReceiveStreams
@@ -467,15 +467,15 @@
 [ RUN  ] Session.SendVideoReturnsTheSizeAfterTheSpsRewrite
 [  OK  ] Session.SendVideoReturnsTheSizeAfterTheSpsRewrite (0.1 ms)
 [ RUN  ] Session.H264PacketizationModeZeroSendsSingleNalUnits
-[  OK  ] Session.H264PacketizationModeZeroSendsSingleNalUnits (0.2 ms)
+[  OK  ] Session.H264PacketizationModeZeroSendsSingleNalUnits (0.1 ms)
 [ RUN  ] Session.SendVideoPacketizesAnAnnexBFrameWithinTheMtu
 [  OK  ] Session.SendVideoPacketizesAnAnnexBFrameWithinTheMtu (0.3 ms)
 [ RUN  ] Session.VideoPacketsLeaveRoomForTheRtxHeaderWhenTheyMayBeRetransmitted
 [  OK  ] Session.VideoPacketsLeaveRoomForTheRtxHeaderWhenTheyMayBeRetransmitted (2.5 ms)
 [ RUN  ] Session.RotatedFramesCarryCvoWithinThePacketLimit
-[  OK  ] Session.RotatedFramesCarryCvoWithinThePacketLimit (1.8 ms)
+[  OK  ] Session.RotatedFramesCarryCvoWithinThePacketLimit (1.7 ms)
 [ RUN  ] Session.CapturedFramesCarryAbsoluteCaptureTimeWithinThePacketLimit
-[  OK  ] Session.CapturedFramesCarryAbsoluteCaptureTimeWithinThePacketLimit (9.3 ms)
+[  OK  ] Session.CapturedFramesCarryAbsoluteCaptureTimeWithinThePacketLimit (9.4 ms)
 [ RUN  ] Session.AudioPacketsCarryTheLevelOfTheCaptureFrames
 [  OK  ] Session.AudioPacketsCarryTheLevelOfTheCaptureFrames (0.1 ms)
 [ RUN  ] Session.KeyframeSpsGetsLibwebrtcsVui
@@ -489,11 +489,11 @@
 [ RUN  ] Session.RttStatsArePerSendStreamAndFromTheMediaSsrcOnly
 [  OK  ] Session.RttStatsArePerSendStreamAndFromTheMediaSsrcOnly (0.2 ms)
 [ RUN  ] Session.PliFromThePeerBecomesAKeyframeEvent
-[  OK  ] Session.PliFromThePeerBecomesAKeyframeEvent (0.1 ms)
+[  OK  ] Session.PliFromThePeerBecomesAKeyframeEvent (0.0 ms)
 [ RUN  ] Session.DemuxesRtcpAndRtpByTheSecondByte
 [  OK  ] Session.DemuxesRtcpAndRtpByTheSecondByte (0.1 ms)
 [ RUN  ] Session.RandomAndTruncatedDatagramsNeverCrashAndAreCounted
-[  OK  ] Session.RandomAndTruncatedDatagramsNeverCrashAndAreCounted (8.9 ms)
+[  OK  ] Session.RandomAndTruncatedDatagramsNeverCrashAndAreCounted (9.0 ms)
 [ RUN  ] Session.MidIsRepeatedUntilThePeerAnswersWithOne
 [  OK  ] Session.MidIsRepeatedUntilThePeerAnswersWithOne (0.2 ms)
 [ RUN  ] Session.ExpectedPacketOverheadIsTheVideoSendersHeader
@@ -515,7 +515,7 @@
 [ RUN  ] Session.LossReportsArePerSendStreamAndNeedAReceivedPacket
 [  OK  ] Session.LossReportsArePerSendStreamAndNeedAReceivedPacket (0.1 ms)
 [ RUN  ] Session.SetRttFeedsTheSessionWithoutRaisingAnEvent
-[  OK  ] Session.SetRttFeedsTheSessionWithoutRaisingAnEvent (0.0 ms)
+[  OK  ] Session.SetRttFeedsTheSessionWithoutRaisingAnEvent (0.1 ms)
 [ RUN  ] Session.TheCongestionControllerGetsNoRttBeforeOneIsKnown
 [  OK  ] Session.TheCongestionControllerGetsNoRttBeforeOneIsKnown (0.1 ms)
 [ RUN  ] Session.AReceiveOnlyVideoStreamTakesTheMaximumRttFromCallStats
@@ -571,7 +571,7 @@
 [ RUN  ] Session.AudioReceiveRtcpIsTheDefault
 [  OK  ] Session.AudioReceiveRtcpIsTheDefault (0.0 ms)
 [ RUN  ] Session.ReceivedFramesCarryTheCaptureTimeOnTheLocalClock
-[  OK  ] Session.ReceivedFramesCarryTheCaptureTimeOnTheLocalClock (7.1 ms)
+[  OK  ] Session.ReceivedFramesCarryTheCaptureTimeOnTheLocalClock (6.8 ms)
 [ RUN  ] Session.ReceiveStreamsTrainTheirNtpEstimateFromTheirOwnModulesRtt
 [  OK  ] Session.ReceiveStreamsTrainTheirNtpEstimateFromTheirOwnModulesRtt (1.1 ms)
 [ RUN  ] Session.StreamsStartAtLibwebrtcsRandomSequenceNumberAndTimestamp
@@ -579,7 +579,7 @@
 [ RUN  ] Session.TheNackForAGapCarriesReportBlocksWithoutThePacketThatRevealedIt
 [  OK  ] Session.TheNackForAGapCarriesReportBlocksWithoutThePacketThatRevealedIt (0.9 ms)
 [ RUN  ] Session.TheAudioSendStreamsReportEchoesTheReceiversRrtr
-[  OK  ] Session.TheAudioSendStreamsReportEchoesTheReceiversRrtr (4.3 ms)
+[  OK  ] Session.TheAudioSendStreamsReportEchoesTheReceiversRrtr (4.2 ms)
 [ RUN  ] Session.CancelAudioDropsTheQueuedAudioOnlyAndLeavesNoSequenceGap
 [  OK  ] Session.CancelAudioDropsTheQueuedAudioOnlyAndLeavesNoSequenceGap (0.4 ms)
 [ RUN  ] Session.FlushAudioFlushesTheStreamsJitterBuffer
@@ -611,7 +611,7 @@
 [ RUN  ] SimulcastSend.InactiveLayerIsNotEncodedAndItsRateGoesToTheActiveOnes
 [  OK  ] SimulcastSend.InactiveLayerIsNotEncodedAndItsRateGoesToTheActiveOnes (0.5 ms)
 [ RUN  ] SimulcastSend.ReactivatedLayerRestartsWithAKeyframe
-[  OK  ] SimulcastSend.ReactivatedLayerRestartsWithAKeyframe (0.3 ms)
+[  OK  ] SimulcastSend.ReactivatedLayerRestartsWithAKeyframe (0.2 ms)
 [ RUN  ] SimulcastSend.SessionActiveStateIsTakenAtTheNextFrame
 [  OK  ] SimulcastSend.SessionActiveStateIsTakenAtTheNextFrame (0.1 ms)
 [ RUN  ] SimulcastSend.RequiresEncoderResetOnlyWhenAStreamComesBack
@@ -623,7 +623,7 @@
 [ RUN  ] SpsVuiRewriter.RewritesKeyframesAndDropsAccessUnitDelimiters
 [  OK  ] SpsVuiRewriter.RewritesKeyframesAndDropsAccessUnitDelimiters (0.1 ms)
 [ RUN  ] SpsVuiRewriter.LeavesAnUnparsableSpsAsItIs
-[  OK  ] SpsVuiRewriter.LeavesAnUnparsableSpsAsItIs (0.0 ms)
+[  OK  ] SpsVuiRewriter.LeavesAnUnparsableSpsAsItIs (0.1 ms)
 [ RUN  ] SpsVuiRewriter.RbspEscapingRoundTrips
 [  OK  ] SpsVuiRewriter.RbspEscapingRoundTrips (0.0 ms)
 [ RUN  ] SpsVuiRewriter.FakeEncoderKeyframeGrowsByFiveBytes
@@ -639,7 +639,7 @@
 [ RUN  ] VideoSendController.OutagePauseDropsFramesAndResumeWithKeyframe
 [  OK  ] VideoSendController.OutagePauseDropsFramesAndResumeWithKeyframe (0.0 ms)
 [ RUN  ] VideoSendController.FrameDropperDropsFramesKeyframesIncluded
-[  OK  ] VideoSendController.FrameDropperDropsFramesKeyframesIncluded (0.0 ms)
+[  OK  ] VideoSendController.FrameDropperDropsFramesKeyframesIncluded (0.1 ms)
 [ RUN  ] VideoSendController.DroppedFramesAreCounted
 [  OK  ] VideoSendController.DroppedFramesAreCounted (0.1 ms)
 [ RUN  ] VideoSendController.BitrateAdjusterLowersTheEncoderRateNotTheDropperTarget
@@ -653,13 +653,13 @@
 [ RUN  ] VideoSendController.AllocationIsRaisedToTheCodecMinimum
 [  OK  ] VideoSendController.AllocationIsRaisedToTheCodecMinimum (0.0 ms)
 [ RUN  ] VideoSendController.AllocationIsWholeKbpsRoundedDown
-[  OK  ] VideoSendController.AllocationIsWholeKbpsRoundedDown (0.0 ms)
+[  OK  ] VideoSendController.AllocationIsWholeKbpsRoundedDown (0.1 ms)
 [ RUN  ] VideoSendController.PeerKeyframeRequestsWithin300msAreIgnored
 [  OK  ] VideoSendController.PeerKeyframeRequestsWithin300msAreIgnored (0.0 ms)
 [ RUN  ] VideoSendController.PeerKeyframeRequestsAreNotFilteredWithAZeroInterval
 [  OK  ] VideoSendController.PeerKeyframeRequestsAreNotFilteredWithAZeroInterval (0.0 ms)
 [ RUN  ] VideoSendController.QualityScalingDropsInitialFramesAndScalesDown
-[  OK  ] VideoSendController.QualityScalingDropsInitialFramesAndScalesDown (0.1 ms)
+[  OK  ] VideoSendController.QualityScalingDropsInitialFramesAndScalesDown (0.2 ms)
 [ RUN  ] VideoSendController.QualityScalingAdaptsUpOnLowQpWithAKeyframe
 [  OK  ] VideoSendController.QualityScalingAdaptsUpOnLowQpWithAKeyframe (0.2 ms)
 [ RUN  ] VideoSendController.QualityScalerStepAppliesFromTheFrameAfterTheCheck
@@ -671,7 +671,7 @@
 [ RUN  ] VideoSendController.CpuUnderuseDoesNotUndoTheQualityScalersSteps
 [  OK  ] VideoSendController.CpuUnderuseDoesNotUndoTheQualityScalersSteps (1.8 ms)
 [ RUN  ] VideoSendController.NewFrameSizeStartsAFreshBitrateAdjuster
-[  OK  ] VideoSendController.NewFrameSizeStartsAFreshBitrateAdjuster (0.3 ms)
+[  OK  ] VideoSendController.NewFrameSizeStartsAFreshBitrateAdjuster (0.2 ms)
 [ RUN  ] VideoSendController.BitrateAdjusterRunsOnAllocationUpdatesAndEverySecond
 [  OK  ] VideoSendController.BitrateAdjusterRunsOnAllocationUpdatesAndEverySecond (0.1 ms)
 [ RUN  ] VideoSendController.BitrateAdjusterRunsWhenTheAllocationUpdateArrives

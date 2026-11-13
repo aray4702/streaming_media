@@ -21,7 +21,7 @@
 [ RUN  ] AudioFrameOperations.FadeOfASilentFrameStaysSilent
 [  OK  ] AudioFrameOperations.FadeOfASilentFrameStaysSilent (0.0 ms)
 [ RUN  ] Units.Arithmetic
-[  OK  ] Units.Arithmetic (0.2 ms)
+[  OK  ] Units.Arithmetic (0.1 ms)
 [ RUN  ] Units.InfinitySaturates
 [  OK  ] Units.InfinitySaturates (0.0 ms)
 [ RUN  ] Units.RoundTo
@@ -41,7 +41,7 @@
 [ RUN  ] Histogram.Merge
 [  OK  ] Histogram.Merge (0.0 ms)
 [ RUN  ] Metrics.RegistryJsonAndPrometheus
-[  OK  ] Metrics.RegistryJsonAndPrometheus (0.9 ms)
+[  OK  ] Metrics.RegistryJsonAndPrometheus (0.7 ms)
 [ RUN  ] EventLog.RingBufferAndCallback
 [  OK  ] EventLog.RingBufferAndCallback (0.1 ms)
 [ RUN  ] Fft.ComplexRoundTripAndTone
@@ -49,27 +49,27 @@
 [ RUN  ] Fft.RealMatchesComplex
 [  OK  ] Fft.RealMatchesComplex (0.5 ms)
 [ RUN  ] Dsp.PitchAndLpc
-[  OK  ] Dsp.PitchAndLpc (1.5 ms)
+[  OK  ] Dsp.PitchAndLpc (1.7 ms)
 [ RUN  ] Dsp.HighPassRemovesDc
 [  OK  ] Dsp.HighPassRemovesDc (0.2 ms)
 [ RUN  ] RtpPacket.SerializeParseRoundTrip
-[  OK  ] RtpPacket.SerializeParseRoundTrip (0.3 ms)
+[  OK  ] RtpPacket.SerializeParseRoundTrip (0.4 ms)
 [ RUN  ] RtpPacket.PaddingOnlyAndPaddedPackets
-[  OK  ] RtpPacket.PaddingOnlyAndPaddedPackets (0.0 ms)
+[  OK  ] RtpPacket.PaddingOnlyAndPaddedPackets (0.1 ms)
 [ RUN  ] NetworkLink.LossDelayAndCapacity
-[  OK  ] NetworkLink.LossDelayAndCapacity (15.9 ms)
+[  OK  ] NetworkLink.LossDelayAndCapacity (16.0 ms)
 [ RUN  ] NetworkLink.CountsSentLostAndDroppedPerKind
 [  OK  ] NetworkLink.CountsSentLostAndDroppedPerKind (0.2 ms)
 [ RUN  ] NetworkLink.TracksPacketSizePercentilesPerKind
 [  OK  ] NetworkLink.TracksPacketSizePercentilesPerKind (0.1 ms)
 [ RUN  ] NetworkLink.GilbertBurstsAreLongerThanBernoulli
-[  OK  ] NetworkLink.GilbertBurstsAreLongerThanBernoulli (34.1 ms)
+[  OK  ] NetworkLink.GilbertBurstsAreLongerThanBernoulli (33.7 ms)
 [ RUN  ] NetworkLink.TraceRecordsEveryOfferedPacketWithItsOutcome
 [  OK  ] NetworkLink.TraceRecordsEveryOfferedPacketWithItsOutcome (0.2 ms)
 [ RUN  ] NetworkLink.TraceMarksOutageAndRandomLoss
 [  OK  ] NetworkLink.TraceMarksOutageAndRandomLoss (0.0 ms)
 [ RUN  ] RateTracker.Test30FPS
-[  OK  ] RateTracker.Test30FPS (0.0 ms)
+[  OK  ] RateTracker.Test30FPS (0.1 ms)
 [ RUN  ] RateTracker.Test60FPS
 [  OK  ] RateTracker.Test60FPS (0.0 ms)
 [ RUN  ] RateTracker.Basics
@@ -109,7 +109,7 @@
 [ RUN  ] EventBasedExponentialMovingAverage.SimultaneousSamples
 [  OK  ] EventBasedExponentialMovingAverage.SimultaneousSamples (0.0 ms)
 [ RUN  ] Logging.DefaultsToWarningsAndAbove
-[  OK  ] Logging.DefaultsToWarningsAndAbove (0.3 ms)
+[  OK  ] Logging.DefaultsToWarningsAndAbove (0.2 ms)
 [ RUN  ] Logging.RuntimeLevelSelectsMessages
 [  OK  ] Logging.RuntimeLevelSelectsMessages (0.0 ms)
 [ RUN  ] Logging.ACompiledOutLevelIsNotSupportedAndChangesNothing
@@ -123,7 +123,7 @@
 [ RUN  ] Nat.Bindings
 [  OK  ] Nat.Bindings (1.0 ms)
 [ RUN  ] Nat.Filters
-[  OK  ] Nat.Filters (0.7 ms)
+[  OK  ] Nat.Filters (0.8 ms)
 [ RUN  ] Nat.UnsolicitedInboundIsDropped
 [  OK  ] Nat.UnsolicitedInboundIsDropped (0.1 ms)
 [ RUN  ] Nat.PortsAreHandedOutInOrder
@@ -135,15 +135,15 @@
 [ RUN  ] Nat.InboundRefreshIsOptional
 [  OK  ] Nat.InboundRefreshIsOptional (0.2 ms)
 [ RUN  ] Nat.Hairpinning
-[  OK  ] Nat.Hairpinning (0.6 ms)
+[  OK  ] Nat.Hairpinning (0.4 ms)
 [ RUN  ] SimNetwork.SameRealmNeedsNoNat
 [  OK  ] SimNetwork.SameRealmNeedsNoNat (0.1 ms)
 [ RUN  ] SimNetwork.NestedNats
-[  OK  ] SimNetwork.NestedNats (0.2 ms)
+[  OK  ] SimNetwork.NestedNats (0.1 ms)
 [ RUN  ] SimNetwork.AccessLinksKeepNetworkLinkImpairments
-[  OK  ] SimNetwork.AccessLinksKeepNetworkLinkImpairments (0.1 ms)
+[  OK  ] SimNetwork.AccessLinksKeepNetworkLinkImpairments (0.2 ms)
 [ RUN  ] SimNetwork.RandomLossFollowsTheLinkConfig
-[  OK  ] SimNetwork.RandomLossFollowsTheLinkConfig (49.7 ms)
+[  OK  ] SimNetwork.RandomLossFollowsTheLinkConfig (51.5 ms)
 [ RUN  ] SimNetwork.UnknownAddressesAreUnroutable
 [  OK  ] SimNetwork.UnknownAddressesAreUnroutable (0.1 ms)
 [ RUN  ] SimNetwork.BindingIsMadeWhenTheDatagramReachesTheNat

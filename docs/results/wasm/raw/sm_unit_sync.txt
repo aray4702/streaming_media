@@ -27,7 +27,7 @@
 [ RUN  ] StreamSync.StreamSyncOffset
 [  OK  ] StreamSync.StreamSyncOffset (0.1 ms)
 [ RUN  ] StreamSync.GroupsByCname
-[  OK  ] StreamSync.GroupsByCname (0.2 ms)
+[  OK  ] StreamSync.GroupsByCname (0.1 ms)
 [ RUN  ] StreamSync.GroupPairsTheFirstAudioWithTheFirstVideoOnly
 [  OK  ] StreamSync.GroupPairsTheFirstAudioWithTheFirstVideoOnly (0.1 ms)
 [ RUN  ] StreamSync.EmptySyncGroupIsNeverPaired
@@ -39,7 +39,7 @@
 [ RUN  ] CaptureTime.SenderOmitsInterpolatableExtensions
 [  OK  ] CaptureTime.SenderOmitsInterpolatableExtensions (0.2 ms)
 [ RUN  ] CaptureTime.LatencyWithClockOffset
-[  OK  ] CaptureTime.LatencyWithClockOffset (0.2 ms)
+[  OK  ] CaptureTime.LatencyWithClockOffset (0.1 ms)
 [ RUN  ] CaptureTime.SenderRulesAsLibwebrtc
 [  OK  ] CaptureTime.SenderRulesAsLibwebrtc (0.1 ms)
 [ RUN  ] CaptureTime.InterpolatorRulesAsLibwebrtc

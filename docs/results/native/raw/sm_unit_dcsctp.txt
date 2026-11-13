@@ -11,7 +11,7 @@
 [ RUN  ] DcsctpSequenceNumbersTest.WrappedUnwrapping
 [  OK  ] DcsctpSequenceNumbersTest.WrappedUnwrapping (0.0 ms)
 [ RUN  ] DcsctpSequenceNumbersTest.WrapAroundAFewTimes
-[  OK  ] DcsctpSequenceNumbersTest.WrapAroundAFewTimes (0.1 ms)
+[  OK  ] DcsctpSequenceNumbersTest.WrapAroundAFewTimes (0.2 ms)
 [ RUN  ] DcsctpSequenceNumbersTest.IncrementIsSameAsWrapped
 [  OK  ] DcsctpSequenceNumbersTest.IncrementIsSameAsWrapped (0.1 ms)
 [ RUN  ] DcsctpSequenceNumbersTest.UnwrappingLargerNumberIsAlwaysLarger
@@ -63,7 +63,7 @@
 [ RUN  ] DcsctpIDataChunkTest.AtBeginningSerializeAndDeserialize
 [  OK  ] DcsctpIDataChunkTest.AtBeginningSerializeAndDeserialize (0.0 ms)
 [ RUN  ] DcsctpIDataChunkTest.InMiddleFromCapture
-[  OK  ] DcsctpIDataChunkTest.InMiddleFromCapture (0.1 ms)
+[  OK  ] DcsctpIDataChunkTest.InMiddleFromCapture (0.0 ms)
 [ RUN  ] DcsctpIDataChunkTest.InMiddleSerializeAndDeserialize
 [  OK  ] DcsctpIDataChunkTest.InMiddleSerializeAndDeserialize (0.0 ms)
 [ RUN  ] DcsctpIForwardTsnChunkTest.FromCapture
@@ -122,6 +122,8 @@
 [  OK  ] DcsctpChunkValidatorsTest.MergesBlocksPartiallyOverlapping (0.0 ms)
 [ RUN  ] DcsctpCrc32Test.TestVectors
 [  OK  ] DcsctpCrc32Test.TestVectors (0.0 ms)
+[ RUN  ] DcsctpCrc32Test.MatchesBitwiseForAllLengthsAndAlignments
+[  OK  ] DcsctpCrc32Test.MatchesBitwiseForAllLengthsAndAlignments (0.2 ms)
 [ RUN  ] DcsctpCookieReceivedWhileShuttingDownCauseTest.SerializeAndDeserialize
 [  OK  ] DcsctpCookieReceivedWhileShuttingDownCauseTest.SerializeAndDeserialize (0.0 ms)
 [ RUN  ] DcsctpInvalidMandatoryParameterCauseTest.SerializeAndDeserialize
@@ -223,4 +225,4 @@
 [ RUN  ] DcsctpTlvDataTest.CanHandleInvalidLengthSmallerThanFixedSize
 [  OK  ] DcsctpTlvDataTest.CanHandleInvalidLengthSmallerThanFixedSize (0.0 ms)
 
-112 tests run, 112 passed, 0 failed
+113 tests run, 113 passed, 0 failed

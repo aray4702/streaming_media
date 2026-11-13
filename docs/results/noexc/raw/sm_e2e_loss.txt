@@ -2,7 +2,7 @@
 [metric] nack_on_time=0.997941
 [metric] baseline_on_time=0.949959
 [metric] nack_overhead=0.0515843
-[  OK  ] E2E_NackRtx.RecoversRandomLossWithinDeadline (7.8 ms)
+[  OK  ] E2E_NackRtx.RecoversRandomLossWithinDeadline (8.0 ms)
 [ RUN  ] E2E_NackRtx.TooLateAtHighRtt
 [metric] nack_high_rtt_on_time=0.949135
 [metric] nack_high_rtt_eventually=0.997323
@@ -11,19 +11,19 @@
 [metric] fec_frames_on_time=0.990115
 [metric] baseline_frames_on_time=0.673806
 [metric] fec_overhead=0.50691
-[  OK  ] E2E_Fec.RandomLossHighRtt (9.6 ms)
+[  OK  ] E2E_Fec.RandomLossHighRtt (9.5 ms)
 [ RUN  ] E2E_Fec.BurstyMasksBeatRandomOnBursts
 [metric] fec_burst_bursty_on_time=0.992586
 [metric] fec_burst_random_on_time=0.991145
 [metric] fec_burst_bursty_recovered=150
 [metric] fec_burst_random_recovered=143
-[  OK  ] E2E_Fec.BurstyMasksBeatRandomOnBursts (12.3 ms)
+[  OK  ] E2E_Fec.BurstyMasksBeatRandomOnBursts (12.0 ms)
 [ RUN  ] E2E_Red.HalvesAudioLossAndMore
 [metric] red_raw_loss=0.09635
 [metric] red_d1_residual=0.00805
 [metric] red_d2_residual=0.00075
 [metric] red_d1_overhead=0.999941
-[  OK  ] E2E_Red.HalvesAudioLossAndMore (28.5 ms)
+[  OK  ] E2E_Red.HalvesAudioLossAndMore (27.3 ms)
 [ RUN  ] E2E_Keyframe.RecoversFromUnrepairableLoss
 [metric] kf_decodable=0.284615
 [metric] kf_max_freeze_ms=3102
@@ -39,6 +39,6 @@
 [metric] adaptive_rtt80_overhead=0.388055
 [metric] adaptive_rtt300_on_time=0.992792
 [metric] adaptive_rtt300_overhead=0.348989
-[  OK  ] E2E_Protection.AdaptiveAcrossRtt (31.2 ms)
+[  OK  ] E2E_Protection.AdaptiveAcrossRtt (22.4 ms)
 
 7 tests run, 7 passed, 0 failed

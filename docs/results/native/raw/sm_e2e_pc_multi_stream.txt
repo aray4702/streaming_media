@@ -1,4 +1,4 @@
 [ RUN  ] E2E_MultiStream.FiveParticipantsJoinAndLeaveThroughAForwarder
-[  OK  ] E2E_MultiStream.FiveParticipantsJoinAndLeaveThroughAForwarder (85.4 ms)
+[  OK  ] E2E_MultiStream.FiveParticipantsJoinAndLeaveThroughAForwarder (82.6 ms)
 
 1 tests run, 1 passed, 0 failed

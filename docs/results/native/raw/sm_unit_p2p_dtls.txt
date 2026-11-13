@@ -1,9 +1,9 @@
 [ RUN  ] P2pDtlsTransport.TransferRtpWithoutDtls
 [  OK  ] P2pDtlsTransport.TransferRtpWithoutDtls (0.2 ms)
 [ RUN  ] P2pDtlsTransport.SentPacketAndOptions
-[  OK  ] P2pDtlsTransport.SentPacketAndOptions (3.7 ms)
+[  OK  ] P2pDtlsTransport.SentPacketAndOptions (2.9 ms)
 [ RUN  ] P2pDtlsTransport.TransferDtlsAndSrtp
-[  OK  ] P2pDtlsTransport.TransferDtlsAndSrtp (2.5 ms)
+[  OK  ] P2pDtlsTransport.TransferDtlsAndSrtp (1.9 ms)
 [ RUN  ] P2pDtlsTransport.RefusesInvalidSrtpAndEarlySends
 [  OK  ] P2pDtlsTransport.RefusesInvalidSrtpAndEarlySends (0.2 ms)
 [ RUN  ] P2pDtlsTransport.CombinedRecords

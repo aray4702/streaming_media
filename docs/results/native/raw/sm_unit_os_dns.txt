@@ -1,11 +1,11 @@
 [ RUN  ] OsDnsResolver.ResolvesLocalhost
-[  OK  ] OsDnsResolver.ResolvesLocalhost (12.2 ms)
+[  OK  ] OsDnsResolver.ResolvesLocalhost (12.6 ms)
 [ RUN  ] OsDnsResolver.UnknownNameFails
-[  OK  ] OsDnsResolver.UnknownNameFails (29.4 ms)
+[  OK  ] OsDnsResolver.UnknownNameFails (11.8 ms)
 [ RUN  ] OsDnsResolver.DestroyedResolverIsNotCalled
-[  OK  ] OsDnsResolver.DestroyedResolverIsNotCalled (11.9 ms)
+[  OK  ] OsDnsResolver.DestroyedResolverIsNotCalled (10.1 ms)
 [ RUN  ] OsDnsResolver.FactoryDestroyedWithLookupsInFlight
-[  OK  ] OsDnsResolver.FactoryDestroyedWithLookupsInFlight (0.0 ms)
+[  OK  ] OsDnsResolver.FactoryDestroyedWithLookupsInFlight (0.1 ms)
 [ RUN  ] OsDnsResolver.Lookup
 [  OK  ] OsDnsResolver.Lookup (0.0 ms)
 

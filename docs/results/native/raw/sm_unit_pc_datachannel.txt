@@ -19,7 +19,7 @@
 [ RUN  ] PcSctpDataChannel.SidAllocatorEvenOddByDtlsRole
 [  OK  ] PcSctpDataChannel.SidAllocatorEvenOddByDtlsRole (0.1 ms)
 [ RUN  ] PcSctpDataChannel.OpenerHandshake
-[  OK  ] PcSctpDataChannel.OpenerHandshake (0.0 ms)
+[  OK  ] PcSctpDataChannel.OpenerHandshake (0.1 ms)
 [ RUN  ] PcSctpDataChannel.AckerAndNegotiated
 [  OK  ] PcSctpDataChannel.AckerAndNegotiated (0.0 ms)
 [ RUN  ] PcSctpDataChannel.QueuedUntilObserver
@@ -31,17 +31,17 @@
 [ RUN  ] PcSctpDataChannel.ControllerGone
 [  OK  ] PcSctpDataChannel.ControllerGone (0.0 ms)
 [ RUN  ] PcDataChannels.InBandBothWays
-[  OK  ] PcDataChannels.InBandBothWays (7.8 ms)
+[  OK  ] PcDataChannels.InBandBothWays (5.5 ms)
 [ RUN  ] PcDataChannels.Negotiated
 [  OK  ] PcDataChannels.Negotiated (0.3 ms)
 [ RUN  ] PcDataChannels.PartialReliability
-[  OK  ] PcDataChannels.PartialReliability (0.8 ms)
+[  OK  ] PcDataChannels.PartialReliability (0.6 ms)
 [ RUN  ] PcDataChannels.CloseBothSides
 [  OK  ] PcDataChannels.CloseBothSides (0.3 ms)
 [ RUN  ] PcDataChannels.BufferedAmountAndMaxMessageSize
-[  OK  ] PcDataChannels.BufferedAmountAndMaxMessageSize (5.6 ms)
+[  OK  ] PcDataChannels.BufferedAmountAndMaxMessageSize (2.5 ms)
 [ RUN  ] PcDataChannels.RuntimeSwitchOff
-[  OK  ] PcDataChannels.RuntimeSwitchOff (0.4 ms)
+[  OK  ] PcDataChannels.RuntimeSwitchOff (0.3 ms)
 [ RUN  ] PcDataChannels.TransportClosedClosesChannels
 [  OK  ] PcDataChannels.TransportClosedClosesChannels (0.3 ms)
 
