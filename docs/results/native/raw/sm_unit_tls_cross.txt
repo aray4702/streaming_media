@@ -1,20 +1,20 @@
 [ RUN  ] TlsCrossBackend.BackendsAreDistinct
-[  OK  ] TlsCrossBackend.BackendsAreDistinct (11.9 ms)
+[  OK  ] TlsCrossBackend.BackendsAreDistinct (4.4 ms)
 [ RUN  ] TlsCrossBackend.BoringSslClientMbedTlsServer
-[  OK  ] TlsCrossBackend.BoringSslClientMbedTlsServer (2.9 ms)
+[  OK  ] TlsCrossBackend.BoringSslClientMbedTlsServer (2.5 ms)
 [ RUN  ] TlsCrossBackend.MbedTlsClientBoringSslServer
-[  OK  ] TlsCrossBackend.MbedTlsClientBoringSslServer (1.4 ms)
+[  OK  ] TlsCrossBackend.MbedTlsClientBoringSslServer (1.3 ms)
 [ RUN  ] TlsCrossBackend.WrongFingerprintFailsEitherWay
 [  OK  ] TlsCrossBackend.WrongFingerprintFailsEitherWay (0.9 ms)
 [ RUN  ] TlsCrossBackend.RetransmitsALostFlightEitherWay
 [  OK  ] TlsCrossBackend.RetransmitsALostFlightEitherWay (2.7 ms)
 [ RUN  ] TlsCrossBackend.GcmOnlyOnBoringSslSideFallsBackToACommonProfile
-[  OK  ] TlsCrossBackend.GcmOnlyOnBoringSslSideFallsBackToACommonProfile (1.4 ms)
+[  OK  ] TlsCrossBackend.GcmOnlyOnBoringSslSideFallsBackToACommonProfile (1.3 ms)
 [ RUN  ] TlsCrossBackend.TlsBoringSslClientMbedTlsServer
-[  OK  ] TlsCrossBackend.TlsBoringSslClientMbedTlsServer (3.9 ms)
+[  OK  ] TlsCrossBackend.TlsBoringSslClientMbedTlsServer (2.9 ms)
 [ RUN  ] TlsCrossBackend.TlsMbedTlsClientBoringSslServer
 [  OK  ] TlsCrossBackend.TlsMbedTlsClientBoringSslServer (1.9 ms)
 [ RUN  ] TlsCrossBackend.TlsUntrustedCertificateRefusedEitherWay
-[  OK  ] TlsCrossBackend.TlsUntrustedCertificateRefusedEitherWay (1.4 ms)
+[  OK  ] TlsCrossBackend.TlsUntrustedCertificateRefusedEitherWay (1.3 ms)
 
 9 tests run, 9 passed, 0 failed

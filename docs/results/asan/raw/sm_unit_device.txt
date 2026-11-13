@@ -1,7 +1,7 @@
 [ RUN  ] DeviceAppleAudio.OneUnitForBothDirections
-[  OK  ] DeviceAppleAudio.OneUnitForBothDirections (0.1 ms)
+[  OK  ] DeviceAppleAudio.OneUnitForBothDirections (0.2 ms)
 [ RUN  ] DeviceAppleAudio.TenMillisecondFramesWithDelayEstimate
-[  OK  ] DeviceAppleAudio.TenMillisecondFramesWithDelayEstimate (2.3 ms)
+[  OK  ] DeviceAppleAudio.TenMillisecondFramesWithDelayEstimate (2.5 ms)
 [ RUN  ] DeviceAppleAudio.SilenceWhenNotPlaying
 [  OK  ] DeviceAppleAudio.SilenceWhenNotPlaying (0.0 ms)
 [ RUN  ] DeviceAppleAudio.EchoCancellerSwitch
@@ -47,12 +47,12 @@
 [ RUN  ] DeviceNv12.OddSizes
 [  OK  ] DeviceNv12.OddSizes (0.0 ms)
 [ RUN  ] DeviceScale.SameSizeIsACopyAndFlatStaysFlat
-[  OK  ] DeviceScale.SameSizeIsACopyAndFlatStaysFlat (56.7 ms)
+[  OK  ] DeviceScale.SameSizeIsACopyAndFlatStaysFlat (55.7 ms)
 [ RUN  ] DeviceScale.CropsTheSidesForANarrowerAspect
-[  OK  ] DeviceScale.CropsTheSidesForANarrowerAspect (24.1 ms)
+[  OK  ] DeviceScale.CropsTheSidesForANarrowerAspect (24.9 ms)
 [ RUN  ] DeviceScale.DownAndUpKeepsThePicture
 [metric] psnr_db=38.5064
-[  OK  ] DeviceScale.DownAndUpKeepsThePicture (50.2 ms)
+[  OK  ] DeviceScale.DownAndUpKeepsThePicture (50.3 ms)
 [ RUN  ] DeviceCaptureRotation.FollowsRtcCameraVideoCapturer
 [  OK  ] DeviceCaptureRotation.FollowsRtcCameraVideoCapturer (0.0 ms)
 

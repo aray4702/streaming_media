@@ -1,7 +1,7 @@
 [ RUN  ] P2pDtlsTransport.TransferRtpWithoutDtls
-[  OK  ] P2pDtlsTransport.TransferRtpWithoutDtls (0.3 ms)
+[  OK  ] P2pDtlsTransport.TransferRtpWithoutDtls (0.2 ms)
 [ RUN  ] P2pDtlsTransport.SentPacketAndOptions
-[  OK  ] P2pDtlsTransport.SentPacketAndOptions (3.1 ms)
+[  OK  ] P2pDtlsTransport.SentPacketAndOptions (2.9 ms)
 [ RUN  ] P2pDtlsTransport.TransferDtlsAndSrtp
 [  OK  ] P2pDtlsTransport.TransferDtlsAndSrtp (1.7 ms)
 [ RUN  ] P2pDtlsTransport.RefusesInvalidSrtpAndEarlySends
@@ -9,7 +9,7 @@
 [ RUN  ] P2pDtlsTransport.CombinedRecords
 [  OK  ] P2pDtlsTransport.CombinedRecords (0.3 ms)
 [ RUN  ] P2pDtlsTransport.KeyingMaterialExporter
-[  OK  ] P2pDtlsTransport.KeyingMaterialExporter (0.5 ms)
+[  OK  ] P2pDtlsTransport.KeyingMaterialExporter (0.4 ms)
 [ RUN  ] P2pDtlsTransport.RenegotiateBeforeConnect
 [  OK  ] P2pDtlsTransport.RenegotiateBeforeConnect (0.3 ms)
 [ RUN  ] P2pDtlsTransport.Certificates
@@ -31,7 +31,7 @@
 [ RUN  ] P2pDtlsTransport.ReceivingFollowsIceOnceConnected
 [  OK  ] P2pDtlsTransport.ReceivingFollowsIceOnceConnected (0.2 ms)
 [ RUN  ] P2pDtlsTransport.EventOrdering
-[  OK  ] P2pDtlsTransport.EventOrdering (8.0 ms)
+[  OK  ] P2pDtlsTransport.EventOrdering (8.2 ms)
 [ RUN  ] P2pDtlsTransport.HandshakeWithLossAndReordering
 [  OK  ] P2pDtlsTransport.HandshakeWithLossAndReordering (2.3 ms)
 [ RUN  ] P2pDtlsRole.NegotiateDtlsRole

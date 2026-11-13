@@ -1,52 +1,52 @@
 [ RUN  ] AudioJitterBuffer.PerfectNetworkPlaysNormally
-[  OK  ] AudioJitterBuffer.PerfectNetworkPlaysNormally (48.1 ms)
+[  OK  ] AudioJitterBuffer.PerfectNetworkPlaysNormally (48.6 ms)
 [ RUN  ] AudioJitterBuffer.LostPacketIsConcealedThenSkipped
-[  OK  ] AudioJitterBuffer.LostPacketIsConcealedThenSkipped (29.5 ms)
+[  OK  ] AudioJitterBuffer.LostPacketIsConcealedThenSkipped (30.0 ms)
 [ RUN  ] AudioJitterBuffer.BurstArrivalTriggersAccelerate
-[  OK  ] AudioJitterBuffer.BurstArrivalTriggersAccelerate (47.5 ms)
+[  OK  ] AudioJitterBuffer.BurstArrivalTriggersAccelerate (48.7 ms)
 [ RUN  ] AudioJitterBuffer.MinimumDelayHonoured
 [  OK  ] AudioJitterBuffer.MinimumDelayHonoured (0.0 ms)
 [ RUN  ] AudioJitterBuffer.V2KeepsTheHigherPriorityPacketPerTimestamp
 [  OK  ] AudioJitterBuffer.V2KeepsTheHigherPriorityPacketPerTimestamp (0.2 ms)
 [ RUN  ] AudioJitterBuffer.V2HoldsTwoHundredPacketsThenFlushesThemAll
-[  OK  ] AudioJitterBuffer.V2HoldsTwoHundredPacketsThenFlushesThemAll (1.2 ms)
+[  OK  ] AudioJitterBuffer.V2HoldsTwoHundredPacketsThenFlushesThemAll (1.3 ms)
 [ RUN  ] AudioJitterBuffer.V2FullBufferFlushSoftResetsTheDelayManagerAtTheNextDecision
-[  OK  ] AudioJitterBuffer.V2FullBufferFlushSoftResetsTheDelayManagerAtTheNextDecision (18.0 ms)
+[  OK  ] AudioJitterBuffer.V2FullBufferFlushSoftResetsTheDelayManagerAtTheNextDecision (18.1 ms)
 [ RUN  ] AudioJitterBufferNetEqV2.PlayoutTimestampFollowsPlayout
-[  OK  ] AudioJitterBufferNetEqV2.PlayoutTimestampFollowsPlayout (43.5 ms)
+[  OK  ] AudioJitterBufferNetEqV2.PlayoutTimestampFollowsPlayout (43.7 ms)
 [ RUN  ] AudioJitterBuffer.JitterBufferDelayCountsPacketWaitingTicks
 [  OK  ] AudioJitterBuffer.JitterBufferDelayCountsPacketWaitingTicks (11.0 ms)
 [ RUN  ] AudioJitterBuffer.NetEqDiscardsPacketsAtUnsupportedRates
-[  OK  ] AudioJitterBuffer.NetEqDiscardsPacketsAtUnsupportedRates (92.6 ms)
+[  OK  ] AudioJitterBuffer.NetEqDiscardsPacketsAtUnsupportedRates (90.2 ms)
 [ RUN  ] AudioJitterBufferNetEqV2.SampleUnderrunMutesAndKeepsTheSyncBuffer
 [  OK  ] AudioJitterBufferNetEqV2.SampleUnderrunMutesAndKeepsTheSyncBuffer (0.1 ms)
 [ RUN  ] AudioJitterBufferNetEqV2.MutedState
-[  OK  ] AudioJitterBufferNetEqV2.MutedState (110.3 ms)
+[  OK  ] AudioJitterBufferNetEqV2.MutedState (110.1 ms)
 [ RUN  ] AudioJitterBufferNetEqV2.MutedStateDelayedPacket
-[  OK  ] AudioJitterBufferNetEqV2.MutedStateDelayedPacket (109.1 ms)
+[  OK  ] AudioJitterBufferNetEqV2.MutedStateDelayedPacket (109.7 ms)
 [ RUN  ] AudioJitterBufferNetEqV2.MutedStateFuturePacket
-[  OK  ] AudioJitterBufferNetEqV2.MutedStateFuturePacket (109.5 ms)
+[  OK  ] AudioJitterBufferNetEqV2.MutedStateFuturePacket (110.9 ms)
 [ RUN  ] AudioJitterBufferNetEqV2.MutedStateIsOffByDefault
-[  OK  ] AudioJitterBufferNetEqV2.MutedStateIsOffByDefault (152.4 ms)
+[  OK  ] AudioJitterBufferNetEqV2.MutedStateIsOffByDefault (153.4 ms)
 [ RUN  ] AudioJitterBufferNetEqV2.CompareMutedStateOnOff
-[  OK  ] AudioJitterBufferNetEqV2.CompareMutedStateOnOff (280.3 ms)
+[  OK  ] AudioJitterBufferNetEqV2.CompareMutedStateOnOff (280.2 ms)
 [ RUN  ] AudioJitterBufferNetEqV2.MutedStateOldPacket
-[  OK  ] AudioJitterBufferNetEqV2.MutedStateOldPacket (109.7 ms)
+[  OK  ] AudioJitterBufferNetEqV2.MutedStateOldPacket (109.5 ms)
 [ RUN  ] AudioJitterBufferNetEqV2.PacketOlderThanFiveSecondsIsPlayedAsAFuturePacket
-[  OK  ] AudioJitterBufferNetEqV2.PacketOlderThanFiveSecondsIsPlayedAsAFuturePacket (146.6 ms)
+[  OK  ] AudioJitterBufferNetEqV2.PacketOlderThanFiveSecondsIsPlayedAsAFuturePacket (145.6 ms)
 [ RUN  ] AudioJitterBufferNetEqV2.PacketLessThanFiveSecondsOldIsDiscarded
-[  OK  ] AudioJitterBufferNetEqV2.PacketLessThanFiveSecondsOldIsDiscarded (145.5 ms)
+[  OK  ] AudioJitterBufferNetEqV2.PacketLessThanFiveSecondsOldIsDiscarded (145.8 ms)
 [ RUN  ] AudioJitterBuffer.FlushBuffersDropsQueuedAudioAndRestartsAtTheNextPacket
-[  OK  ] AudioJitterBuffer.FlushBuffersDropsQueuedAudioAndRestartsAtTheNextPacket (9.6 ms)
+[  OK  ] AudioJitterBuffer.FlushBuffersDropsQueuedAudioAndRestartsAtTheNextPacket (9.8 ms)
 [ RUN  ] AudioJitterBuffer.FlushBuffersBeforePlayoutStartsOnlyDropsPackets
 [  OK  ] AudioJitterBuffer.FlushBuffersBeforePlayoutStartsOnlyDropsPackets (0.1 ms)
 [ RUN  ] DelayManager.SteadyNetworkTargetsOnePacket
 [  OK  ] DelayManager.SteadyNetworkTargetsOnePacket (3.7 ms)
 [ RUN  ] DelayManager.TracksJitterQuantile
 [metric] target_ms_sigma20=40
-[  OK  ] DelayManager.TracksJitterQuantile (16.3 ms)
+[  OK  ] DelayManager.TracksJitterQuantile (16.8 ms)
 [ RUN  ] DelayManager.IncreasesFastDecreasesSlowly
-[  OK  ] DelayManager.IncreasesFastDecreasesSlowly (8.8 ms)
+[  OK  ] DelayManager.IncreasesFastDecreasesSlowly (9.0 ms)
 [ RUN  ] DelayManager.MinimumDelayAndMetrics
 [  OK  ] DelayManager.MinimumDelayAndMetrics (0.6 ms)
 [ RUN  ] NetEqBackgroundNoise.CreateAndDefaults
@@ -58,13 +58,13 @@
 [ RUN  ] NetEqBackgroundNoise.SilenceDoesNotUpdate
 [  OK  ] NetEqBackgroundNoise.SilenceDoesNotUpdate (0.0 ms)
 [ RUN  ] NetEqBackgroundNoise.LoudSignalRaisesTheThreshold
-[  OK  ] NetEqBackgroundNoise.LoudSignalRaisesTheThreshold (19.7 ms)
+[  OK  ] NetEqBackgroundNoise.LoudSignalRaisesTheThreshold (20.7 ms)
 [ RUN  ] NetEqBackgroundNoise.ExpandAddsNoNoise
 [  OK  ] NetEqBackgroundNoise.ExpandAddsNoNoise (0.8 ms)
 [ RUN  ] NetEqBackgroundNoise.NormalMuteFactor
 [  OK  ] NetEqBackgroundNoise.NormalMuteFactor (0.2 ms)
 [ RUN  ] AudioJitterBufferNetEqV2.NormalAfterExpandUnmutesFromTheNoiseLevel
-[  OK  ] AudioJitterBufferNetEqV2.NormalAfterExpandUnmutesFromTheNoiseLevel (17.7 ms)
+[  OK  ] AudioJitterBufferNetEqV2.NormalAfterExpandUnmutesFromTheNoiseLevel (18.5 ms)
 [ RUN  ] NetEqHistogram.Initialization
 [  OK  ] NetEqHistogram.Initialization (0.0 ms)
 [ RUN  ] NetEqHistogram.Add
@@ -72,7 +72,7 @@
 [ RUN  ] NetEqHistogram.ForgetFactor
 [  OK  ] NetEqHistogram.ForgetFactor (0.0 ms)
 [ RUN  ] NetEqHistogram.ReachSteadyStateForgetFactor
-[  OK  ] NetEqHistogram.ReachSteadyStateForgetFactor (2.2 ms)
+[  OK  ] NetEqHistogram.ReachSteadyStateForgetFactor (2.4 ms)
 [ RUN  ] UnderrunOptimizer.ResamplePacketDelays
 [  OK  ] UnderrunOptimizer.ResamplePacketDelays (0.0 ms)
 [ RUN  ] ReorderOptimizer.OnlyIncreaseDelayForReorderedPackets
@@ -82,7 +82,7 @@
 [ RUN  ] ReorderOptimizer.BaseDelayIsSubtractedFromCost
 [  OK  ] ReorderOptimizer.BaseDelayIsSubtractedFromCost (0.0 ms)
 [ RUN  ] PacketArrivalHistory.RelativeArrivalDelay
-[  OK  ] PacketArrivalHistory.RelativeArrivalDelay (0.0 ms)
+[  OK  ] PacketArrivalHistory.RelativeArrivalDelay (0.1 ms)
 [ RUN  ] PacketArrivalHistory.ReorderedPackets
 [  OK  ] PacketArrivalHistory.ReorderedPackets (0.0 ms)
 [ RUN  ] PacketArrivalHistory.MaxHistorySize
@@ -102,7 +102,7 @@
 [ RUN  ] NetEqDelayManager.MinimumDelayAndBufferCap
 [  OK  ] NetEqDelayManager.MinimumDelayAndBufferCap (0.3 ms)
 [ RUN  ] AudioJitterBufferNetEqV2.TargetFromNetEqDelayManager
-[  OK  ] AudioJitterBufferNetEqV2.TargetFromNetEqDelayManager (23.4 ms)
+[  OK  ] AudioJitterBufferNetEqV2.TargetFromNetEqDelayManager (23.7 ms)
 [ RUN  ] NetEqBufferLevelFilter.CreateAndDestroy
 [  OK  ] NetEqBufferLevelFilter.CreateAndDestroy (0.0 ms)
 [ RUN  ] NetEqBufferLevelFilter.ConvergenceTest
@@ -126,17 +126,17 @@
 [ RUN  ] NetEqDecisionLogic.MinTimescaleInterval
 [  OK  ] NetEqDecisionLogic.MinTimescaleInterval (0.0 ms)
 [ RUN  ] AudioJitterBufferNetEqV2.StartsAtFirstPacketAndExpandsToTarget
-[  OK  ] AudioJitterBufferNetEqV2.StartsAtFirstPacketAndExpandsToTarget (7.6 ms)
+[  OK  ] AudioJitterBufferNetEqV2.StartsAtFirstPacketAndExpandsToTarget (7.7 ms)
 [ RUN  ] NetEqRandomVector.Generate
 [  OK  ] NetEqRandomVector.Generate (0.0 ms)
 [ RUN  ] NetEqExpand.DelayedPacketOutage
 [  OK  ] NetEqExpand.DelayedPacketOutage (0.8 ms)
 [ RUN  ] NetEqExpand.LostPacketOutage
-[  OK  ] NetEqExpand.LostPacketOutage (0.7 ms)
+[  OK  ] NetEqExpand.LostPacketOutage (0.8 ms)
 [ RUN  ] NetEqExpand.CheckOutageStatsAfterReset
 [  OK  ] NetEqExpand.CheckOutageStatsAfterReset (0.9 ms)
 [ RUN  ] NetEqExpand.Muted
-[  OK  ] NetEqExpand.Muted (6.7 ms)
+[  OK  ] NetEqExpand.Muted (7.0 ms)
 [ RUN  ] NetEqExpand.LagIsThePitchPeriod
 [  OK  ] NetEqExpand.LagIsThePitchPeriod (0.2 ms)
 [ RUN  ] NetEqExpand.MuteSlopeFloors
@@ -146,17 +146,17 @@
 [ RUN  ] NetEqExpand.UnvoicedMutesFast
 [  OK  ] NetEqExpand.UnvoicedMutesFast (0.2 ms)
 [ RUN  ] AudioJitterBufferNetEqV2.ExpandCoversEveryTickOfAGap
-[  OK  ] AudioJitterBufferNetEqV2.ExpandCoversEveryTickOfAGap (14.2 ms)
+[  OK  ] AudioJitterBufferNetEqV2.ExpandCoversEveryTickOfAGap (14.7 ms)
 [ RUN  ] NetEqExpand.BitExactWithLibwebrtc
-[  OK  ] NetEqExpand.BitExactWithLibwebrtc (1676.8 ms)
+[  OK  ] NetEqExpand.BitExactWithLibwebrtc (1673.1 ms)
 [ RUN  ] NetEqMerge.ProcessShortInputs
-[  OK  ] NetEqMerge.ProcessShortInputs (2.4 ms)
+[  OK  ] NetEqMerge.ProcessShortInputs (3.6 ms)
 [ RUN  ] NetEqMerge.SignalScaling
 [  OK  ] NetEqMerge.SignalScaling (0.1 ms)
 [ RUN  ] NetEqMerge.AlignsTheDecodedAudioWithTheExpansion
 [  OK  ] NetEqMerge.AlignsTheDecodedAudioWithTheExpansion (1.5 ms)
 [ RUN  ] NetEqMerge.UnmutesOverTheFrame
-[  OK  ] NetEqMerge.UnmutesOverTheFrame (0.9 ms)
+[  OK  ] NetEqMerge.UnmutesOverTheFrame (0.8 ms)
 [ RUN  ] NetEqMerge.ShortExpansionUnmutesAtTheMinimumRate
 [  OK  ] NetEqMerge.ShortExpansionUnmutesAtTheMinimumRate (0.4 ms)
 [ RUN  ] NetEqMerge.LongFutureIsCut
@@ -164,11 +164,11 @@
 [ RUN  ] AudioJitterBufferNetEqV2.MergeAfterALostPacketIsContinuous
 [  OK  ] AudioJitterBufferNetEqV2.MergeAfterALostPacketIsContinuous (12.0 ms)
 [ RUN  ] NetEqMerge.BitExactWithLibwebrtc
-[  OK  ] NetEqMerge.BitExactWithLibwebrtc (2727.1 ms)
+[  OK  ] NetEqMerge.BitExactWithLibwebrtc (2748.3 ms)
 [ RUN  ] NetEqTimeStretch.CreateAndDestroy
 [  OK  ] NetEqTimeStretch.CreateAndDestroy (0.0 ms)
 [ RUN  ] NetEqTimeStretch.AccelerateVoicedRemovesOnePeriod
-[  OK  ] NetEqTimeStretch.AccelerateVoicedRemovesOnePeriod (1.4 ms)
+[  OK  ] NetEqTimeStretch.AccelerateVoicedRemovesOnePeriod (0.5 ms)
 [ RUN  ] NetEqTimeStretch.DownsamplingReadsTheFilterHistoryWithoutOverflow
 [  OK  ] NetEqTimeStretch.DownsamplingReadsTheFilterHistoryWithoutOverflow (0.8 ms)
 [ RUN  ] NetEqTimeStretch.AccelerateCrossfadeIsLibwebrtcsRamp
@@ -178,39 +178,39 @@
 [ RUN  ] NetEqTimeStretch.FastModeThresholdAndWholePeriods
 [  OK  ] NetEqTimeStretch.FastModeThresholdAndWholePeriods (0.3 ms)
 [ RUN  ] NetEqTimeStretch.VadAgainstTheBackgroundNoise
-[  OK  ] NetEqTimeStretch.VadAgainstTheBackgroundNoise (0.4 ms)
+[  OK  ] NetEqTimeStretch.VadAgainstTheBackgroundNoise (0.3 ms)
 [ RUN  ] NetEqTimeStretch.ShortInputIsAnError
-[  OK  ] NetEqTimeStretch.ShortInputIsAnError (0.1 ms)
+[  OK  ] NetEqTimeStretch.ShortInputIsAnError (0.2 ms)
 [ RUN  ] NetEqTimeStretch.PreemptiveExpandVoicedAddsOnePeriod
 [  OK  ] NetEqTimeStretch.PreemptiveExpandVoicedAddsOnePeriod (0.5 ms)
 [ RUN  ] NetEqTimeStretch.PreemptiveExpandOldData
-[  OK  ] NetEqTimeStretch.PreemptiveExpandOldData (0.3 ms)
+[  OK  ] NetEqTimeStretch.PreemptiveExpandOldData (1.0 ms)
 [ RUN  ] AudioJitterBufferNetEqV2.TimeStretchMovesWholePitchPeriods
-[  OK  ] AudioJitterBufferNetEqV2.TimeStretchMovesWholePitchPeriods (26.0 ms)
+[  OK  ] AudioJitterBufferNetEqV2.TimeStretchMovesWholePitchPeriods (26.3 ms)
 [ RUN  ] NetEqTimeStretch.BitExactWithLibwebrtc
-[  OK  ] NetEqTimeStretch.BitExactWithLibwebrtc (1410.7 ms)
+[  OK  ] NetEqTimeStretch.BitExactWithLibwebrtc (1364.1 ms)
 [ RUN  ] PacketBuffer.AssemblesInOrderFrame
-[  OK  ] PacketBuffer.AssemblesInOrderFrame (2.4 ms)
+[  OK  ] PacketBuffer.AssemblesInOrderFrame (1.5 ms)
 [ RUN  ] PacketBuffer.ReorderedPacketsCompleteFrame
-[  OK  ] PacketBuffer.ReorderedPacketsCompleteFrame (0.2 ms)
+[  OK  ] PacketBuffer.ReorderedPacketsCompleteFrame (0.1 ms)
 [ RUN  ] PacketBuffer.DuplicatesAndTooOldRejected
-[  OK  ] PacketBuffer.DuplicatesAndTooOldRejected (0.5 ms)
+[  OK  ] PacketBuffer.DuplicatesAndTooOldRejected (0.3 ms)
 [ RUN  ] PacketBuffer.FramesAcrossSequenceWrap
 [  OK  ] PacketBuffer.FramesAcrossSequenceWrap (0.0 ms)
 [ RUN  ] PacketBuffer.MissingStartBlocksFrame
-[  OK  ] PacketBuffer.MissingStartBlocksFrame (0.7 ms)
+[  OK  ] PacketBuffer.MissingStartBlocksFrame (0.1 ms)
 [ RUN  ] PacketBuffer.FrameWithSeveralStartPacketsStartsAtTheFirstOfThem
 [  OK  ] PacketBuffer.FrameWithSeveralStartPacketsStartsAtTheFirstOfThem (0.0 ms)
 [ RUN  ] PacketBuffer.FirstPacketEverInsertedNeedsNoPredecessor
 [  OK  ] PacketBuffer.FirstPacketEverInsertedNeedsNoPredecessor (0.0 ms)
 [ RUN  ] PacketBuffer.MarkerEndsTheWalkBackAtThePreviousFrame
-[  OK  ] PacketBuffer.MarkerEndsTheWalkBackAtThePreviousFrame (0.1 ms)
+[  OK  ] PacketBuffer.MarkerEndsTheWalkBackAtThePreviousFrame (0.0 ms)
 [ RUN  ] PacketBuffer.TwoFramesWithOneTimestampGoOutAsOne
 [  OK  ] PacketBuffer.TwoFramesWithOneTimestampGoOutAsOne (0.0 ms)
 [ RUN  ] PacketBuffer.PacketThatIsNotContinuousDoesNotCompleteAFrame
 [  OK  ] PacketBuffer.PacketThatIsNotContinuousDoesNotCompleteAFrame (0.0 ms)
 [ RUN  ] PacketBuffer.ForwardWalkStopsWherePaddingIsNoLongerRemembered
-[  OK  ] PacketBuffer.ForwardWalkStopsWherePaddingIsNoLongerRemembered (0.3 ms)
+[  OK  ] PacketBuffer.ForwardWalkStopsWherePaddingIsNoLongerRemembered (0.4 ms)
 [ RUN  ] PacketBuffer.ForwardWalkSkipsRememberedPaddingToAHeldFrame
 [  OK  ] PacketBuffer.ForwardWalkSkipsRememberedPaddingToAHeldFrame (0.0 ms)
 [ RUN  ] PacketBuffer.PrecedingMediaSeqSkipsPadding
@@ -218,7 +218,7 @@
 [ RUN  ] PacketBuffer.IdrStartOpensTheFrameWhenItsParameterSetPacketIsMissing
 [  OK  ] PacketBuffer.IdrStartOpensTheFrameWhenItsParameterSetPacketIsMissing (0.1 ms)
 [ RUN  ] PacketBuffer.ParameterSetPacketArrivingBeforeTheMarkerJoinsTheFrame
-[  OK  ] PacketBuffer.ParameterSetPacketArrivingBeforeTheMarkerJoinsTheFrame (0.1 ms)
+[  OK  ] PacketBuffer.ParameterSetPacketArrivingBeforeTheMarkerJoinsTheFrame (0.0 ms)
 [ RUN  ] PacketBuffer.FrameWithoutItsFirstFragmentWaitsForIt
 [  OK  ] PacketBuffer.FrameWithoutItsFirstFragmentWaitsForIt (0.0 ms)
 [ RUN  ] PacketBuffer.StartAfterPaddingIsARealStart
@@ -226,7 +226,7 @@
 [ RUN  ] PacketBuffer.AnUnambiguousStartDoesNotWaitForAMissingPredecessor
 [  OK  ] PacketBuffer.AnUnambiguousStartDoesNotWaitForAMissingPredecessor (0.0 ms)
 [ RUN  ] PacketBuffer.GrowsThenClearsWhenFull
-[  OK  ] PacketBuffer.GrowsThenClearsWhenFull (1.7 ms)
+[  OK  ] PacketBuffer.GrowsThenClearsWhenFull (1.6 ms)
 [ RUN  ] PacketBuffer.RestartsOnLargeBackwardJump
 [  OK  ] PacketBuffer.RestartsOnLargeBackwardJump (0.0 ms)
 [ RUN  ] PacketBuffer.ClearToDropsOldPacketsAndIgnoresLateOnes
@@ -234,17 +234,17 @@
 [ RUN  ] PacketBuffer.PaddingOnlyMattersNearTheInsertedPackets
 [  OK  ] PacketBuffer.PaddingOnlyMattersNearTheInsertedPackets (0.2 ms)
 [ RUN  ] PacketBuffer.MissingPacketsHoldsADeltaFrameBehindAHoleUntilItIsFilled
-[  OK  ] PacketBuffer.MissingPacketsHoldsADeltaFrameBehindAHoleUntilItIsFilled (0.1 ms)
+[  OK  ] PacketBuffer.MissingPacketsHoldsADeltaFrameBehindAHoleUntilItIsFilled (0.0 ms)
 [ RUN  ] PacketBuffer.MissingPacketsOffHandsOutTheDeltaFrameAtOnce
 [  OK  ] PacketBuffer.MissingPacketsOffHandsOutTheDeltaFrameAtOnce (0.0 ms)
 [ RUN  ] PacketBuffer.MissingPacketsReleasesAKeyframeAndForgetsTheHolesBeforeIt
-[  OK  ] PacketBuffer.MissingPacketsReleasesAKeyframeAndForgetsTheHolesBeforeIt (0.1 ms)
+[  OK  ] PacketBuffer.MissingPacketsReleasesAKeyframeAndForgetsTheHolesBeforeIt (0.0 ms)
 [ RUN  ] PacketBuffer.MissingPacketsPaddingFillsAHole
 [  OK  ] PacketBuffer.MissingPacketsPaddingFillsAHole (0.0 ms)
 [ RUN  ] PacketBuffer.MissingPacketsForgetsHolesOlderThan1000
-[  OK  ] PacketBuffer.MissingPacketsForgetsHolesOlderThan1000 (98.1 ms)
+[  OK  ] PacketBuffer.MissingPacketsForgetsHolesOlderThan1000 (99.4 ms)
 [ RUN  ] PacketBuffer.MissingPacketsClearToForgetsHolesBelowIt
-[  OK  ] PacketBuffer.MissingPacketsClearToForgetsHolesBelowIt (0.3 ms)
+[  OK  ] PacketBuffer.MissingPacketsClearToForgetsHolesBelowIt (0.1 ms)
 [ RUN  ] PacketBuffer.CopyOfAOnePacketFrameAfterAssemblyIsAssembledAgain
 [  OK  ] PacketBuffer.CopyOfAOnePacketFrameAfterAssemblyIsAssembledAgain (0.0 ms)
 [ RUN  ] PacketBuffer.CopyOfAPacketOfAnAssembledFrameStaysUntilClearTo
@@ -256,13 +256,13 @@
 [ RUN  ] RtcpStats.NtpRoundTrip
 [  OK  ] RtcpStats.NtpRoundTrip (0.0 ms)
 [ RUN  ] RtcpStats.SenderAndReceiverReportWireFormat
-[  OK  ] RtcpStats.SenderAndReceiverReportWireFormat (0.5 ms)
+[  OK  ] RtcpStats.SenderAndReceiverReportWireFormat (0.1 ms)
 [ RUN  ] RtcpStats.FractionAndCumulativeLoss
 [  OK  ] RtcpStats.FractionAndCumulativeLoss (0.0 ms)
 [ RUN  ] RtcpStats.InterarrivalJitterRfc3550
 [  OK  ] RtcpStats.InterarrivalJitterRfc3550 (0.1 ms)
 [ RUN  ] RtcpStats.RttFromLsrDlsr
-[  OK  ] RtcpStats.RttFromLsrDlsr (0.1 ms)
+[  OK  ] RtcpStats.RttFromLsrDlsr (0.8 ms)
 [ RUN  ] RtcpStats.DelaySinceLastSrIsTheDifferenceOfCompactNtpTimes
 [  OK  ] RtcpStats.DelaySinceLastSrIsTheDifferenceOfCompactNtpTimes (0.4 ms)
 [ RUN  ] RtcpStats.RttFloorsAtOneMillisecond
@@ -272,7 +272,7 @@
 [ RUN  ] RtcpStats.JitterIsRescaledWhenThePayloadFrequencyChanges
 [  OK  ] RtcpStats.JitterIsRescaledWhenThePayloadFrequencyChanges (0.0 ms)
 [ RUN  ] RtcpStats.ExtendedReportsRoundTrip
-[  OK  ] RtcpStats.ExtendedReportsRoundTrip (0.6 ms)
+[  OK  ] RtcpStats.ExtendedReportsRoundTrip (0.4 ms)
 [ RUN  ] RtcpStats.ExtendedReportsSkipUnknownAndMisSizedBlocks
 [  OK  ] RtcpStats.ExtendedReportsSkipUnknownAndMisSizedBlocks (0.0 ms)
 [ RUN  ] RtcpStats.ReportBlockDueOnceReceivedUntilEightSecondsOfSilence
@@ -289,7 +289,7 @@
 [  OK  ] RtcpStats.V1KeepsJumpsAsLossAnd256Scale (0.0 ms)
 [ RUN  ] TimeStretch.AccelerateRemovesWholePeriods
 [metric] accelerate_sine_snr_db=162.733
-[  OK  ] TimeStretch.AccelerateRemovesWholePeriods (0.3 ms)
+[  OK  ] TimeStretch.AccelerateRemovesWholePeriods (0.2 ms)
 [ RUN  ] TimeStretch.ExpandInsertsWholePeriods
 [  OK  ] TimeStretch.ExpandInsertsWholePeriods (0.2 ms)
 [ RUN  ] TimeStretch.RejectsNoiseAcceptsSilence
@@ -297,23 +297,23 @@
 [ RUN  ] TimeStretch.TooShortInputIsCopied
 [  OK  ] TimeStretch.TooShortInputIsCopied (0.0 ms)
 [ RUN  ] VcmTiming.JitterSteadyStateConvergence
-[  OK  ] VcmTiming.JitterSteadyStateConvergence (1.6 ms)
+[  OK  ] VcmTiming.JitterSteadyStateConvergence (1.5 ms)
 [ RUN  ] VcmTiming.JitterSizeOutlierIsNotRejectedAndIncreasesJitterEstimate
 [  OK  ] VcmTiming.JitterSizeOutlierIsNotRejectedAndIncreasesJitterEstimate (1.2 ms)
 [ RUN  ] VcmTiming.JitterLowFramerateDisablesJitterEstimator
 [  OK  ] VcmTiming.JitterLowFramerateDisablesJitterEstimator (0.1 ms)
 [ RUN  ] VcmTiming.JitterSingle2xFrameSizeImpactsJitterEstimate
-[  OK  ] VcmTiming.JitterSingle2xFrameSizeImpactsJitterEstimate (1.4 ms)
+[  OK  ] VcmTiming.JitterSingle2xFrameSizeImpactsJitterEstimate (1.2 ms)
 [ RUN  ] VcmTiming.JitterCongestedFrameImpactsJitterEstimate
 [  OK  ] VcmTiming.JitterCongestedFrameImpactsJitterEstimate (0.2 ms)
 [ RUN  ] VcmTiming.JitterRttTermAfterThreeNackedFrames
-[  OK  ] VcmTiming.JitterRttTermAfterThreeNackedFrames (0.3 ms)
+[  OK  ] VcmTiming.JitterRttTermAfterThreeNackedFrames (0.2 ms)
 [ RUN  ] VcmTiming.RttIsCapped
 [  OK  ] VcmTiming.RttIsCapped (0.0 ms)
 [ RUN  ] VcmTiming.RttPositiveJumpDetection
 [  OK  ] VcmTiming.RttPositiveJumpDetection (0.0 ms)
 [ RUN  ] VcmTiming.RttNegativeJumpDetection
-[  OK  ] VcmTiming.RttNegativeJumpDetection (0.3 ms)
+[  OK  ] VcmTiming.RttNegativeJumpDetection (0.5 ms)
 [ RUN  ] VcmTiming.RttJumpsResetByDirectionShift
 [  OK  ] VcmTiming.RttJumpsResetByDirectionShift (0.0 ms)
 [ RUN  ] VcmTiming.RttDriftDetection
@@ -339,9 +339,9 @@
 [ RUN  ] VcmTiming.JitterFrameRateMeanIsWelfordsAsRollingAccumulator
 [  OK  ] VcmTiming.JitterFrameRateMeanIsWelfordsAsRollingAccumulator (0.0 ms)
 [ RUN  ] VcmTiming.RollingMeanKeepsTheLast30SamplesWithWelfordsUpdate
-[  OK  ] VcmTiming.RollingMeanKeepsTheLast30SamplesWithWelfordsUpdate (0.1 ms)
+[  OK  ] VcmTiming.RollingMeanKeepsTheLast30SamplesWithWelfordsUpdate (0.0 ms)
 [ RUN  ] VcmTiming.DecodeTimeFilterIgnoresFirstFiveSamples
-[  OK  ] VcmTiming.DecodeTimeFilterIgnoresFirstFiveSamples (0.6 ms)
+[  OK  ] VcmTiming.DecodeTimeFilterIgnoresFirstFiveSamples (0.0 ms)
 [ RUN  ] VcmTiming.DecodeTimeFilterReturns95thPercentileOver10s
 [  OK  ] VcmTiming.DecodeTimeFilterReturns95thPercentileOver10s (0.1 ms)
 [ RUN  ] VcmTiming.UseLowLatencyRenderer
@@ -355,11 +355,11 @@
 [ RUN  ] VcmTiming.RenderTimeDoesNotDependOnTheClockOriginOnceStarted
 [  OK  ] VcmTiming.RenderTimeDoesNotDependOnTheClockOriginOnceStarted (1.1 ms)
 [ RUN  ] VcmTiming.ReleaseFirstKeyframeAtOnceDroppingFramesBeforeIt
-[  OK  ] VcmTiming.ReleaseFirstKeyframeAtOnceDroppingFramesBeforeIt (0.7 ms)
+[  OK  ] VcmTiming.ReleaseFirstKeyframeAtOnceDroppingFramesBeforeIt (0.4 ms)
 [ RUN  ] VcmTiming.ReleaseLateDeltaFrameIsDecodedWithoutKeyframeBehindIt
-[  OK  ] VcmTiming.ReleaseLateDeltaFrameIsDecodedWithoutKeyframeBehindIt (0.8 ms)
+[  OK  ] VcmTiming.ReleaseLateDeltaFrameIsDecodedWithoutKeyframeBehindIt (0.7 ms)
 [ RUN  ] VcmTiming.ReleaseFastForwardsToALaterKeyframe
-[  OK  ] VcmTiming.ReleaseFastForwardsToALaterKeyframe (0.8 ms)
+[  OK  ] VcmTiming.ReleaseFastForwardsToALaterKeyframe (0.7 ms)
 [ RUN  ] VcmTiming.ReleaseWaitsUntilRenderTimeMinusDecodeAndRenderDelay
 [  OK  ] VcmTiming.ReleaseWaitsUntilRenderTimeMinusDecodeAndRenderDelay (0.0 ms)
 [ RUN  ] VcmTiming.ReleaseSchedulesEachFrameAsItIsInserted
@@ -372,7 +372,7 @@
 [  OK  ] VideoJitter.NoiseRaisesJitter (0.5 ms)
 [ RUN  ] VideoJitter.LearnsCapacityFromFrameSizeDelay
 [metric] estimated_capacity_kbps=999.268
-[  OK  ] VideoJitter.LearnsCapacityFromFrameSizeDelay (1.0 ms)
+[  OK  ] VideoJitter.LearnsCapacityFromFrameSizeDelay (0.9 ms)
 [ RUN  ] VideoJitter.TimingRenderTimeAndSmoothing
 [  OK  ] VideoJitter.TimingRenderTimeAndSmoothing (0.1 ms)
 

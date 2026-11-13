@@ -117,7 +117,7 @@ One document per algorithm: problem, the issue it solves, design, implementation
 
 | # | Algorithm | Unit | E2E | Benchmarks | macOS arm64 (native) | WebAssembly (Node) | ASan+UBSan (Debug) | -fno-exceptions -fno-rtti |
 |---|---|---|---|---|---|---|---|---|
-| 9.6 | [dcSCTP packet layer](9-data-channels/9.6-dcsctp-packet.md) | 112 | 0 | 1 | pass | not recorded | pass | not recorded |
+| 9.6 | [dcSCTP packet layer](9-data-channels/9.6-dcsctp-packet.md) | 113 | 0 | 1 | pass | not recorded | pass | not recorded |
 | 9.7 | [dcSCTP socket](9-data-channels/9.7-dcsctp-socket.md) | 402 | 0 | 2 | pass | not recorded | pass | not recorded |
 | 9.8 | [SCTP over DTLS](9-data-channels/9.8-sctp-over-dtls.md) | 13 | 0 | 1 | pass | not recorded | pass | not recorded |
 | 9.9 | [DCEP and the data channel API](9-data-channels/9.9-data-channel-api.md) | 23 | 0 | 2 | pass | not recorded | pass | not recorded |

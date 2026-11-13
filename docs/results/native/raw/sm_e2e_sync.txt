@@ -17,6 +17,6 @@
 [metric] demux_by_ssrc=3940
 [metric] demux_by_mid=60
 [metric] demux_unroutable=0
-[  OK  ] E2E_HeaderExtensions.BundleDemuxOfSimulcastAudioAndRtx (2.3 ms)
+[  OK  ] E2E_HeaderExtensions.BundleDemuxOfSimulcastAudioAndRtx (2.0 ms)
 
 4 tests run, 4 passed, 0 failed

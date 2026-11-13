@@ -1,7 +1,7 @@
 [ RUN  ] E2E_TransportFeedback.EveryPacketReportedReceivedOnceWithinQuantization
 [metric] reported_ratio=0.997467
 [metric] max_arrival_error_us=125
-[  OK  ] E2E_TransportFeedback.EveryPacketReportedReceivedOnceWithinQuantization (8.3 ms)
+[  OK  ] E2E_TransportFeedback.EveryPacketReportedReceivedOnceWithinQuantization (7.4 ms)
 [ RUN  ] E2E_DelayBwe.TracksCapacityStepsWithLowQueueing
 [metric] phase0_capacity_kbps=2000
 [metric] phase0_throughput_kbps=1918.68
@@ -16,40 +16,40 @@
 [metric] phase2_target_kbps=2258.13
 [metric] phase2_queue_p95_ms=43.006
 [metric] loss_ratio=0
-[  OK  ] E2E_DelayBwe.TracksCapacityStepsWithLowQueueing (21.2 ms)
+[  OK  ] E2E_DelayBwe.TracksCapacityStepsWithLowQueueing (17.6 ms)
 [ RUN  ] E2E_LossBwe.BacksOffOnHeavyLossGrowsOnLight
 [metric] target_kbps_loss15=775.441
 [metric] target_kbps_loss1=6726.86
-[  OK  ] E2E_LossBwe.BacksOffOnHeavyLossGrowsOnLight (27.4 ms)
+[  OK  ] E2E_LossBwe.BacksOffOnHeavyLossGrowsOnLight (21.4 ms)
 [ RUN  ] E2E_SendSideBwe.CombinesDelayAndLossControllers
 [metric] clean_target_kbps=1335.75
 [metric] loss5_target_kbps=1330.24
 [metric] loss20_target_kbps=185.138
-[  OK  ] E2E_SendSideBwe.CombinesDelayAndLossControllers (11.3 ms)
+[  OK  ] E2E_SendSideBwe.CombinesDelayAndLossControllers (10.6 ms)
 [ RUN  ] E2E_Pacer.LibwebrtcPacerDoesNotPaceAudio
 [metric] v2_paced_audio_p95_ms=117.215
 [metric] v2_unpaced_audio_p95_ms=117.215
-[  OK  ] E2E_Pacer.LibwebrtcPacerDoesNotPaceAudio (12.6 ms)
+[  OK  ] E2E_Pacer.LibwebrtcPacerDoesNotPaceAudio (12.3 ms)
 [ RUN  ] E2E_Probing.FastRampUp
 [metric] ramp_s_probing=0.35
 [metric] ramp_s_no_probing=-1
-[  OK  ] E2E_Probing.FastRampUp (14.1 ms)
+[  OK  ] E2E_Probing.FastRampUp (13.5 ms)
 [ RUN  ] E2E_BitrateAllocator.AudioProtectedVideoDegradesFirst
 [metric] min_audio_alloc_kbps=24.414
 [metric] low_phase_camera_kbps=0
 [metric] low_phase_screen_kbps=337.714
 [metric] high_phase_camera_kbps=1271.48
-[  OK  ] E2E_BitrateAllocator.AudioProtectedVideoDegradesFirst (13.6 ms)
+[  OK  ] E2E_BitrateAllocator.AudioProtectedVideoDegradesFirst (13.1 ms)
 [ RUN  ] E2E_FrameDropper.ContainsEncoderOvershoot
 [metric] sent_over_target_with_dropper=1.0768
 [metric] sent_over_target_without=1.60344
 [metric] drop_ratio=0.359341
-[  OK  ] E2E_FrameDropper.ContainsEncoderOvershoot (12.1 ms)
+[  OK  ] E2E_FrameDropper.ContainsEncoderOvershoot (11.7 ms)
 [ RUN  ] E2E_Outage.PausesDuringOutageAndRecovers
 [metric] video_packets_while_down_monitor=410
 [metric] video_packets_while_down_no_monitor=1110
 [metric] recovery_s=0.1
 [metric] ice_restarts=1
-[  OK  ] E2E_Outage.PausesDuringOutageAndRecovers (17.4 ms)
+[  OK  ] E2E_Outage.PausesDuringOutageAndRecovers (14.6 ms)
 
 9 tests run, 9 passed, 0 failed

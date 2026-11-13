@@ -1,13 +1,13 @@
 [ RUN  ] AudioNackTracker.EmptyListWhenNoPacketLoss
-[  OK  ] AudioNackTracker.EmptyListWhenNoPacketLoss (0.9 ms)
+[  OK  ] AudioNackTracker.EmptyListWhenNoPacketLoss (0.6 ms)
 [ RUN  ] AudioNackTracker.LatePacketsMovedToNackThenNackListDoesNotChange
 [  OK  ] AudioNackTracker.LatePacketsMovedToNackThenNackListDoesNotChange (0.6 ms)
 [ RUN  ] AudioNackTracker.ArrivedPacketsAreRemovedFromNackList
-[  OK  ] AudioNackTracker.ArrivedPacketsAreRemovedFromNackList (0.2 ms)
+[  OK  ] AudioNackTracker.ArrivedPacketsAreRemovedFromNackList (0.3 ms)
 [ RUN  ] AudioNackTracker.Reset
 [  OK  ] AudioNackTracker.Reset (0.0 ms)
 [ RUN  ] AudioNackTracker.ListSizeAppliedFromBeginning
-[  OK  ] AudioNackTracker.ListSizeAppliedFromBeginning (0.0 ms)
+[  OK  ] AudioNackTracker.ListSizeAppliedFromBeginning (0.1 ms)
 [ RUN  ] AudioNackTracker.RoundTripTimeIsApplied
 [  OK  ] AudioNackTracker.RoundTripTimeIsApplied (0.0 ms)
 [ RUN  ] AudioNackTracker.DoNotNackAfterDtx
@@ -17,11 +17,11 @@
 [ RUN  ] AudioNackTracker.SampleRateChangeResets
 [  OK  ] AudioNackTracker.SampleRateChangeResets (0.0 ms)
 [ RUN  ] FecController.MethodFollowsWhatIsEnabled
-[  OK  ] FecController.MethodFollowsWhatIsEnabled (0.2 ms)
+[  OK  ] FecController.MethodFollowsWhatIsEnabled (0.1 ms)
 [ RUN  ] FecController.NoLossNoFec
 [  OK  ] FecController.NoLossNoFec (0.0 ms)
 [ RUN  ] FecController.DeltaRateFromTheTable
-[  OK  ] FecController.DeltaRateFromTheTable (0.7 ms)
+[  OK  ] FecController.DeltaRateFromTheTable (0.2 ms)
 [ RUN  ] FecController.FirstPartitionMinimum
 [  OK  ] FecController.FirstPartitionMinimum (0.0 ms)
 [ RUN  ] FecController.CappedAtHalfOfAllPackets
@@ -39,9 +39,9 @@
 [ RUN  ] KeyframeRequest.InOrderFramesAreDecodable
 [  OK  ] KeyframeRequest.InOrderFramesAreDecodable (0.3 ms)
 [ RUN  ] KeyframeRequest.LateReferenceUnblocksWithoutPli
-[  OK  ] KeyframeRequest.LateReferenceUnblocksWithoutPli (0.0 ms)
+[  OK  ] KeyframeRequest.LateReferenceUnblocksWithoutPli (0.1 ms)
 [ RUN  ] KeyframeRequest.DecoderErrorAndStreamStart
-[  OK  ] KeyframeRequest.DecoderErrorAndStreamStart (0.1 ms)
+[  OK  ] KeyframeRequest.DecoderErrorAndStreamStart (0.2 ms)
 [ RUN  ] KeyframeRequest.BlockedFrameIsLeftToNackWhilePacketsKeepArriving
 [  OK  ] KeyframeRequest.BlockedFrameIsLeftToNackWhilePacketsKeepArriving (0.1 ms)
 [ RUN  ] KeyframeRequest.DecodeTimeoutAsksOnceAndRearms
@@ -63,7 +63,7 @@
 [ RUN  ] KeyframeRequest.ResetPacketReceiveTimesMakesTheStreamLookInactive
 [  OK  ] KeyframeRequest.ResetPacketReceiveTimesMakesTheStreamLookInactive (0.0 ms)
 [ RUN  ] NackTracker.DetectsGapAndRequestsImmediately
-[  OK  ] NackTracker.DetectsGapAndRequestsImmediately (0.1 ms)
+[  OK  ] NackTracker.DetectsGapAndRequestsImmediately (0.0 ms)
 [ RUN  ] NackTracker.RetriesAfterRttThenRecovers
 [  OK  ] NackTracker.RetriesAfterRttThenRecovers (0.0 ms)
 [ RUN  ] NackTracker.RetryTicksKeepTheGridOfTheFirstAndReportTheNext
@@ -73,11 +73,11 @@
 [ RUN  ] NackTracker.HandlesWrapAround
 [  OK  ] NackTracker.HandlesWrapAround (0.0 ms)
 [ RUN  ] NackTracker.EmitsEventsAndMetrics
-[  OK  ] NackTracker.EmitsEventsAndMetrics (0.4 ms)
+[  OK  ] NackTracker.EmitsEventsAndMetrics (0.3 ms)
 [ RUN  ] Rtx.EncapsulationRoundTrip
-[  OK  ] Rtx.EncapsulationRoundTrip (1.2 ms)
+[  OK  ] Rtx.EncapsulationRoundTrip (0.6 ms)
 [ RUN  ] NackTracker.GivesUpAfter100RetriesWithoutKeyframeRequest
-[  OK  ] NackTracker.GivesUpAfter100RetriesWithoutKeyframeRequest (0.3 ms)
+[  OK  ] NackTracker.GivesUpAfter100RetriesWithoutKeyframeRequest (0.2 ms)
 [ RUN  ] NackTracker.HundredthRequestErasesTheEntryAsItIsSent
 [  OK  ] NackTracker.HundredthRequestErasesTheEntryAsItIsSent (0.1 ms)
 [ RUN  ] NackTracker.ReorderingNeverDelaysTheFirstRequest
@@ -99,9 +99,9 @@
 [ RUN  ] Rtx.ResendThatNeverLeavesThePacerStaysPending
 [  OK  ] Rtx.ResendThatNeverLeavesThePacerStaysPending (0.0 ms)
 [ RUN  ] Rtx.RetentionIsThreeRttWithOneSecondMinimumAndCullsAfterThreeTimesThat
-[  OK  ] Rtx.RetentionIsThreeRttWithOneSecondMinimumAndCullsAfterThreeTimesThat (0.1 ms)
+[  OK  ] Rtx.RetentionIsThreeRttWithOneSecondMinimumAndCullsAfterThreeTimesThat (0.2 ms)
 [ RUN  ] Rtx.HistoryNeverExceedsMaxCapacity
-[  OK  ] Rtx.HistoryNeverExceedsMaxCapacity (29.1 ms)
+[  OK  ] Rtx.HistoryNeverExceedsMaxCapacity (29.8 ms)
 [ RUN  ] Rtx.AcknowledgedPacketsLeaveAndSequenceNumbersWrap
 [  OK  ] Rtx.AcknowledgedPacketsLeaveAndSequenceNumbersWrap (0.1 ms)
 [ RUN  ] NackTracker.RetriesOnTheTwentyMillisecondProcessTick
@@ -109,11 +109,11 @@
 [ RUN  ] NackTracker.SeqNumBatchRequestsTheGapAtOnceAndOnlyOnce
 [  OK  ] NackTracker.SeqNumBatchRequestsTheGapAtOnceAndOnlyOnce (0.0 ms)
 [ RUN  ] Red.EncodeParseWithRfc2198Layout
-[  OK  ] Red.EncodeParseWithRfc2198Layout (0.5 ms)
+[  OK  ] Red.EncodeParseWithRfc2198Layout (0.8 ms)
 [ RUN  ] Red.RejectsMalformed
 [  OK  ] Red.RejectsMalformed (0.0 ms)
 [ RUN  ] Red.ReceiverRecoversLostFrameOnce
-[  OK  ] Red.ReceiverRecoversLostFrameOnce (0.7 ms)
+[  OK  ] Red.ReceiverRecoversLostFrameOnce (0.2 ms)
 [ RUN  ] Red.SkipsOversizedRedundancy
 [  OK  ] Red.SkipsOversizedRedundancy (0.0 ms)
 [ RUN  ] Red.SplitRedPutsThePrimaryFirstAsNetEq
@@ -133,7 +133,7 @@
 [ RUN  ] RtcpFeedback.PliByteLayout
 [  OK  ] RtcpFeedback.PliByteLayout (0.0 ms)
 [ RUN  ] RtcpFeedback.FirByteLayout
-[  OK  ] RtcpFeedback.FirByteLayout (0.3 ms)
+[  OK  ] RtcpFeedback.FirByteLayout (0.2 ms)
 [ RUN  ] RtcpFeedback.LossNotificationByteLayout
 [  OK  ] RtcpFeedback.LossNotificationByteLayout (0.0 ms)
 [ RUN  ] RtcpFeedback.LossNotificationRejectsMalformed
@@ -153,25 +153,25 @@
 [ RUN  ] RtcpFeedback.FuzzedBytesNeverCrash
 [  OK  ] RtcpFeedback.FuzzedBytesNeverCrash (1.0 ms)
 [ RUN  ] Ulpfec.MaskTablesMatchLibwebrtcLayout
-[  OK  ] Ulpfec.MaskTablesMatchLibwebrtcLayout (59.4 ms)
+[  OK  ] Ulpfec.MaskTablesMatchLibwebrtcLayout (59.8 ms)
 [ RUN  ] Ulpfec.BurstyMasksRecoverConsecutiveLosses
-[  OK  ] Ulpfec.BurstyMasksRecoverConsecutiveLosses (288.6 ms)
+[  OK  ] Ulpfec.BurstyMasksRecoverConsecutiveLosses (287.6 ms)
 [ RUN  ] Ulpfec.NumFecPacketsIsQ8RoundedWithAtLeastOne
 [  OK  ] Ulpfec.NumFecPacketsIsQ8RoundedWithAtLeastOne (0.0 ms)
 [ RUN  ] Ulpfec.HeaderByteLayoutFollowsRfc5109
 [  OK  ] Ulpfec.HeaderByteLayoutFollowsRfc5109 (0.1 ms)
 [ RUN  ] Ulpfec.LongMaskSetsLBit
-[  OK  ] Ulpfec.LongMaskSetsLBit (0.3 ms)
+[  OK  ] Ulpfec.LongMaskSetsLBit (0.9 ms)
 [ RUN  ] Ulpfec.RecoversEveryRtpHeaderField
 [  OK  ] Ulpfec.RecoversEveryRtpHeaderField (0.6 ms)
 [ RUN  ] Ulpfec.SequenceGapsAreZeroColumns
-[  OK  ] Ulpfec.SequenceGapsAreZeroColumns (0.5 ms)
+[  OK  ] Ulpfec.SequenceGapsAreZeroColumns (0.6 ms)
 [ RUN  ] Ulpfec.RejectsBadInput
-[  OK  ] Ulpfec.RejectsBadInput (30.5 ms)
+[  OK  ] Ulpfec.RejectsBadInput (30.3 ms)
 [ RUN  ] Ulpfec.GeneratorGroupsFramesAsLibwebrtc
 [  OK  ] Ulpfec.GeneratorGroupsFramesAsLibwebrtc (0.4 ms)
 [ RUN  ] Ulpfec.GeneratorToReceiverRecoversLosses
-[  OK  ] Ulpfec.GeneratorToReceiverRecoversLosses (98.8 ms)
+[  OK  ] Ulpfec.GeneratorToReceiverRecoversLosses (93.4 ms)
 [ RUN  ] Ulpfec.ReceiverDropsWhatLibwebrtcDrops
 [  OK  ] Ulpfec.ReceiverDropsWhatLibwebrtcDrops (0.0 ms)
 

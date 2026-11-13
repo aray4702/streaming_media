@@ -47,7 +47,7 @@
 [ RUN  ] KeyframeRequest.DecodeTimeoutAsksOnceAndRearms
 [  OK  ] KeyframeRequest.DecodeTimeoutAsksOnceAndRearms (0.0 ms)
 [ RUN  ] KeyframeRequest.DecodeTimeoutRunsFromReleaseNotFromDecodable
-[  OK  ] KeyframeRequest.DecodeTimeoutRunsFromReleaseNotFromDecodable (0.0 ms)
+[  OK  ] KeyframeRequest.DecodeTimeoutRunsFromReleaseNotFromDecodable (0.1 ms)
 [ RUN  ] KeyframeRequest.KeyframeWaitUntilTheFirstRelease
 [  OK  ] KeyframeRequest.KeyframeWaitUntilTheFirstRelease (0.0 ms)
 [ RUN  ] KeyframeRequest.NoTimeoutRequestWhileAKeyframeArrivesOrWhenIdle
@@ -155,11 +155,11 @@
 [ RUN  ] Ulpfec.MaskTablesMatchLibwebrtcLayout
 [  OK  ] Ulpfec.MaskTablesMatchLibwebrtcLayout (2.3 ms)
 [ RUN  ] Ulpfec.BurstyMasksRecoverConsecutiveLosses
-[  OK  ] Ulpfec.BurstyMasksRecoverConsecutiveLosses (10.0 ms)
+[  OK  ] Ulpfec.BurstyMasksRecoverConsecutiveLosses (11.0 ms)
 [ RUN  ] Ulpfec.NumFecPacketsIsQ8RoundedWithAtLeastOne
 [  OK  ] Ulpfec.NumFecPacketsIsQ8RoundedWithAtLeastOne (0.0 ms)
 [ RUN  ] Ulpfec.HeaderByteLayoutFollowsRfc5109
-[  OK  ] Ulpfec.HeaderByteLayoutFollowsRfc5109 (0.1 ms)
+[  OK  ] Ulpfec.HeaderByteLayoutFollowsRfc5109 (0.0 ms)
 [ RUN  ] Ulpfec.LongMaskSetsLBit
 [  OK  ] Ulpfec.LongMaskSetsLBit (0.0 ms)
 [ RUN  ] Ulpfec.RecoversEveryRtpHeaderField
@@ -167,7 +167,7 @@
 [ RUN  ] Ulpfec.SequenceGapsAreZeroColumns
 [  OK  ] Ulpfec.SequenceGapsAreZeroColumns (0.0 ms)
 [ RUN  ] Ulpfec.RejectsBadInput
-[  OK  ] Ulpfec.RejectsBadInput (1.4 ms)
+[  OK  ] Ulpfec.RejectsBadInput (1.7 ms)
 [ RUN  ] Ulpfec.GeneratorGroupsFramesAsLibwebrtc
 [  OK  ] Ulpfec.GeneratorGroupsFramesAsLibwebrtc (0.0 ms)
 [ RUN  ] Ulpfec.GeneratorToReceiverRecoversLosses

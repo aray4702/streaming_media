@@ -1,6 +1,10 @@
 [ RUN  ] OsSockets.DatagramArrivingDuringTheWaitIsStampedWhenRead
-[  OK  ] OsSockets.DatagramArrivingDuringTheWaitIsStampedWhenRead (38.9 ms)
+[  OK  ] OsSockets.DatagramArrivingDuringTheWaitIsStampedWhenRead (30.8 ms)
 [ RUN  ] OsSockets.ArrivalSpacingFollowsTheSender
-[  OK  ] OsSockets.ArrivalSpacingFollowsTheSender (50.1 ms)
+[  OK  ] OsSockets.ArrivalSpacingFollowsTheSender (41.6 ms)
+[ RUN  ] OsSockets.DatagramsReadInOneBatchKeepTheirSpacing
+[  OK  ] OsSockets.DatagramsReadInOneBatchKeepTheirSpacing (58.0 ms)
+[ RUN  ] OsSockets.DatagramArrivingBeforePollKeepsItsTimeDownToEarliest
+[  OK  ] OsSockets.DatagramArrivingBeforePollKeepsItsTimeDownToEarliest (81.5 ms)
 
-2 tests run, 2 passed, 0 failed
+4 tests run, 4 passed, 0 failed

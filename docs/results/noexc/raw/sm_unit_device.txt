@@ -47,7 +47,7 @@
 [ RUN  ] DeviceNv12.OddSizes
 [  OK  ] DeviceNv12.OddSizes (0.0 ms)
 [ RUN  ] DeviceScale.SameSizeIsACopyAndFlatStaysFlat
-[  OK  ] DeviceScale.SameSizeIsACopyAndFlatStaysFlat (1.2 ms)
+[  OK  ] DeviceScale.SameSizeIsACopyAndFlatStaysFlat (1.1 ms)
 [ RUN  ] DeviceScale.CropsTheSidesForANarrowerAspect
 [  OK  ] DeviceScale.CropsTheSidesForANarrowerAspect (0.5 ms)
 [ RUN  ] DeviceScale.DownAndUpKeepsThePicture

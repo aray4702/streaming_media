@@ -25,6 +25,6 @@
 -- Fetching Mbed TLS 068ff080b369adfac81509f9b57b2afabaf82dc5
 -- Found Python3: /opt/homebrew/Frameworks/Python.framework/Versions/3.14/bin/python3.14 (found version "3.14.8") found components: Interpreter
 -- Fetching libopus 55513e81d8f606bd75d0ff773d2144e5f2a732f5
--- Configuring done (13.0s)
+-- Configuring done (15.8s)
 -- Generating done (0.3s)
--- Build files have been written to: /Users/danceone/job_interview/sm-wt-rec/build
+-- Build files have been written to: /Users/danceone/job_interview/streaming_media/sm-wt-bench/build

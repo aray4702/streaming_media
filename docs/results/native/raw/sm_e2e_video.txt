@@ -3,7 +3,7 @@
 [metric] freezes_ground_truth=10
 [metric] total_freeze_ms=30701
 [metric] harmonic_fps=0.625559
-[  OK  ] E2E_FreezeDetector.MatchesGroundTruthGapsOverLossyLink (0.7 ms)
+[  OK  ] E2E_FreezeDetector.MatchesGroundTruthGapsOverLossyLink (0.8 ms)
 [ RUN  ] E2E_CodecFallback.HardwareFailureMidCallKeepsVideoFlowing
 [metric] fallbacks=1
 [metric] hardware_errors=10
@@ -15,7 +15,7 @@
 [ RUN  ] E2E_ContentPolicy.ScreenShareZeroHertzRepeatsAsLibwebrtc
 [metric] screen_encode_ratio=0.283333
 [metric] content_changes=96
-[  OK  ] E2E_ContentPolicy.ScreenShareZeroHertzRepeatsAsLibwebrtc (85.7 ms)
+[  OK  ] E2E_ContentPolicy.ScreenShareZeroHertzRepeatsAsLibwebrtc (84.9 ms)
 [ RUN  ] E2E_FrameScheduler.SmoothPlayoutOverJitteryNetwork
 [metric] render_interval_stdev_scheduled_ms=1.06732
 [metric] render_interval_stdev_on_arrival_ms=12.7518

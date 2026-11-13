@@ -1,17 +1,17 @@
 [ RUN  ] VideoToolboxH264.EncodeDecodePsnr
 [metric] vt_h264.psnr_mean_db=39.7195
 [metric] vt_h264.psnr_min_db=39.0771
-[  OK  ] VideoToolboxH264.EncodeDecodePsnr (2455.9 ms)
+[  OK  ] VideoToolboxH264.EncodeDecodePsnr (2289.5 ms)
 [ RUN  ] VideoToolboxH264.BitrateTracksTarget
 [metric] vt_h264.bitrate_target_300_kbps=298.6 (adjusted 285 kbps, dropped 0)
 [metric] vt_h264.bitrate_target_800_kbps=801.4 (adjusted 760 kbps, dropped 0)
 [metric] vt_h264.bitrate_target_1500_kbps=1496.1 (adjusted 1425 kbps, dropped 0)
-[  OK  ] VideoToolboxH264.BitrateTracksTarget (24143.0 ms)
+[  OK  ] VideoToolboxH264.BitrateTracksTarget (24129.5 ms)
 [ RUN  ] VideoToolboxH264.KeyframeOnRequest
-[  OK  ] VideoToolboxH264.KeyframeOnRequest (1100.3 ms)
+[  OK  ] VideoToolboxH264.KeyframeOnRequest (1082.9 ms)
 [ RUN  ] VideoToolboxH264.RtpRoundTripAndDecode
-[  OK  ] VideoToolboxH264.RtpRoundTripAndDecode (1270.5 ms)
+[  OK  ] VideoToolboxH264.RtpRoundTripAndDecode (1270.7 ms)
 [ RUN  ] VideoToolboxH264.DecoderNeedsParameterSets
-[  OK  ] VideoToolboxH264.DecoderNeedsParameterSets (46.7 ms)
+[  OK  ] VideoToolboxH264.DecoderNeedsParameterSets (44.9 ms)
 
 5 tests run, 5 passed, 0 failed

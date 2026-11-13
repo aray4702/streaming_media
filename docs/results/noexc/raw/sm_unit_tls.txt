@@ -1,5 +1,5 @@
 [ RUN  ] TlsMessageDigest.KnownDigests
-[  OK  ] TlsMessageDigest.KnownDigests (1.4 ms)
+[  OK  ] TlsMessageDigest.KnownDigests (1.7 ms)
 [ RUN  ] TlsMessageDigest.DigestIsReusableAfterFinish
 [  OK  ] TlsMessageDigest.DigestIsReusableAfterFinish (0.0 ms)
 [ RUN  ] TlsMessageDigest.Fips180
@@ -11,11 +11,11 @@
 [ RUN  ] TlsCryptoRandom.TestModeIsRepeatable
 [  OK  ] TlsCryptoRandom.TestModeIsRepeatable (0.0 ms)
 [ RUN  ] TlsSslIdentity.CreatesAnEcdsaIdentityWithASha256Certificate
-[  OK  ] TlsSslIdentity.CreatesAnEcdsaIdentityWithASha256Certificate (1.6 ms)
+[  OK  ] TlsSslIdentity.CreatesAnEcdsaIdentityWithASha256Certificate (0.9 ms)
 [ RUN  ] TlsSslIdentity.RsaIdentity
-[  OK  ] TlsSslIdentity.RsaIdentity (43.1 ms)
+[  OK  ] TlsSslIdentity.RsaIdentity (26.7 ms)
 [ RUN  ] TlsSslIdentity.PemRoundTrip
-[  OK  ] TlsSslIdentity.PemRoundTrip (0.2 ms)
+[  OK  ] TlsSslIdentity.PemRoundTrip (0.1 ms)
 [ RUN  ] TlsSslIdentity.CreateForTestTakesItsValidity
 [  OK  ] TlsSslIdentity.CreateForTestTakesItsValidity (0.0 ms)
 [ RUN  ] TlsSslFingerprint.FromIdentityAndRfc4572
@@ -23,7 +23,7 @@
 [ RUN  ] TlsSslFingerprint.RejectsMalformedRfc4572
 [  OK  ] TlsSslFingerprint.RejectsMalformedRfc4572 (0.0 ms)
 [ RUN  ] TlsDtlsTransport.HandshakeVerifiesFingerprintsAndAgreesOnSrtp
-[  OK  ] TlsDtlsTransport.HandshakeVerifiesFingerprintsAndAgreesOnSrtp (1.0 ms)
+[  OK  ] TlsDtlsTransport.HandshakeVerifiesFingerprintsAndAgreesOnSrtp (1.7 ms)
 [ RUN  ] TlsDtlsTransport.ApplicationDataBothWays
 [  OK  ] TlsDtlsTransport.ApplicationDataBothWays (0.2 ms)
 [ RUN  ] TlsDtlsTransport.WrongFingerprintFails
@@ -35,45 +35,45 @@
 [ RUN  ] TlsDtlsTransport.Dtls13ClientResendsItsLastFlightAfterConnecting
 [  OK  ] TlsDtlsTransport.Dtls13ClientResendsItsLastFlightAfterConnecting (0.3 ms)
 [ RUN  ] TlsDtlsTransport.CapsAtDtls12AndPicksACommonProfile
-[  OK  ] TlsDtlsTransport.CapsAtDtls12AndPicksACommonProfile (0.3 ms)
+[  OK  ] TlsDtlsTransport.CapsAtDtls12AndPicksACommonProfile (0.2 ms)
 [ RUN  ] TlsSrtpSession.TestGoodSetup
-[  OK  ] TlsSrtpSession.TestGoodSetup (0.7 ms)
+[  OK  ] TlsSrtpSession.TestGoodSetup (0.6 ms)
 [ RUN  ] TlsSrtpSession.TestBadSetup
-[  OK  ] TlsSrtpSession.TestBadSetup (0.7 ms)
+[  OK  ] TlsSrtpSession.TestBadSetup (0.6 ms)
 [ RUN  ] TlsSrtpSession.TestKeysTooShort
 [  OK  ] TlsSrtpSession.TestKeysTooShort (0.7 ms)
 [ RUN  ] TlsSrtpSession.TestProtect_AES_CM_128_HMAC_SHA1_80
-[  OK  ] TlsSrtpSession.TestProtect_AES_CM_128_HMAC_SHA1_80 (0.6 ms)
+[  OK  ] TlsSrtpSession.TestProtect_AES_CM_128_HMAC_SHA1_80 (0.7 ms)
 [ RUN  ] TlsSrtpSession.TestProtect_AES_CM_128_HMAC_SHA1_32
-[  OK  ] TlsSrtpSession.TestProtect_AES_CM_128_HMAC_SHA1_32 (0.6 ms)
+[  OK  ] TlsSrtpSession.TestProtect_AES_CM_128_HMAC_SHA1_32 (0.7 ms)
 [ RUN  ] TlsSrtpSession.TestProtect_AEAD_AES_GCM
-[  OK  ] TlsSrtpSession.TestProtect_AEAD_AES_GCM (1.3 ms)
+[  OK  ] TlsSrtpSession.TestProtect_AEAD_AES_GCM (1.4 ms)
 [ RUN  ] TlsSrtpSession.TestGetSendStreamPacketIndex
-[  OK  ] TlsSrtpSession.TestGetSendStreamPacketIndex (0.6 ms)
+[  OK  ] TlsSrtpSession.TestGetSendStreamPacketIndex (0.7 ms)
 [ RUN  ] TlsSrtpSession.TestTamperReject
-[  OK  ] TlsSrtpSession.TestTamperReject (0.6 ms)
+[  OK  ] TlsSrtpSession.TestTamperReject (0.7 ms)
 [ RUN  ] TlsSrtpSession.TestUnencryptReject
 [  OK  ] TlsSrtpSession.TestUnencryptReject (0.6 ms)
 [ RUN  ] TlsSrtpSession.TestBuffersTooSmall
-[  OK  ] TlsSrtpSession.TestBuffersTooSmall (0.6 ms)
+[  OK  ] TlsSrtpSession.TestBuffersTooSmall (0.7 ms)
 [ RUN  ] TlsSrtpSession.TestReplay
-[  OK  ] TlsSrtpSession.TestReplay (0.6 ms)
+[  OK  ] TlsSrtpSession.TestReplay (0.7 ms)
 [ RUN  ] TlsSrtpSession.RemoveSsrc
 [  OK  ] TlsSrtpSession.RemoveSsrc (0.6 ms)
 [ RUN  ] TlsSrtpSession.ProtectUnprotectWrapAroundRocMismatch
-[  OK  ] TlsSrtpSession.ProtectUnprotectWrapAroundRocMismatch (0.6 ms)
+[  OK  ] TlsSrtpSession.ProtectUnprotectWrapAroundRocMismatch (0.7 ms)
 [ RUN  ] TlsSrtpSession.ProtectGetPacketIndex
-[  OK  ] TlsSrtpSession.ProtectGetPacketIndex (0.6 ms)
+[  OK  ] TlsSrtpSession.ProtectGetPacketIndex (0.7 ms)
 [ RUN  ] TlsSrtpSession.TestCryptexRfc9335_A_1
 [  OK  ] TlsSrtpSession.TestCryptexRfc9335_A_1 (3.6 ms)
 [ RUN  ] TlsSrtpSession.TestCryptexRequire
 [  OK  ] TlsSrtpSession.TestCryptexRequire (0.6 ms)
 [ RUN  ] TlsDtlsSrtp.ExtractedKeysPairUpByRole
-[  OK  ] TlsDtlsSrtp.ExtractedKeysPairUpByRole (0.3 ms)
+[  OK  ] TlsDtlsSrtp.ExtractedKeysPairUpByRole (0.2 ms)
 [ RUN  ] TlsDtlsSrtp.RtpAndRtcpBothWaysAfterTheHandshake
-[  OK  ] TlsDtlsSrtp.RtpAndRtcpBothWaysAfterTheHandshake (2.6 ms)
+[  OK  ] TlsDtlsSrtp.RtpAndRtcpBothWaysAfterTheHandshake (2.5 ms)
 [ RUN  ] TlsTlsStream.HandshakeAtTls13WithSniAndDataBothWays
-[  OK  ] TlsTlsStream.HandshakeAtTls13WithSniAndDataBothWays (1.1 ms)
+[  OK  ] TlsTlsStream.HandshakeAtTls13WithSniAndDataBothWays (0.9 ms)
 [ RUN  ] TlsTlsStream.Tls12WhenCapped
 [  OK  ] TlsTlsStream.Tls12WhenCapped (0.2 ms)
 [ RUN  ] TlsTlsStream.WriteBeforeHandshakeWouldBlock

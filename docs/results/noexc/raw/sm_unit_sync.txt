@@ -1,9 +1,9 @@
 [ RUN  ] RtpToNtp.FitsLineAndHandlesWrap
-[  OK  ] RtpToNtp.FitsLineAndHandlesWrap (0.2 ms)
+[  OK  ] RtpToNtp.FitsLineAndHandlesWrap (0.0 ms)
 [ RUN  ] RtpToNtp.NeedsTwoMeasurementsAndAValidNtp
 [  OK  ] RtpToNtp.NeedsTwoMeasurementsAndAValidNtp (0.0 ms)
 [ RUN  ] RtpToNtp.ValidatesAgainstTheNewestReport
-[  OK  ] RtpToNtp.ValidatesAgainstTheNewestReport (0.0 ms)
+[  OK  ] RtpToNtp.ValidatesAgainstTheNewestReport (0.1 ms)
 [ RUN  ] RtpToNtp.ClearsAfterThreeConsecutiveInvalidReports
 [  OK  ] RtpToNtp.ClearsAfterThreeConsecutiveInvalidReports (0.0 ms)
 [ RUN  ] RtpToNtp.KeepsTheLastTwentyReports

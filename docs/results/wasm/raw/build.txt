@@ -1,24 +1,24 @@
-[  1%] Building CXX object bench/CMakeFiles/sm_bench_framework.dir/framework/sm_bench_main.cc.o
-[  1%] Building CXX object src/CMakeFiles/sm_core.dir/core/rms_level.cc.o
-[  1%] Building CXX object src/CMakeFiles/sm_core.dir/core/fft.cc.o
-[  1%] Building CXX object tests/CMakeFiles/sm_test_framework.dir/framework/sm_test_main.cc.o
-[  1%] Building CXX object src/CMakeFiles/sm_core.dir/core/audio_frame_operations.cc.o
-[  2%] Building CXX object src/CMakeFiles/sm_core.dir/core/metrics.cc.o
-[  2%] Building CXX object src/CMakeFiles/sm_core.dir/core/logging.cc.o
-[  2%] Building CXX object src/CMakeFiles/sm_core.dir/core/event_log.cc.o
+[  0%] Building CXX object tests/CMakeFiles/sm_test_framework.dir/framework/sm_test_main.cc.o
+[  0%] Building CXX object src/CMakeFiles/sm_core.dir/core/logging.cc.o
+[  0%] Building CXX object src/CMakeFiles/sm_core.dir/core/event_log.cc.o
+[  0%] Building CXX object src/CMakeFiles/sm_core.dir/core/fft.cc.o
+[  0%] Building CXX object src/CMakeFiles/sm_core.dir/core/audio_frame_operations.cc.o
+[  0%] Building CXX object bench/CMakeFiles/sm_bench_framework.dir/framework/sm_bench_main.cc.o
+[  1%] Building CXX object src/CMakeFiles/sm_core.dir/core/metrics.cc.o
 [  2%] Building CXX object src/CMakeFiles/sm_core.dir/core/dsp.cc.o
+[  2%] Building CXX object src/CMakeFiles/sm_core.dir/core/rms_level.cc.o
 [  2%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/celt/bands.c.o
 [  3%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/celt/celt.c.o
 [  3%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/celt/celt_encoder.c.o
-[  3%] Building CXX object src/CMakeFiles/sm_core.dir/core/rtp_packet.cc.o
 [  3%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/celt/celt_decoder.c.o
+[  3%] Building CXX object src/CMakeFiles/sm_core.dir/core/rtp_packet.cc.o
 [  3%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/celt/cwrs.c.o
 [  3%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/celt/entcode.c.o
 [  4%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/celt/entdec.c.o
 [  4%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/celt/entenc.c.o
 [  4%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/celt/kiss_fft.c.o
+[  4%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/celt/laplace.c.o
 [  5%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/celt/mathops.c.o
-[  5%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/celt/laplace.c.o
 [  5%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/celt/mdct.c.o
 [  5%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/celt/modes.c.o
 [  5%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/celt/pitch.c.o
@@ -32,15 +32,15 @@
 [  6%] Linking CXX static library libsm_bench_framework.a
 [  7%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/init_decoder.c.o
 [  7%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/decode_core.c.o
-[  7%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/decode_frame.c.o
 [  7%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/decode_parameters.c.o
+[  7%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/decode_frame.c.o
 [  8%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/decode_indices.c.o
-[  8%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/decode_pulses.c.o
-[  8%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/decoder_set_fs.c.o
-[  8%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/dec_API.c.o
-[  8%] Built target sm_bench_framework
 [  8%] Built target sm_test_framework
+[  8%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/decode_pulses.c.o
+[  8%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/dec_API.c.o
+[  8%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/decoder_set_fs.c.o
 [  8%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/enc_API.c.o
+[  8%] Built target sm_bench_framework
 [  9%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/encode_indices.c.o
 [  9%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/encode_pulses.c.o
 [  9%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/gain_quant.c.o
@@ -51,341 +51,361 @@
 [ 10%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/NSQ_del_dec.c.o
 [ 10%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/PLC.c.o
 [ 11%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/shell_coder.c.o
+[ 11%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/tables_gain.c.o
 [ 11%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/tables_LTP.c.o
 [ 11%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/tables_NLSF_CB_NB_MB.c.o
-[ 11%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/tables_gain.c.o
 [ 11%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/tables_NLSF_CB_WB.c.o
 [ 12%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/tables_other.c.o
-[ 12%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/tables_pulses_per_block.c.o
+[ 12%] Linking CXX static library libsm_core.a
 [ 12%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/tables_pitch_lag.c.o
+[ 12%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/tables_pulses_per_block.c.o
 [ 12%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/VAD.c.o
 [ 12%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/control_audio_bandwidth.c.o
 [ 13%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/quant_LTP_gains.c.o
-[ 13%] Linking CXX static library libsm_core.a
 [ 13%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/VQ_WMat_EC.c.o
 [ 13%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/HP_variable_cutoff.c.o
-[ 13%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/NLSF_encode.c.o
 [ 14%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/NLSF_VQ.c.o
+[ 14%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/NLSF_encode.c.o
+[ 14%] Built target sm_core
+[ 14%] Building CXX object src/CMakeFiles/sm_p2p.dir/p2p/socket_address.cc.o
 [ 14%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/NLSF_unpack.c.o
 [ 14%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/NLSF_del_dec_quant.c.o
 [ 14%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/process_NLSFs.c.o
 [ 14%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/stereo_LR_to_MS.c.o
 [ 15%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/stereo_MS_to_LR.c.o
+[ 15%] Building CXX object src/CMakeFiles/sm_p2p.dir/p2p/async_dns_resolver.cc.o
 [ 15%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/check_control_input.c.o
-[ 15%] Built target sm_core
+[ 15%] Building CXX object src/CMakeFiles/sm_loss.dir/loss/nack_tracker.cc.o
+[ 15%] Building CXX object src/CMakeFiles/sm_cc.dir/cc/transport_feedback.cc.o
 [ 15%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/control_SNR.c.o
-[ 15%] Building CXX object src/CMakeFiles/sm_p2p.dir/p2p/socket_address.cc.o
 [ 15%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/init_encoder.c.o
 [ 15%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/control_codec.c.o
 [ 16%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/A2NLSF.c.o
 [ 16%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/ana_filt_bank_1.c.o
 [ 16%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/biquad_alt.c.o
-[ 16%] Building CXX object src/CMakeFiles/sm_p2p.dir/p2p/async_dns_resolver.cc.o
-[ 16%] Building CXX object src/CMakeFiles/sm_loss.dir/loss/nack_tracker.cc.o
 [ 16%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/bwexpander_32.c.o
 [ 17%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/bwexpander.c.o
 [ 17%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/debug.c.o
+[ 17%] Building CXX object src/CMakeFiles/sm_p2p.dir/p2p/async_packet_socket.cc.o
+[ 17%] Building CXX object src/CMakeFiles/sm_loss.dir/loss/audio_nack_tracker.cc.o
+[ 17%] Building CXX object src/CMakeFiles/sm_audio.dir/audio/hpf.cc.o
 [ 17%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/decode_pitch.c.o
 [ 17%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/inner_prod_aligned.c.o
 [ 17%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/lin2log.c.o
 [ 18%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/log2lin.c.o
-[ 18%] Building CXX object src/CMakeFiles/sm_p2p.dir/p2p/async_packet_socket.cc.o
 [ 18%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/LPC_analysis_filter.c.o
-[ 18%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/LPC_inv_pred_gain.c.o
-[ 18%] Building CXX object src/CMakeFiles/sm_loss.dir/loss/audio_nack_tracker.cc.o
-[ 19%] Building CXX object src/CMakeFiles/sm_p2p.dir/p2p/async_tcp_socket.cc.o
-[ 19%] Building CXX object src/CMakeFiles/sm_cc.dir/cc/transport_feedback.cc.o
-[ 19%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/table_LSF_cos.c.o
-[ 20%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/NLSF2A.c.o
-[ 20%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/NLSF_stabilize.c.o
-[ 20%] Building CXX object src/CMakeFiles/sm_audio.dir/audio/hpf.cc.o
-[ 20%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/NLSF_VQ_weights_laroia.c.o
-[ 20%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/pitch_est_tables.c.o
+[ 19%] Building CXX object src/CMakeFiles/sm_cc.dir/cc/delay_based_bwe.cc.o
+[ 20%] Building CXX object src/CMakeFiles/sm_p2p.dir/p2p/async_tcp_socket.cc.o
+[ 20%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/LPC_inv_pred_gain.c.o
+[ 20%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/table_LSF_cos.c.o
+[ 20%] Building CXX object src/CMakeFiles/sm_p2p.dir/p2p/dtls_utils.cc.o
 [ 20%] Building CXX object src/CMakeFiles/sm_loss.dir/loss/rtx.cc.o
-[ 20%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/resampler.c.o
-[ 21%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/resampler_down2_3.c.o
-[ 21%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/resampler_down2.c.o
+[ 20%] Building CXX object src/CMakeFiles/sm_p2p.dir/p2p/stun.cc.o
+[ 21%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/NLSF2A.c.o
+[ 21%] Building CXX object src/CMakeFiles/sm_audio.dir/audio/cascaded_biquad_filter.cc.o
 [ 22%] Building CXX object src/CMakeFiles/sm_loss.dir/loss/red.cc.o
-[ 22%] Building CXX object src/CMakeFiles/sm_p2p.dir/p2p/dtls_utils.cc.o
-[ 22%] Building CXX object src/CMakeFiles/sm_p2p.dir/p2p/stun.cc.o
-[ 22%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/resampler_private_AR2.c.o
-[ 23%] Building CXX object src/CMakeFiles/sm_cc.dir/cc/delay_based_bwe.cc.o
-[ 23%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/resampler_private_down_FIR.c.o
-[ 23%] Building CXX object src/CMakeFiles/sm_p2p.dir/p2p/stun_request.cc.o
-[ 23%] Building CXX object src/CMakeFiles/sm_audio.dir/audio/cascaded_biquad_filter.cc.o
-In file included from /Users/danceone/job_interview/sm-wt-rec/src/p2p/async_tcp_socket.cc:4:
-/Users/danceone/job_interview/sm-wt-rec/include/sm/p2p/async_tcp_socket.h:81:10: warning: private field 'max_outsize_' is not used [-Wunused-private-field]
+[ 22%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/NLSF_stabilize.c.o
+[ 22%] Building CXX object src/CMakeFiles/sm_video.dir/video/bitrate_adjuster.cc.o
+[ 22%] Building CXX object src/CMakeFiles/sm_p2p.dir/p2p/stun_request.cc.o
+[ 22%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/NLSF_VQ_weights_laroia.c.o
+[ 22%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/pitch_est_tables.c.o
+[ 22%] Building CXX object src/CMakeFiles/sm_cc.dir/cc/aimd_rate_control.cc.o
+[ 22%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/resampler.c.o
+In file included from /Users/danceone/job_interview/streaming_media/sm-wt-bench/src/p2p/async_tcp_socket.cc:4:
+/Users/danceone/job_interview/streaming_media/sm-wt-bench/include/sm/p2p/async_tcp_socket.h:81:10: warning: private field 'max_outsize_' is not used [-Wunused-private-field]
    81 |   size_t max_outsize_;
       |          ^
-[ 23%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/resampler_private_IIR_FIR.c.o
-[ 23%] Building CXX object src/CMakeFiles/sm_cc.dir/cc/aimd_rate_control.cc.o
-[ 24%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/resampler_private_up2_HQ.c.o
-1 warning generated.
-[ 24%] Building CXX object src/CMakeFiles/sm_loss.dir/loss/keyframe_request.cc.o
+[ 23%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/resampler_down2_3.c.o
+[ 24%] Building CXX object src/CMakeFiles/sm_audio.dir/audio/vad.cc.o
 [ 25%] Building CXX object src/CMakeFiles/sm_p2p.dir/p2p/network.cc.o
-[ 25%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/resampler_rom.c.o
-[ 25%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/sigm_Q15.c.o
-[ 25%] Building CXX object src/CMakeFiles/sm_video.dir/video/bitrate_adjuster.cc.o
-[ 25%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/sort.c.o
-[ 26%] Building CXX object src/CMakeFiles/sm_audio.dir/audio/vad.cc.o
-[ 26%] Building CXX object src/CMakeFiles/sm_p2p.dir/p2p/candidate.cc.o
-[ 27%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/sum_sqr_shift.c.o
-[ 27%] Building CXX object src/CMakeFiles/sm_cc.dir/cc/loss_based_bwe_v2.cc.o
-[ 27%] Building CXX object src/CMakeFiles/sm_p2p.dir/p2p/transport_description.cc.o
-[ 27%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/stereo_decode_pred.c.o
-[ 27%] Building CXX object src/CMakeFiles/sm_video.dir/video/frame.cc.o
-[ 27%] Building CXX object src/CMakeFiles/sm_loss.dir/loss/rtcp_feedback.cc.o
-[ 27%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/stereo_encode_pred.c.o
+[ 25%] Building CXX object src/CMakeFiles/sm_loss.dir/loss/keyframe_request.cc.o
+1 warning generated.
+[ 25%] Building CXX object src/CMakeFiles/sm_video.dir/video/frame.cc.o
+[ 25%] Building CXX object src/CMakeFiles/sm_p2p.dir/p2p/candidate.cc.o
+[ 25%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/resampler_down2.c.o
+[ 25%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/resampler_private_AR2.c.o
+[ 25%] Building CXX object src/CMakeFiles/sm_loss.dir/loss/rtcp_feedback.cc.o
+[ 25%] Building CXX object src/CMakeFiles/sm_p2p.dir/p2p/transport_description.cc.o
+[ 25%] Building CXX object src/CMakeFiles/sm_p2p.dir/p2p/port.cc.o
+[ 25%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/resampler_private_down_FIR.c.o
+[ 25%] Building CXX object src/CMakeFiles/sm_cc.dir/cc/loss_based_bwe_v2.cc.o
+[ 25%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/resampler_private_IIR_FIR.c.o
+[ 25%] Building CXX object src/CMakeFiles/sm_p2p.dir/p2p/stun_port.cc.o
+[ 25%] Building CXX object src/CMakeFiles/sm_video.dir/video/freeze_detector.cc.o
+[ 25%] Building CXX object src/CMakeFiles/sm_audio.dir/audio/agc2.cc.o
+[ 26%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/resampler_private_up2_HQ.c.o
+[ 26%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/resampler_rom.c.o
+[ 26%] Building CXX object src/CMakeFiles/sm_loss.dir/loss/ulpfec.cc.o
+[ 26%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/sigm_Q15.c.o
+[ 26%] Building CXX object tests/CMakeFiles/sm_unit_core.dir/unit/core/audio_frame_operations_test.cc.o
+[ 26%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/sort.c.o
+[ 27%] Building CXX object src/CMakeFiles/sm_p2p.dir/p2p/turn_port.cc.o
 [ 27%] Building CXX object src/CMakeFiles/sm_cc.dir/cc/send_side_bandwidth_estimation.cc.o
-[ 27%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/stereo_find_predictor.c.o
-[ 27%] Building CXX object src/CMakeFiles/sm_loss.dir/loss/ulpfec.cc.o
-[ 27%] Building CXX object src/CMakeFiles/sm_video.dir/video/freeze_detector.cc.o
-[ 27%] Building CXX object src/CMakeFiles/sm_audio.dir/audio/agc2.cc.o
-[ 27%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/stereo_quant_pred.c.o
-[ 27%] Building CXX object src/CMakeFiles/sm_loss.dir/loss/fec_controller.cc.o
-[ 27%] Building CXX object src/CMakeFiles/sm_video.dir/video/codec_fallback.cc.o
-[ 27%] Building CXX object src/CMakeFiles/sm_p2p.dir/p2p/port.cc.o
-[ 28%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/LPC_fit.c.o
-[ 28%] Building CXX object src/CMakeFiles/sm_p2p.dir/p2p/stun_port.cc.o
+[ 28%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/sum_sqr_shift.c.o
+[ 28%] Building CXX object src/CMakeFiles/sm_video.dir/video/codec_fallback.cc.o
+[ 28%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/stereo_decode_pred.c.o
+[ 28%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/stereo_encode_pred.c.o
+[ 28%] Building CXX object src/CMakeFiles/sm_audio.dir/audio/agc2_rnn_vad.cc.o
 [ 29%] Building CXX object src/CMakeFiles/sm_loss.dir/loss/ulpfec_tables.cc.o
-[ 29%] Building CXX object src/CMakeFiles/sm_cc.dir/cc/send_side_bwe.cc.o
-[ 29%] Building CXX object tests/CMakeFiles/sm_unit_core.dir/unit/core/audio_frame_operations_test.cc.o
-[ 29%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/float/apply_sine_window_FLP.c.o
-[ 29%] Building CXX object src/CMakeFiles/sm_audio.dir/audio/agc2_rnn_vad.cc.o
-[ 29%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/float/corrMatrix_FLP.c.o
-[ 29%] Building CXX object src/CMakeFiles/sm_audio.dir/audio/agc2_rnn_vad_weights.cc.o
-[ 29%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/float/encode_frame_FLP.c.o
-[ 29%] Building CXX object src/CMakeFiles/sm_loss.dir/loss/fec_rate_table.cc.o
-[ 30%] Building CXX object src/CMakeFiles/sm_p2p.dir/p2p/turn_port.cc.o
-[ 30%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/float/find_LPC_FLP.c.o
-[ 31%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/float/find_LTP_FLP.c.o
-[ 31%] Linking CXX static library libsm_loss.a
-[ 31%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/float/find_pitch_lags_FLP.c.o
-[ 32%] Building CXX object src/CMakeFiles/sm_video.dir/video/orientation.cc.o
-[ 32%] Built target sm_loss
-[ 33%] Building CXX object src/CMakeFiles/sm_timing.dir/timing/packet_buffer.cc.o
+[ 29%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/stereo_find_predictor.c.o
+[ 29%] Building CXX object src/CMakeFiles/sm_p2p.dir/p2p/tcp_port.cc.o
+[ 29%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/stereo_quant_pred.c.o
+[ 29%] Building CXX object src/CMakeFiles/sm_p2p.dir/p2p/connection.cc.o
+[ 30%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/LPC_fit.c.o
+[ 31%] Building CXX object src/CMakeFiles/sm_video.dir/video/orientation.cc.o
+[ 31%] Building CXX object src/CMakeFiles/sm_cc.dir/cc/send_side_bwe.cc.o
+[ 31%] Building CXX object src/CMakeFiles/sm_loss.dir/loss/fec_controller.cc.o
+[ 31%] Building CXX object tests/CMakeFiles/sm_unit_core.dir/unit/core/core_test.cc.o
+[ 31%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/float/apply_sine_window_FLP.c.o
+[ 31%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/float/corrMatrix_FLP.c.o
+[ 32%] Building CXX object tests/CMakeFiles/sm_unit_core.dir/unit/core/event_based_exponential_moving_average_test.cc.o
+[ 32%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/float/encode_frame_FLP.c.o
+[ 32%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/float/find_LPC_FLP.c.o
+[ 32%] Building CXX object src/CMakeFiles/sm_video.dir/video/content_policy.cc.o
+[ 33%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/float/find_LTP_FLP.c.o
+[ 33%] Building CXX object src/CMakeFiles/sm_loss.dir/loss/fec_rate_table.cc.o
+[ 33%] Building CXX object src/CMakeFiles/sm_audio.dir/audio/agc2_rnn_vad_weights.cc.o
+[ 33%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/float/find_pitch_lags_FLP.c.o
+[ 33%] Linking CXX static library libsm_loss.a
 [ 33%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/float/find_pred_coefs_FLP.c.o
-[ 33%] Building CXX object tests/CMakeFiles/sm_unit_core.dir/unit/core/core_test.cc.o
 [ 34%] Building CXX object src/CMakeFiles/sm_cc.dir/cc/pacer.cc.o
+[ 34%] Built target sm_loss
 [ 34%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/float/LPC_analysis_filter_FLP.c.o
-[ 35%] Building CXX object tests/CMakeFiles/sm_unit_core.dir/unit/core/event_based_exponential_moving_average_test.cc.o
+[ 35%] Building CXX object src/CMakeFiles/sm_timing.dir/timing/packet_buffer.cc.o
+[ 35%] Building CXX object tests/CMakeFiles/sm_unit_core.dir/unit/core/logging_test.cc.o
+[ 35%] Building CXX object src/CMakeFiles/sm_video.dir/video/frame_cadence_adapter.cc.o
 [ 36%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/float/LTP_analysis_filter_FLP.c.o
-[ 36%] Building CXX object src/CMakeFiles/sm_audio.dir/audio/sinc_resampler.cc.o
 [ 36%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/float/LTP_scale_ctrl_FLP.c.o
-[ 36%] Building CXX object src/CMakeFiles/sm_p2p.dir/p2p/tcp_port.cc.o
-[ 36%] Building CXX object src/CMakeFiles/sm_video.dir/video/content_policy.cc.o
+[ 36%] Building CXX object src/CMakeFiles/sm_p2p.dir/p2p/network_manager.cc.o
+[ 36%] Building CXX object src/CMakeFiles/sm_cc.dir/cc/pacing_controller.cc.o
+[ 36%] Building CXX object src/CMakeFiles/sm_p2p.dir/p2p/port_allocator.cc.o
 [ 36%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/float/noise_shape_analysis_FLP.c.o
-[ 36%] Building CXX object src/CMakeFiles/sm_p2p.dir/p2p/connection.cc.o
+[ 36%] Building CXX object src/CMakeFiles/sm_audio.dir/audio/sinc_resampler.cc.o
 [ 36%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/float/process_gains_FLP.c.o
 [ 36%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/float/regularize_correlations_FLP.c.o
-[ 36%] Building CXX object src/CMakeFiles/sm_cc.dir/cc/pacing_controller.cc.o
-[ 36%] Building CXX object src/CMakeFiles/sm_timing.dir/timing/rtcp_stats.cc.o
+[ 36%] Building CXX object src/CMakeFiles/sm_cc.dir/cc/probing.cc.o
 [ 37%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/float/residual_energy_FLP.c.o
+[ 37%] Building CXX object src/CMakeFiles/sm_timing.dir/timing/rtcp_stats.cc.o
+[ 37%] Building CXX object tests/CMakeFiles/sm_unit_core.dir/unit/core/network_test.cc.o
+[ 37%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/float/warped_autocorrelation_FLP.c.o
+[ 37%] Building CXX object src/CMakeFiles/sm_video.dir/video/frame_scheduler.cc.o
+[ 37%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/float/wrappers_FLP.c.o
 [ 38%] Building CXX object src/CMakeFiles/sm_audio.dir/audio/spl_resampler.cc.o
-[ 38%] Building CXX object tests/CMakeFiles/sm_unit_core.dir/unit/core/logging_test.cc.o
-[ 38%] Building CXX object src/CMakeFiles/sm_video.dir/video/frame_cadence_adapter.cc.o
-[ 38%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/float/warped_autocorrelation_FLP.c.o
-[ 38%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/float/wrappers_FLP.c.o
 [ 38%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/float/autocorrelation_FLP.c.o
-[ 38%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/float/burg_modified_FLP.c.o
-[ 39%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/float/bwexpander_FLP.c.o
-[ 39%] Building CXX object src/CMakeFiles/sm_audio.dir/audio/agc1.cc.o
-[ 39%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/float/energy_FLP.c.o
-[ 39%] Building CXX object src/CMakeFiles/sm_p2p.dir/p2p/network_manager.cc.o
-[ 39%] Building CXX object src/CMakeFiles/sm_timing.dir/timing/delay_manager.cc.o
-[ 39%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/float/inner_product_FLP.c.o
-[ 39%] Building CXX object tests/CMakeFiles/sm_unit_loss.dir/unit/loss/audio_nack_tracker_test.cc.o
-[ 39%] Building CXX object src/CMakeFiles/sm_cc.dir/cc/probing.cc.o
-[ 39%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/float/k2a_FLP.c.o
-[ 39%] Building CXX object src/CMakeFiles/sm_video.dir/video/frame_scheduler.cc.o
-[ 39%] Building CXX object src/CMakeFiles/sm_p2p.dir/p2p/port_allocator.cc.o
-[ 40%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/float/LPC_inv_pred_gain_FLP.c.o
-[ 40%] Building CXX object tests/CMakeFiles/sm_unit_core.dir/unit/core/network_test.cc.o
-[ 40%] Building CXX object src/CMakeFiles/sm_audio.dir/audio/agc1_vad.cc.o
-[ 40%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/float/pitch_analysis_core_FLP.c.o
-[ 40%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/float/scale_copy_vector_FLP.c.o
-[ 40%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/float/scale_vector_FLP.c.o
-[ 40%] Building CXX object src/CMakeFiles/sm_audio.dir/audio/agc1_vad_isac.cc.o
-[ 40%] Building CXX object src/CMakeFiles/sm_timing.dir/timing/neteq_delay.cc.o
-[ 40%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/float/schur_FLP.c.o
-[ 41%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/float/sort_FLP.c.o
+[ 38%] Building CXX object tests/CMakeFiles/sm_unit_loss.dir/unit/loss/audio_nack_tracker_test.cc.o
+[ 39%] Building CXX object src/CMakeFiles/sm_p2p.dir/p2p/basic_port_allocator.cc.o
+[ 39%] Building CXX object src/CMakeFiles/sm_cc.dir/cc/bitrate_prober.cc.o
+[ 39%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/float/burg_modified_FLP.c.o
+[ 40%] Building CXX object src/CMakeFiles/sm_cc.dir/cc/alr_detector.cc.o
+[ 41%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/float/bwexpander_FLP.c.o
+[ 41%] Building CXX object src/CMakeFiles/sm_timing.dir/timing/delay_manager.cc.o
+[ 41%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/float/energy_FLP.c.o
 [ 42%] Building CXX object src/CMakeFiles/sm_video.dir/video/render_frames.cc.o
+[ 42%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/float/inner_product_FLP.c.o
+[ 42%] Building CXX object src/CMakeFiles/sm_audio.dir/audio/agc1.cc.o
+[ 42%] Building CXX object src/CMakeFiles/sm_p2p.dir/p2p/ice_transport_internal.cc.o
 [ 43%] Building CXX object tests/CMakeFiles/sm_unit_loss.dir/unit/loss/fec_controller_test.cc.o
-[ 43%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/src/opus.c.o
-[ 43%] Building CXX object tests/CMakeFiles/sm_e2e_loss.dir/e2e/loss_e2e_test.cc.o
-[ 43%] Building CXX object src/CMakeFiles/sm_cc.dir/cc/bitrate_prober.cc.o
-[ 43%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/src/opus_decoder.c.o
-[ 44%] Building CXX object src/CMakeFiles/sm_timing.dir/timing/neteq_expand.cc.o
-[ 44%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/src/opus_encoder.c.o
-[ 45%] Building CXX object src/CMakeFiles/sm_audio.dir/audio/agc_manager.cc.o
-[ 45%] Building CXX object tests/CMakeFiles/sm_unit_loss.dir/unit/loss/keyframe_test.cc.o
-[ 45%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/src/extensions.c.o
-[ 46%] Building CXX object src/CMakeFiles/sm_cc.dir/cc/alr_detector.cc.o
-[ 46%] Building CXX object src/CMakeFiles/sm_video.dir/video/quality_convergence.cc.o
-[ 47%] Building CXX object src/CMakeFiles/sm_p2p.dir/p2p/basic_port_allocator.cc.o
+[ 43%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/float/k2a_FLP.c.o
+[ 44%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/float/LPC_inv_pred_gain_FLP.c.o
+[ 44%] Building CXX object src/CMakeFiles/sm_cc.dir/cc/bitrate_allocator.cc.o
+[ 44%] Building CXX object tests/CMakeFiles/sm_unit_loss.dir/unit/loss/keyframe_test.cc.o
+[ 44%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/float/pitch_analysis_core_FLP.c.o
+[ 44%] Building CXX object src/CMakeFiles/sm_video.dir/video/quality_convergence.cc.o
+[ 44%] Building CXX object src/CMakeFiles/sm_timing.dir/timing/neteq_delay.cc.o
+[ 44%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/float/scale_copy_vector_FLP.c.o
+[ 44%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/float/scale_vector_FLP.c.o
+[ 44%] Building CXX object src/CMakeFiles/sm_audio.dir/audio/agc1_vad.cc.o
+[ 44%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/float/schur_FLP.c.o
+[ 44%] Linking CXX executable sm_unit_core.js
+[ 45%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/silk/float/sort_FLP.c.o
+[ 45%] Building CXX object tests/CMakeFiles/sm_unit_loss.dir/unit/loss/nack_rtx_test.cc.o
+[ 45%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/src/opus.c.o
+[ 45%] Building CXX object tests/CMakeFiles/sm_e2e_loss.dir/e2e/loss_e2e_test.cc.o
+[ 45%] Building CXX object src/CMakeFiles/sm_video.dir/video/quality_scaler.cc.o
+[ 45%] Building CXX object src/CMakeFiles/sm_cc.dir/cc/bitrate_allocator_v2.cc.o
+[ 45%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/src/opus_decoder.c.o
+[ 46%] Building CXX object src/CMakeFiles/sm_timing.dir/timing/neteq_expand.cc.o
+[ 46%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/src/opus_encoder.c.o
+[ 46%] Building CXX object src/CMakeFiles/sm_audio.dir/audio/agc1_vad_isac.cc.o
+[ 47%] Building CXX object src/CMakeFiles/sm_audio.dir/audio/agc_manager.cc.o
+[ 47%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/src/extensions.c.o
 [ 48%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/src/opus_multistream.c.o
 [ 48%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/src/opus_multistream_encoder.c.o
-[ 48%] Building CXX object tests/CMakeFiles/sm_unit_loss.dir/unit/loss/nack_rtx_test.cc.o
-[ 48%] Building CXX object src/CMakeFiles/sm_cc.dir/cc/bitrate_allocator.cc.o
+[ 48%] Building CXX object src/CMakeFiles/sm_video.dir/video/video_stream_adapter.cc.o
 [ 48%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/src/opus_multistream_decoder.c.o
-[ 48%] Linking CXX executable sm_unit_core.js
-[ 48%] Building CXX object src/CMakeFiles/sm_timing.dir/timing/time_stretch.cc.o
 [ 48%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/src/repacketizer.c.o
-[ 48%] Building CXX object src/CMakeFiles/sm_audio.dir/audio/clipping_predictor.cc.o
+[ 48%] Building CXX object src/CMakeFiles/sm_p2p.dir/p2p/ice_switch_reason.cc.o
 [ 49%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/src/opus_projection_encoder.c.o
-[ 49%] Building CXX object src/CMakeFiles/sm_video.dir/video/quality_scaler.cc.o
 [ 49%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/src/opus_projection_decoder.c.o
+[ 49%] Building CXX object tests/CMakeFiles/sm_unit_loss.dir/unit/loss/red_test.cc.o
+[ 49%] Building CXX object src/CMakeFiles/sm_cc.dir/cc/frame_dropper.cc.o
+[ 49%] Building CXX object src/CMakeFiles/sm_audio.dir/audio/clipping_predictor.cc.o
 [ 49%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/src/mapping_matrix.c.o
+[ 49%] Building CXX object src/CMakeFiles/sm_timing.dir/timing/time_stretch.cc.o
 [ 49%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/src/analysis.c.o
-[ 49%] Building CXX object src/CMakeFiles/sm_timing.dir/timing/audio_jitter_buffer.cc.o
+[ 49%] Building CXX object src/CMakeFiles/sm_video.dir/video/resource_adaptation_processor.cc.o
 [ 49%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/src/mlp.c.o
-[ 50%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/src/mlp_data.c.o
-[ 50%] Building CXX object src/CMakeFiles/sm_p2p.dir/p2p/ice_transport_internal.cc.o
-[ 50%] Linking CXX executable sm_e2e_loss.js
-[ 50%] Building CXX object src/CMakeFiles/sm_cc.dir/cc/bitrate_allocator_v2.cc.o
-[ 50%] Linking C static library libsm_opus.a
-[ 50%] Building CXX object src/CMakeFiles/sm_audio.dir/audio/aec3_delay.cc.o
-[ 50%] Built target sm_opus
-[ 50%] Building CXX object tests/CMakeFiles/sm_unit_loss.dir/unit/loss/red_test.cc.o
-[ 50%] Building CXX object src/CMakeFiles/sm_video.dir/video/video_stream_adapter.cc.o
-[ 51%] Building CXX object tests/CMakeFiles/sm_unit_loss.dir/unit/loss/rtcp_feedback_test.cc.o
-[ 51%] Building CXX object src/CMakeFiles/sm_timing.dir/timing/video_jitter_estimator.cc.o
-[ 51%] Building CXX object src/CMakeFiles/sm_video.dir/video/resource_adaptation_processor.cc.o
-[ 51%] Building CXX object src/CMakeFiles/sm_audio.dir/audio/aec3_filter.cc.o
-[ 51%] Building CXX object src/CMakeFiles/sm_cc.dir/cc/frame_dropper.cc.o
-[ 51%] Built target sm_unit_core
-[ 51%] Building CXX object src/CMakeFiles/sm_p2p.dir/p2p/ice_switch_reason.cc.o
+[ 50%] Building CXX object tests/CMakeFiles/sm_unit_loss.dir/unit/loss/rtcp_feedback_test.cc.o
+[ 51%] Building C object testbench/CMakeFiles/sm_opus.dir/__/_deps/opus-55513e81d8f606bd75d0ff773d2144e5f2a732f5/src/mlp_data.c.o
+[ 51%] Building CXX object src/CMakeFiles/sm_cc.dir/cc/encoder_bitrate_adjuster.cc.o
+[ 51%] Linking C static library libsm_opus.a
+[ 51%] Building CXX object src/CMakeFiles/sm_audio.dir/audio/aec3_delay.cc.o
+[ 51%] Building CXX object src/CMakeFiles/sm_timing.dir/timing/audio_jitter_buffer.cc.o
+[ 51%] Built target sm_opus
+[ 51%] Linking CXX executable sm_e2e_loss.js
 [ 51%] Building CXX object src/CMakeFiles/sm_p2p.dir/p2p/basic_ice_controller.cc.o
-[ 51%] Building CXX object tests/CMakeFiles/sm_unit_loss.dir/unit/loss/ulpfec_test.cc.o
-[ 52%] Building CXX object src/CMakeFiles/sm_p2p.dir/p2p/wrapping_active_ice_controller.cc.o
-[ 52%] Building CXX object src/CMakeFiles/sm_cc.dir/cc/encoder_bitrate_adjuster.cc.o
-[ 53%] Building CXX object src/CMakeFiles/sm_video.dir/video/simulcast.cc.o
-[ 53%] Built target sm_e2e_loss
-[ 53%] Building CXX object src/CMakeFiles/sm_timing.dir/timing/vcm_timing.cc.o
-[ 54%] Building CXX object src/CMakeFiles/sm_timing.dir/timing/frame_release.cc.o
-[ 54%] Building CXX object src/CMakeFiles/sm_audio.dir/audio/aec3_reverb.cc.o
-[ 54%] Building CXX object src/CMakeFiles/sm_p2p.dir/p2p/ice_lite_agent.cc.o
-[ 55%] Building CXX object src/CMakeFiles/sm_cc.dir/cc/congestion_window_pushback.cc.o
-[ 56%] Building CXX object src/CMakeFiles/sm_audio.dir/audio/aec3_analysis.cc.o
-[ 56%] Building CXX object src/CMakeFiles/sm_cc.dir/cc/control_handler.cc.o
-[ 56%] Building CXX object src/CMakeFiles/sm_video.dir/video/simulcast_rate_allocator.cc.o
+[ 52%] Building CXX object src/CMakeFiles/sm_video.dir/video/simulcast.cc.o
+[ 52%] Building CXX object tests/CMakeFiles/sm_unit_loss.dir/unit/loss/ulpfec_test.cc.o
+[ 52%] Building CXX object src/CMakeFiles/sm_timing.dir/timing/video_jitter_estimator.cc.o
+[ 52%] Built target sm_unit_core
+[ 52%] Building CXX object src/CMakeFiles/sm_video.dir/video/simulcast_rate_allocator.cc.o
+[ 53%] Building CXX object src/CMakeFiles/sm_cc.dir/cc/congestion_window_pushback.cc.o
+[ 53%] Building CXX object src/CMakeFiles/sm_audio.dir/audio/aec3_filter.cc.o
+[ 54%] Building CXX object src/CMakeFiles/sm_p2p.dir/p2p/wrapping_active_ice_controller.cc.o
+[ 54%] Building CXX object src/CMakeFiles/sm_timing.dir/timing/vcm_timing.cc.o
+[ 54%] Building CXX object src/CMakeFiles/sm_cc.dir/cc/control_handler.cc.o
+[ 55%] Building CXX object src/CMakeFiles/sm_timing.dir/timing/frame_release.cc.o
+[ 55%] Building CXX object src/CMakeFiles/sm_cc.dir/cc/video_adaptation.cc.o
+[ 55%] Building CXX object src/CMakeFiles/sm_cc.dir/cc/outage_monitor.cc.o
+[ 55%] Linking CXX static library libsm_video.a
+[ 55%] Building CXX object src/CMakeFiles/sm_p2p.dir/p2p/ice_lite_agent.cc.o
+[ 55%] Built target sm_video
+[ 56%] Building CXX object src/CMakeFiles/sm_device.dir/device/fine_audio_buffer.cc.o
+[ 56%] Building CXX object src/CMakeFiles/sm_audio.dir/audio/aec3_reverb.cc.o
+[ 56%] Built target sm_e2e_loss
+[ 56%] Building CXX object src/CMakeFiles/sm_device.dir/device/apple_audio_device.cc.o
 [ 56%] Linking CXX static library libsm_timing.a
-[ 56%] Building CXX object src/CMakeFiles/sm_audio.dir/audio/aec3_erle.cc.o
-[ 56%] Building CXX object src/CMakeFiles/sm_cc.dir/cc/video_adaptation.cc.o
 [ 56%] Building CXX object src/CMakeFiles/sm_p2p.dir/p2p/p2p_transport_channel.cc.o
-[ 56%] Built target sm_timing
-[ 56%] Building CXX object src/CMakeFiles/sm_cc.dir/cc/outage_monitor.cc.o
-[ 56%] Building CXX object src/CMakeFiles/sm_sync.dir/sync/rtp_to_ntp.cc.o
-[ 56%] Building CXX object src/CMakeFiles/sm_audio.dir/audio/aec3_state.cc.o
-[ 56%] Linking CXX executable sm_unit_loss.js
-[ 56%] Linking CXX static library libsm_video.a
 [ 56%] Linking CXX static library libsm_cc.a
-[ 56%] Building CXX object src/CMakeFiles/sm_sync.dir/sync/stream_sync.cc.o
-[ 56%] Building CXX object tests/CMakeFiles/sm_unit_timing.dir/unit/timing/audio_jitter_buffer_test.cc.o
-[ 56%] Built target sm_video
-[ 56%] Building CXX object src/CMakeFiles/sm_audio.dir/audio/aec3_suppression.cc.o
-[ 56%] Building CXX object tests/CMakeFiles/sm_e2e_timing.dir/e2e/timing_e2e_test.cc.o
-[ 57%] Building CXX object tests/CMakeFiles/sm_unit_timing.dir/unit/timing/delay_manager_test.cc.o
+[ 56%] Built target sm_timing
+[ 56%] Linking CXX executable sm_unit_loss.js
+[ 56%] Building CXX object tests/CMakeFiles/sm_unit_video.dir/unit/video/bitrate_adjuster_test.cc.o
+[ 57%] Building CXX object src/CMakeFiles/sm_audio.dir/audio/aec3_analysis.cc.o
 [ 57%] Built target sm_cc
-[ 57%] Building CXX object src/CMakeFiles/sm_audio.dir/audio/aec3.cc.o
-[ 57%] Building CXX object src/CMakeFiles/sm_sync.dir/sync/capture_time.cc.o
-[ 57%] Building CXX object tests/CMakeFiles/sm_unit_timing.dir/unit/timing/neteq_background_noise_test.cc.o
-[ 58%] Building CXX object src/CMakeFiles/sm_sync.dir/sync/header_extensions.cc.o
-In file included from /Users/danceone/job_interview/sm-wt-rec/src/audio/aec3_suppression.cc:6:
-/Users/danceone/job_interview/sm-wt-rec/include/sm/audio/aec3_suppression.h:242:14: warning: private field 'use_subband_nearend_detection_' is not used [-Wunused-private-field]
+[ 58%] Building CXX object tests/CMakeFiles/sm_e2e_video.dir/e2e/video_e2e_test.cc.o
+[ 58%] Building CXX object src/CMakeFiles/sm_device.dir/device/video_capture_util.cc.o
+[ 58%] Building CXX object src/CMakeFiles/sm_device.dir/device/platform_none.cc.o
+[ 58%] Building CXX object tests/CMakeFiles/sm_unit_video.dir/unit/video/frame_cadence_adapter_test.cc.o
+[ 59%] Building CXX object tests/CMakeFiles/sm_unit_video.dir/unit/video/resource_adaptation_processor_test.cc.o
+[ 59%] Building CXX object src/CMakeFiles/sm_audio.dir/audio/aec3_erle.cc.o
+[ 59%] Linking CXX static library libsm_device.a
+[ 59%] Building CXX object tests/CMakeFiles/sm_unit_video.dir/unit/video/simulcast_test.cc.o
+[ 59%] Built target sm_device
+[ 59%] Building CXX object src/CMakeFiles/sm_sync.dir/sync/rtp_to_ntp.cc.o
+[ 59%] Building CXX object tests/CMakeFiles/sm_unit_video.dir/unit/video/video_test.cc.o
+[ 59%] Building CXX object src/CMakeFiles/sm_audio.dir/audio/aec3_state.cc.o
+[ 59%] Building CXX object src/CMakeFiles/sm_sync.dir/sync/stream_sync.cc.o
+[ 59%] Building CXX object tests/CMakeFiles/sm_unit_timing.dir/unit/timing/audio_jitter_buffer_test.cc.o
+[ 59%] Building CXX object src/CMakeFiles/sm_audio.dir/audio/aec3_suppression.cc.o
+[ 59%] Built target sm_unit_loss
+[ 60%] Building CXX object tests/CMakeFiles/sm_unit_timing.dir/unit/timing/delay_manager_test.cc.o
+[ 60%] Linking CXX executable sm_e2e_video.js
+[ 60%] Building CXX object src/CMakeFiles/sm_audio.dir/audio/aec3.cc.o
+[ 61%] Building CXX object src/CMakeFiles/sm_audio.dir/audio/transient_suppressor.cc.o
+[ 61%] Building CXX object src/CMakeFiles/sm_sync.dir/sync/capture_time.cc.o
+In file included from /Users/danceone/job_interview/streaming_media/sm-wt-bench/src/audio/aec3_suppression.cc:6:
+/Users/danceone/job_interview/streaming_media/sm-wt-bench/include/sm/audio/aec3_suppression.h:242:14: warning: private field 'use_subband_nearend_detection_' is not used [-Wunused-private-field]
   242 |   const bool use_subband_nearend_detection_;
       |              ^
-[ 58%] Building CXX object tests/CMakeFiles/sm_unit_timing.dir/unit/timing/neteq_delay_test.cc.o
-[ 58%] Building CXX object tests/CMakeFiles/sm_unit_video.dir/unit/video/bitrate_adjuster_test.cc.o
-In file included from /Users/danceone/job_interview/sm-wt-rec/src/audio/aec3.cc:5:
-/Users/danceone/job_interview/sm-wt-rec/include/sm/audio/aec3.h:307:13: warning: private field 'sample_rate_hz_' is not used [-Wunused-private-field]
+[ 61%] Building CXX object src/CMakeFiles/sm_audio.dir/audio/audio_level.cc.o
+[ 61%] Linking CXX static library libsm_p2p.a
+[ 61%] Building CXX object tests/CMakeFiles/sm_unit_timing.dir/unit/timing/neteq_background_noise_test.cc.o
+[ 61%] Built target sm_p2p
+[ 62%] Building CXX object src/CMakeFiles/sm_sync.dir/sync/header_extensions.cc.o
+1 warning generated.
+[ 62%] Building CXX object src/CMakeFiles/sm_audio.dir/audio/splitting_filter.cc.o
+In file included from /Users/danceone/job_interview/streaming_media/sm-wt-bench/src/audio/aec3.cc:5:
+/Users/danceone/job_interview/streaming_media/sm-wt-bench/include/sm/audio/aec3.h:307:13: warning: private field 'sample_rate_hz_' is not used [-Wunused-private-field]
   307 |   const int sample_rate_hz_;
       |             ^
-1 warning generated.
-[ 59%] Building CXX object src/CMakeFiles/sm_audio.dir/audio/transient_suppressor.cc.o
-[ 59%] Built target sm_unit_loss
-1 warning generated.
-[ 60%] Building CXX object tests/CMakeFiles/sm_e2e_video.dir/e2e/video_e2e_test.cc.o
-[ 60%] Building CXX object src/CMakeFiles/sm_audio.dir/audio/audio_level.cc.o
-[ 60%] Building CXX object tests/CMakeFiles/sm_unit_timing.dir/unit/timing/neteq_expand_test.cc.o
-[ 60%] Building CXX object src/CMakeFiles/sm_audio.dir/audio/splitting_filter.cc.o
-[ 60%] Building CXX object tests/CMakeFiles/sm_unit_timing.dir/unit/timing/neteq_merge_test.cc.o
-[ 60%] Building CXX object tests/CMakeFiles/sm_unit_video.dir/unit/video/frame_cadence_adapter_test.cc.o
-[ 60%] Linking CXX executable sm_e2e_timing.js
-[ 60%] Linking CXX static library libsm_p2p.a
-[ 60%] Building CXX object src/CMakeFiles/sm_audio.dir/audio/ns.cc.o
-[ 60%] Linking CXX static library libsm_sync.a
-[ 60%] Built target sm_sync
-[ 60%] Built target sm_p2p
-[ 61%] Building CXX object tests/CMakeFiles/sm_unit_timing.dir/unit/timing/neteq_time_stretch_test.cc.o
-[ 62%] Building CXX object tests/CMakeFiles/sm_unit_video.dir/unit/video/resource_adaptation_processor_test.cc.o
+[ 62%] Building CXX object tests/CMakeFiles/sm_unit_timing.dir/unit/timing/neteq_delay_test.cc.o
+[ 62%] Building CXX object src/CMakeFiles/sm_audio.dir/audio/ns.cc.o
+[ 62%] Built target sm_e2e_video
 [ 63%] Building CXX object src/CMakeFiles/sm_audio.dir/audio/fft4g.cc.o
-[ 63%] Building CXX object src/CMakeFiles/sm_rtp.dir/rtp/rtcp_engine.cc.o
-[ 63%] Building CXX object tests/CMakeFiles/sm_unit_video.dir/unit/video/simulcast_test.cc.o
-[ 64%] Building CXX object src/CMakeFiles/sm_device.dir/device/fine_audio_buffer.cc.o
-[ 64%] Building CXX object src/CMakeFiles/sm_audio.dir/audio/ooura_fft.cc.o
-[ 64%] Building CXX object tests/CMakeFiles/sm_unit_timing.dir/unit/timing/packet_buffer_test.cc.o
-[ 64%] Linking CXX executable sm_e2e_video.js
-[ 64%] Building CXX object src/CMakeFiles/sm_audio.dir/audio/audio_mixer.cc.o
-[ 65%] Building CXX object src/CMakeFiles/sm_rtp.dir/rtp/call_stats.cc.o
-[ 65%] Building CXX object tests/CMakeFiles/sm_unit_p2p.dir/unit/p2p/connection_test.cc.o
-[ 65%] Building CXX object src/CMakeFiles/sm_device.dir/device/apple_audio_device.cc.o
-[ 65%] Built target sm_e2e_timing
-[ 65%] Building CXX object tests/CMakeFiles/sm_unit_video.dir/unit/video/video_test.cc.o
-[ 65%] Building CXX object src/CMakeFiles/sm_rtp.dir/rtp/rtcp_sdes_bye.cc.o
-[ 65%] Building CXX object tests/CMakeFiles/sm_unit_timing.dir/unit/timing/rtcp_stats_test.cc.o
-[ 65%] Building CXX object src/CMakeFiles/sm_rtp.dir/rtp/h264.cc.o
-[ 65%] Building CXX object src/CMakeFiles/sm_device.dir/device/video_capture_util.cc.o
-[ 65%] Linking CXX static library libsm_audio.a
-[ 65%] Built target sm_audio
-[ 65%] Building CXX object tests/CMakeFiles/sm_unit_cc.dir/unit/cc/acknowledged_bitrate_estimator_test.cc.o
-[ 65%] Building CXX object src/CMakeFiles/sm_rtp.dir/rtp/rtp_receiver.cc.o
-[ 65%] Built target sm_e2e_video
-[ 65%] Building CXX object tests/CMakeFiles/sm_unit_p2p.dir/unit/p2p/ice_compare_test.cc.o
-[ 65%] Building CXX object src/CMakeFiles/sm_device.dir/device/platform_none.cc.o
-[ 65%] Building CXX object tests/CMakeFiles/sm_unit_timing.dir/unit/timing/time_stretch_test.cc.o
-[ 65%] Building CXX object tests/CMakeFiles/sm_unit_timing.dir/unit/timing/vcm_timing_test.cc.o
-[ 65%] Linking CXX static library libsm_device.a
+[ 63%] Building CXX object tests/CMakeFiles/sm_e2e_timing.dir/e2e/timing_e2e_test.cc.o
+[ 63%] Building CXX object tests/CMakeFiles/sm_unit_timing.dir/unit/timing/neteq_expand_test.cc.o
+[ 63%] Building CXX object src/CMakeFiles/sm_audio.dir/audio/ooura_fft.cc.o
+1 warning generated.
+[ 63%] Building CXX object src/CMakeFiles/sm_audio.dir/audio/audio_mixer.cc.o
+[ 63%] Building CXX object tests/CMakeFiles/sm_unit_cc.dir/unit/cc/acknowledged_bitrate_estimator_test.cc.o
+[ 63%] Building CXX object tests/CMakeFiles/sm_unit_timing.dir/unit/timing/neteq_merge_test.cc.o
+[ 63%] Linking CXX executable sm_unit_video.js
+[ 64%] Building CXX object tests/CMakeFiles/sm_unit_timing.dir/unit/timing/neteq_time_stretch_test.cc.o
+[ 64%] Building CXX object tests/CMakeFiles/sm_e2e_cc.dir/e2e/cc_e2e_test.cc.o
+[ 64%] Linking CXX static library libsm_sync.a
+[ 64%] Built target sm_sync
+[ 65%] Building CXX object tests/CMakeFiles/sm_unit_device.dir/unit/device/apple_audio_device_test.cc.o
 [ 65%] Building CXX object tests/CMakeFiles/sm_unit_cc.dir/unit/cc/aimd_rate_control_test.cc.o
-[ 66%] Building CXX object tests/CMakeFiles/sm_unit_p2p.dir/unit/p2p/ice_controller_test.cc.o
-/Users/danceone/job_interview/sm-wt-rec/src/rtp/rtp_receiver.cc:486:122: warning: missing field 'local_capture_clock_offset' initializer [-Wmissing-designated-field-initializers]
-  486 |       .ssrc = p.ssrc, .rtp_timestamp = p.timestamp, .receive_time = now, .absolute_capture_time = c.absolute_capture_time});
-      |                                                                                                                          ^
-/Users/danceone/job_interview/sm-wt-rec/src/rtp/rtp_receiver.cc:585:92: warning: missing field 'capture' initializer [-Wmissing-field-initializers]
-  585 |     FrameMeta meta{f.timestamp, keyframe, f.size_bytes(), {}, f.last_arrival, retransmitted};
-      |                                                                                            ^
-[ 66%] Built target sm_device
-[ 66%] Building CXX object tests/CMakeFiles/sm_e2e_cc.dir/e2e/cc_e2e_test.cc.o
-[ 67%] Building CXX object tests/CMakeFiles/sm_unit_timing.dir/unit/timing/video_jitter_test.cc.o
-[ 68%] Building CXX object src/CMakeFiles/sm_rtp.dir/rtp/rtp_sender.cc.o
-2 warnings generated.
-[ 68%] Building CXX object src/CMakeFiles/sm_rtp.dir/rtp/send_side_controller.cc.o
-In file included from /Users/danceone/job_interview/sm-wt-rec/tests/e2e/cc_e2e_test.cc:6:
-/Users/danceone/job_interview/sm-wt-rec/tests/e2e/cc_sims.h:198:75: warning: missing field 'rtx_ssrc' initializer [-Wmissing-field-initializers]
+[ 65%] Building CXX object tests/CMakeFiles/sm_unit_device.dir/unit/device/fine_audio_buffer_test.cc.o
+[ 65%] Linking CXX static library libsm_audio.a
+[ 65%] Building CXX object tests/CMakeFiles/sm_unit_cc.dir/unit/cc/allocation_adaptation_test.cc.o
+[ 65%] Built target sm_audio
+[ 65%] Building CXX object tests/CMakeFiles/sm_unit_timing.dir/unit/timing/packet_buffer_test.cc.o
+In file included from /Users/danceone/job_interview/streaming_media/sm-wt-bench/tests/e2e/cc_e2e_test.cc:6:
+/Users/danceone/job_interview/streaming_media/sm-wt-bench/tests/e2e/cc_sims.h:198:75: warning: missing field 'rtx_ssrc' initializer [-Wmissing-field-initializers]
   198 |       pacer.Enqueue({id, PacketPriority::kAudio, DataSize::Bytes(120), now});
       |                                                                           ^
-/Users/danceone/job_interview/sm-wt-rec/tests/e2e/cc_sims.h:221:78: warning: missing field 'rtx_ssrc' initializer [-Wmissing-field-initializers]
+/Users/danceone/job_interview/streaming_media/sm-wt-bench/tests/e2e/cc_sims.h:221:78: warning: missing field 'rtx_ssrc' initializer [-Wmissing-field-initializers]
   221 |           pacer.Enqueue({id, PacketPriority::kVideo, DataSize::Bytes(ps), now});
       |                                                                              ^
-[ 68%] Building CXX object tests/CMakeFiles/sm_unit_audio.dir/unit/audio/aec3_analysis_test.cc.o
-[ 68%] Building CXX object tests/CMakeFiles/sm_unit_cc.dir/unit/cc/allocation_adaptation_test.cc.o
-/Users/danceone/job_interview/sm-wt-rec/src/rtp/rtp_sender.cc:537:20: warning: declaration shadows a variable in namespace 'sm::rtp::(anonymous)' [-Wshadow]
+[ 65%] Building CXX object tests/CMakeFiles/sm_unit_timing.dir/unit/timing/rtcp_stats_test.cc.o
+[ 65%] Linking CXX executable sm_e2e_timing.js
+[ 65%] Building CXX object tests/CMakeFiles/sm_unit_device.dir/unit/device/video_capture_util_test.cc.o
+[ 65%] Building CXX object tests/CMakeFiles/sm_unit_timing.dir/unit/timing/time_stretch_test.cc.o
+[ 65%] Building CXX object src/CMakeFiles/sm_rtp.dir/rtp/rtcp_engine.cc.o
+[ 65%] Building CXX object tests/CMakeFiles/sm_unit_timing.dir/unit/timing/vcm_timing_test.cc.o
+[ 65%] Built target sm_unit_video
+[ 66%] Building CXX object tests/CMakeFiles/sm_unit_cc.dir/unit/cc/bitrate_allocator_v2_test.cc.o
+[ 67%] Building CXX object src/CMakeFiles/sm_rtp.dir/rtp/call_stats.cc.o
+[ 67%] Building CXX object src/CMakeFiles/sm_rtp.dir/rtp/rtcp_sdes_bye.cc.o
+[ 68%] Building CXX object tests/CMakeFiles/sm_unit_timing.dir/unit/timing/video_jitter_test.cc.o
+2 warnings generated.
+[ 69%] Linking CXX executable sm_e2e_cc.js
+[ 69%] Linking CXX executable sm_unit_device.js
+[ 69%] Building CXX object tests/CMakeFiles/sm_unit_p2p.dir/unit/p2p/connection_test.cc.o
+[ 69%] Building CXX object tests/CMakeFiles/sm_unit_cc.dir/unit/cc/bwe_test.cc.o
+[ 69%] Building CXX object tests/CMakeFiles/sm_unit_cc.dir/unit/cc/congestion_window_pushback_test.cc.o
+[ 69%] Built target sm_e2e_timing
+[ 69%] Building CXX object src/CMakeFiles/sm_rtp.dir/rtp/h264.cc.o
+[ 69%] Building CXX object tests/CMakeFiles/sm_unit_p2p.dir/unit/p2p/ice_compare_test.cc.o
+[ 69%] Building CXX object src/CMakeFiles/sm_rtp.dir/rtp/rtp_receiver.cc.o
+[ 69%] Building CXX object tests/CMakeFiles/sm_unit_audio.dir/unit/audio/aec3_analysis_test.cc.o
+[ 69%] Linking CXX executable sm_unit_timing.js
+[ 69%] Built target sm_unit_device
+[ 69%] Building CXX object tests/CMakeFiles/sm_unit_cc.dir/unit/cc/control_handler_test.cc.o
+[ 70%] Building CXX object tests/CMakeFiles/sm_unit_p2p.dir/unit/p2p/ice_controller_test.cc.o
+/Users/danceone/job_interview/streaming_media/sm-wt-bench/src/rtp/rtp_receiver.cc:486:122: warning: missing field 'local_capture_clock_offset' initializer [-Wmissing-designated-field-initializers]
+  486 |       .ssrc = p.ssrc, .rtp_timestamp = p.timestamp, .receive_time = now, .absolute_capture_time = c.absolute_capture_time});
+      |                                                                                                                          ^
+/Users/danceone/job_interview/streaming_media/sm-wt-bench/src/rtp/rtp_receiver.cc:585:92: warning: missing field 'capture' initializer [-Wmissing-field-initializers]
+  585 |     FrameMeta meta{f.timestamp, keyframe, f.size_bytes(), {}, f.last_arrival, retransmitted};
+      |                                                                                            ^
+[ 71%] Building CXX object tests/CMakeFiles/sm_e2e_audio.dir/e2e/audio_e2e_test.cc.o
+[ 71%] Building CXX object tests/CMakeFiles/sm_unit_cc.dir/unit/cc/delay_based_bwe_libwebrtc_test.cc.o
+[ 71%] Building CXX object tests/CMakeFiles/sm_unit_audio.dir/unit/audio/aec3_delay_test.cc.o
+[ 72%] Building CXX object src/CMakeFiles/sm_rtp.dir/rtp/rtp_sender.cc.o
+[ 72%] Built target sm_e2e_cc
+[ 72%] Building CXX object tests/CMakeFiles/sm_unit_sync.dir/unit/sync/sync_test.cc.o
+2 warnings generated.
+[ 72%] Building CXX object src/CMakeFiles/sm_rtp.dir/rtp/send_side_controller.cc.o
+/Users/danceone/job_interview/streaming_media/sm-wt-bench/src/rtp/rtp_sender.cc:537:20: warning: declaration shadows a variable in namespace 'sm::rtp::(anonymous)' [-Wshadow]
   537 |   constexpr size_t kRtxHeaderSize = 2;  // The original sequence number.
       |                    ^
-/Users/danceone/job_interview/sm-wt-rec/src/rtp/rtp_sender.cc:44:18: note: previous declaration is here
+/Users/danceone/job_interview/streaming_media/sm-wt-bench/src/rtp/rtp_sender.cc:44:18: note: previous declaration is here
    44 | constexpr size_t kRtxHeaderSize = 2;
       |                  ^
-/Users/danceone/job_interview/sm-wt-rec/src/rtp/rtp_sender.cc:564:20: warning: declaration shadows a variable in namespace 'sm::rtp::(anonymous)' [-Wshadow]
+/Users/danceone/job_interview/streaming_media/sm-wt-bench/src/rtp/rtp_sender.cc:564:20: warning: declaration shadows a variable in namespace 'sm::rtp::(anonymous)' [-Wshadow]
   564 |   constexpr size_t kRtxHeaderSize = 2;  // Reserved in case the packet is resent in an RTX packet.
       |                    ^
-/Users/danceone/job_interview/sm-wt-rec/src/rtp/rtp_sender.cc:44:18: note: previous declaration is here
+/Users/danceone/job_interview/streaming_media/sm-wt-bench/src/rtp/rtp_sender.cc:44:18: note: previous declaration is here
    44 | constexpr size_t kRtxHeaderSize = 2;
       |                  ^
-[ 68%] Linking CXX executable sm_unit_video.js
-[ 68%] Linking CXX executable sm_unit_timing.js
+[ 73%] Building CXX object tests/CMakeFiles/sm_unit_cc.dir/unit/cc/encoder_bitrate_adjuster_test.cc.o
+[ 73%] Building CXX object tests/CMakeFiles/sm_unit_audio.dir/unit/audio/aec3_erle_test.cc.o
+[ 73%] Built target sm_unit_timing
+[ 73%] Building CXX object tests/CMakeFiles/sm_unit_p2p.dir/unit/p2p/ice_lite_test.cc.o
 2 warnings generated.
-[ 68%] Building CXX object tests/CMakeFiles/sm_unit_p2p.dir/unit/p2p/ice_lite_test.cc.o
-/Users/danceone/job_interview/sm-wt-rec/src/rtp/send_side_controller.cc:52:7: warning: field 'target_' will be initialized after field 'pushback_target_' [-Wreorder-ctor]
+/Users/danceone/job_interview/streaming_media/sm-wt-bench/src/rtp/send_side_controller.cc:52:7: warning: field 'target_' will be initialized after field 'pushback_target_' [-Wreorder-ctor]
    48 |       transport_seq_(1),
       |       ~~~~~~~~~~~~~~~~~
       |       pushback_target_(gcc_.target())
@@ -407,268 +427,248 @@ In file included from /Users/danceone/job_interview/sm-wt-rec/tests/e2e/cc_e2e_t
    54 |       window_target_(gcc_.target()) {
       |       ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
       |       target_(gcc_.target())
-/Users/danceone/job_interview/sm-wt-rec/src/rtp/send_side_controller.cc:340:152: warning: missing field 'rtx_ssrc' initializer [-Wmissing-field-initializers]
+[ 73%] Building CXX object src/CMakeFiles/sm_rtp.dir/rtp/session.cc.o
+/Users/danceone/job_interview/streaming_media/sm-wt-bench/src/rtp/send_side_controller.cc:340:152: warning: missing field 'rtx_ssrc' initializer [-Wmissing-field-initializers]
   340 |       cc::PacedPacket pp{id, cc::PacketPriority::kPadding, DataSize::Bytes(static_cast<int64_t>(sp.packet.size()) + cfg_.transport_overhead_bytes), now};
       |                                                                                                                                                        ^
-/Users/danceone/job_interview/sm-wt-rec/src/rtp/send_side_controller.cc:379:58: warning: missing field 'rtx_ssrc' initializer [-Wmissing-field-initializers]
+/Users/danceone/job_interview/streaming_media/sm-wt-bench/src/rtp/send_side_controller.cc:379:58: warning: missing field 'rtx_ssrc' initializer [-Wmissing-field-initializers]
   379 |   cc::PacedPacket pp{id, prio, DataSize::Bytes(size), now};
       |                                                          ^
-[ 68%] Building CXX object tests/CMakeFiles/sm_unit_audio.dir/unit/audio/aec3_delay_test.cc.o
-[ 69%] Building CXX object tests/CMakeFiles/sm_unit_cc.dir/unit/cc/bitrate_allocator_v2_test.cc.o
-[ 70%] Building CXX object tests/CMakeFiles/sm_e2e_audio.dir/e2e/audio_e2e_test.cc.o
-2 warnings generated.
-[ 70%] Building CXX object tests/CMakeFiles/sm_unit_p2p.dir/unit/p2p/p2p_transport_channel_multihomed_test.cc.o
-[ 71%] Linking CXX executable sm_e2e_cc.js
-3 warnings generated.
-[ 71%] Building CXX object src/CMakeFiles/sm_rtp.dir/rtp/session.cc.o
-[ 71%] Built target sm_unit_video
-[ 71%] Building CXX object tests/CMakeFiles/sm_unit_audio.dir/unit/audio/aec3_erle_test.cc.o
-[ 71%] Building CXX object tests/CMakeFiles/sm_e2e_audio.dir/e2e/audio_mixer_e2e_test.cc.o
-[ 71%] Built target sm_unit_timing
-[ 71%] Building CXX object tests/CMakeFiles/sm_unit_cc.dir/unit/cc/bwe_test.cc.o
-[ 72%] Building CXX object tests/CMakeFiles/sm_unit_audio.dir/unit/audio/aec3_filter_test.cc.o
-In file included from /Users/danceone/job_interview/sm-wt-rec/tests/e2e/audio_mixer_e2e_test.cc:14:
-/Users/danceone/job_interview/sm-wt-rec/tests/e2e/mixer_sims.h:144:80: warning: missing field 'csrcs' initializer [-Wmissing-designated-field-initializers]
+[ 73%] Building CXX object tests/CMakeFiles/sm_e2e_audio.dir/e2e/audio_mixer_e2e_test.cc.o
+[ 73%] Building CXX object tests/CMakeFiles/sm_unit_cc.dir/unit/cc/goog_cc_network_control_test.cc.o
+In file included from /Users/danceone/job_interview/streaming_media/sm-wt-bench/tests/e2e/audio_mixer_e2e_test.cc:14:
+/Users/danceone/job_interview/streaming_media/sm-wt-bench/tests/e2e/mixer_sims.h:144:80: warning: missing field 'csrcs' initializer [-Wmissing-designated-field-initializers]
   144 |     audio_frame->packet_infos = {{.ssrc = ssrc_, .rtp_timestamp = rtp_timestamp}};
       |                                                                                ^
-[ 72%] Building CXX object tests/CMakeFiles/sm_unit_audio.dir/unit/audio/aec3_multichannel_test.cc.o
-[ 72%] Building CXX object tests/CMakeFiles/sm_unit_p2p.dir/unit/p2p/p2p_transport_channel_ping_test.cc.o
-[ 72%] Building CXX object tests/CMakeFiles/sm_unit_p2p.dir/unit/p2p/p2p_transport_channel_test.cc.o
-[ 72%] Building CXX object tests/CMakeFiles/sm_unit_cc.dir/unit/cc/congestion_window_pushback_test.cc.o
-1 warning generated.
-[ 72%] Linking CXX executable sm_e2e_audio.js
-[ 72%] Built target sm_e2e_cc
-[ 73%] Building CXX object tests/CMakeFiles/sm_unit_p2p.dir/unit/p2p/dtls_utils_test.cc.o
-[ 73%] Building CXX object tests/CMakeFiles/sm_unit_sync.dir/unit/sync/sync_test.cc.o
-[ 73%] Building CXX object src/CMakeFiles/sm_rtp.dir/rtp/sps_vui_rewriter.cc.o
-[ 73%] Building CXX object tests/CMakeFiles/sm_unit_cc.dir/unit/cc/control_handler_test.cc.o
-[ 73%] Building CXX object tests/CMakeFiles/sm_unit_audio.dir/unit/audio/aec3_reverb_test.cc.o
+[ 73%] Building CXX object tests/CMakeFiles/sm_unit_cc.dir/unit/cc/loss_based_bwe_v2_test.cc.o
+[ 73%] Building CXX object tests/CMakeFiles/sm_unit_p2p.dir/unit/p2p/p2p_transport_channel_multihomed_test.cc.o
+3 warnings generated.
 [ 73%] Building CXX object tests/CMakeFiles/sm_e2e_sync.dir/e2e/sync_e2e_test.cc.o
-[ 73%] Building CXX object tests/CMakeFiles/sm_unit_cc.dir/unit/cc/delay_based_bwe_libwebrtc_test.cc.o
-[ 74%] Building CXX object tests/CMakeFiles/sm_unit_device.dir/unit/device/apple_audio_device_test.cc.o
-[ 74%] Building CXX object tests/CMakeFiles/sm_unit_p2p.dir/unit/p2p/packet_socket_test.cc.o
-[ 74%] Building CXX object src/CMakeFiles/sm_rtp.dir/rtp/simulcast_send_controller.cc.o
-[ 74%] Building CXX object tests/CMakeFiles/sm_unit_audio.dir/unit/audio/aec3_state_test.cc.o
-[ 75%] Building CXX object tests/CMakeFiles/sm_unit_cc.dir/unit/cc/encoder_bitrate_adjuster_test.cc.o
-[ 75%] Building CXX object tests/CMakeFiles/sm_unit_device.dir/unit/device/fine_audio_buffer_test.cc.o
-[ 75%] Linking CXX executable sm_unit_sync.js
-[ 75%] Built target sm_e2e_audio
+[ 73%] Building CXX object tests/CMakeFiles/sm_unit_cc.dir/unit/cc/overuse_frame_detector_test.cc.o
+[ 74%] Building CXX object tests/CMakeFiles/sm_unit_audio.dir/unit/audio/aec3_filter_test.cc.o
+[ 74%] Linking CXX executable sm_unit_sync.js
+1 warning generated.
+[ 74%] Linking CXX executable sm_e2e_audio.js
+[ 74%] Building CXX object tests/CMakeFiles/sm_unit_p2p.dir/unit/p2p/p2p_transport_channel_ping_test.cc.o
+[ 75%] Building CXX object tests/CMakeFiles/sm_unit_cc.dir/unit/cc/pacer_probe_test.cc.o
+[ 75%] Building CXX object src/CMakeFiles/sm_rtp.dir/rtp/sps_vui_rewriter.cc.o
 [ 75%] Building CXX object tests/CMakeFiles/sm_unit_web.dir/unit/web/audio_jitter_buffer_binding_test.cc.o
 [ 75%] Linking CXX executable sm_e2e_sync.js
-[ 76%] Building CXX object src/CMakeFiles/sm_rtp.dir/rtp/video_send_controller.cc.o
-[ 76%] Building CXX object tests/CMakeFiles/sm_unit_device.dir/unit/device/video_capture_util_test.cc.o
-[ 77%] Building CXX object tests/CMakeFiles/sm_unit_audio.dir/unit/audio/aec3_suppression_test.cc.o
-[ 77%] Building CXX object tests/CMakeFiles/sm_unit_cc.dir/unit/cc/goog_cc_network_control_test.cc.o
-[ 77%] Building CXX object tests/CMakeFiles/sm_unit_p2p.dir/unit/p2p/port_allocator_test.cc.o
-[ 77%] Building CXX object tests/CMakeFiles/sm_unit_audio.dir/unit/audio/aec3_test.cc.o
-[ 78%] Linking CXX executable sm_unit_web.js
-[ 78%] Built target sm_e2e_sync
-[ 78%] Built target sm_unit_sync
-[ 78%] Building CXX object tests/CMakeFiles/sm_unit_cc.dir/unit/cc/loss_based_bwe_v2_test.cc.o
-[ 78%] Building CXX object tests/CMakeFiles/sm_unit_p2p.dir/unit/p2p/port_test.cc.o
-[ 78%] Linking CXX static library libsm_rtp.a
-[ 78%] Built target sm_rtp
-[ 78%] Building CXX object tests/CMakeFiles/sm_unit_rtp.dir/unit/rtp/call_stats_test.cc.o
-[ 78%] Building CXX object tests/CMakeFiles/sm_unit_audio.dir/unit/audio/agc1_test.cc.o
-[ 78%] Linking CXX executable sm_unit_device.js
-[ 79%] Building CXX object tests/CMakeFiles/sm_unit_p2p.dir/unit/p2p/stun_request_test.cc.o
-[ 80%] Building CXX object tests/CMakeFiles/sm_unit_rtp.dir/unit/rtp/h264_test.cc.o
-[ 80%] Building CXX object tests/CMakeFiles/sm_unit_cc.dir/unit/cc/overuse_frame_detector_test.cc.o
-[ 80%] Built target sm_unit_web
-[ 80%] Building CXX object tests/CMakeFiles/sm_unit_audio.dir/unit/audio/agc1_vad_test.cc.o
-[ 80%] Building CXX object tests/CMakeFiles/sm_unit_audio.dir/unit/audio/agc2_rnn_vad_test.cc.o
-[ 81%] Building CXX object tests/CMakeFiles/sm_unit_audio.dir/unit/audio/agc2_test.cc.o
-[ 81%] Building CXX object tests/CMakeFiles/sm_unit_p2p.dir/unit/p2p/stun_test.cc.o
-[ 81%] Built target sm_unit_device
-[ 81%] Building CXX object tests/CMakeFiles/sm_e2e_rtp.dir/e2e/cwnd_pushback_e2e_test.cc.o
-[ 82%] Building CXX object tests/CMakeFiles/sm_unit_cc.dir/unit/cc/pacer_probe_test.cc.o
-[ 82%] Building CXX object tests/CMakeFiles/sm_unit_rtp.dir/unit/rtp/libwebrtc_defaults_test.cc.o
-[ 82%] Building CXX object tests/CMakeFiles/sm_unit_audio.dir/unit/audio/agc_manager_test.cc.o
-[ 82%] Building CXX object tests/CMakeFiles/sm_e2e_rtp.dir/e2e/rtp_receiver_e2e_test.cc.o
-/Users/danceone/job_interview/sm-wt-rec/tests/unit/cc/pacer_probe_test.cc:13:119: warning: missing field 'rtx_ssrc' initializer [-Wmissing-field-initializers]
+[ 75%] Built target sm_unit_sync
+[ 75%] Building CXX object tests/CMakeFiles/sm_unit_audio.dir/unit/audio/aec3_multichannel_test.cc.o
+/Users/danceone/job_interview/streaming_media/sm-wt-bench/tests/unit/cc/pacer_probe_test.cc:13:119: warning: missing field 'rtx_ssrc' initializer [-Wmissing-field-initializers]
    13 |   for (uint64_t i = 0; i < 150; ++i) p.Enqueue({i, PacketPriority::kVideo, DataSize::Bytes(1000), Timestamp::Millis(0)});
       |                                                                                                                       ^
-/Users/danceone/job_interview/sm-wt-rec/tests/unit/cc/pacer_probe_test.cc:27:100: warning: missing field 'rtx_ssrc' initializer [-Wmissing-field-initializers]
+/Users/danceone/job_interview/streaming_media/sm-wt-bench/tests/unit/cc/pacer_probe_test.cc:27:100: warning: missing field 'rtx_ssrc' initializer [-Wmissing-field-initializers]
    27 |   for (uint64_t i = 0; i < 20; ++i) p.Enqueue({i, PacketPriority::kVideo, DataSize::Bytes(1000), t0});
       |                                                                                                    ^
-/Users/danceone/job_interview/sm-wt-rec/tests/unit/cc/pacer_probe_test.cc:30:95: warning: missing field 'rtx_ssrc' initializer [-Wmissing-field-initializers]
+/Users/danceone/job_interview/streaming_media/sm-wt-bench/tests/unit/cc/pacer_probe_test.cc:30:95: warning: missing field 'rtx_ssrc' initializer [-Wmissing-field-initializers]
    30 |   p.Enqueue({100, PacketPriority::kRetransmission, DataSize::Bytes(1000), Timestamp::Millis(1)});
       |                                                                                               ^
-/Users/danceone/job_interview/sm-wt-rec/tests/unit/cc/pacer_probe_test.cc:31:85: warning: missing field 'rtx_ssrc' initializer [-Wmissing-field-initializers]
+/Users/danceone/job_interview/streaming_media/sm-wt-bench/tests/unit/cc/pacer_probe_test.cc:31:85: warning: missing field 'rtx_ssrc' initializer [-Wmissing-field-initializers]
    31 |   p.Enqueue({200, PacketPriority::kAudio, DataSize::Bytes(100), Timestamp::Millis(1)});
       |                                                                                     ^
-/Users/danceone/job_interview/sm-wt-rec/tests/unit/cc/pacer_probe_test.cc:48:83: warning: missing field 'rtx_ssrc' initializer [-Wmissing-field-initializers]
+/Users/danceone/job_interview/streaming_media/sm-wt-bench/tests/unit/cc/pacer_probe_test.cc:48:83: warning: missing field 'rtx_ssrc' initializer [-Wmissing-field-initializers]
    48 |   p.Enqueue({1, PacketPriority::kVideo, DataSize::Bytes(500), Timestamp::Millis(0)});
       |                                                                                   ^
-/Users/danceone/job_interview/sm-wt-rec/tests/unit/cc/pacer_probe_test.cc:58:82: warning: missing field 'at_time' initializer [-Wmissing-field-initializers]
+/Users/danceone/job_interview/streaming_media/sm-wt-bench/tests/unit/cc/pacer_probe_test.cc:58:82: warning: missing field 'at_time' initializer [-Wmissing-field-initializers]
    58 |     e.SetClusterInfo({1, DataRate::KilobitsPerSec(2000), 5, DataSize::Bytes(3000)});
       |                                                                                  ^
-[ 82%] Building CXX object tests/CMakeFiles/sm_unit_cc.dir/unit/cc/pacing_controller_test.cc.o
 6 warnings generated.
-[ 82%] Building CXX object tests/CMakeFiles/sm_unit_cc.dir/unit/cc/prioritized_packet_queue_test.cc.o
-[ 82%] Building CXX object bench/CMakeFiles/sm_bench.dir/core_bench.cc.o
-[ 82%] Building CXX object tests/CMakeFiles/sm_unit_rtp.dir/unit/rtp/packet_router_test.cc.o
-[ 83%] Building CXX object tests/CMakeFiles/sm_e2e_rtp.dir/e2e/rtp_sender_e2e_test.cc.o
-/Users/danceone/job_interview/sm-wt-rec/tests/unit/cc/pacing_controller_test.cc:339:77: warning: missing field 'at_time' initializer [-Wmissing-field-initializers]
+[ 75%] Building CXX object tests/CMakeFiles/sm_unit_cc.dir/unit/cc/pacing_controller_test.cc.o
+[ 75%] Building CXX object src/CMakeFiles/sm_rtp.dir/rtp/simulcast_send_controller.cc.o
+[ 75%] Building CXX object tests/CMakeFiles/sm_unit_audio.dir/unit/audio/aec3_reverb_test.cc.o
+[ 76%] Linking CXX executable sm_unit_web.js
+[ 77%] Building CXX object src/CMakeFiles/sm_rtp.dir/rtp/video_send_controller.cc.o
+[ 77%] Built target sm_e2e_sync
+[ 77%] Building CXX object tests/CMakeFiles/sm_unit_cc.dir/unit/cc/prioritized_packet_queue_test.cc.o
+/Users/danceone/job_interview/streaming_media/sm-wt-bench/tests/unit/cc/pacing_controller_test.cc:339:77: warning: missing field 'at_time' initializer [-Wmissing-field-initializers]
   339 |   ProbeCluster c{7, DataRate::KilobitsPerSec(2000), 5, DataSize::Bytes(3750)};
       |                                                                             ^
-/Users/danceone/job_interview/sm-wt-rec/tests/unit/cc/pacing_controller_test.cc:524:77: warning: missing field 'at_time' initializer [-Wmissing-field-initializers]
+/Users/danceone/job_interview/streaming_media/sm-wt-bench/tests/unit/cc/pacing_controller_test.cc:524:77: warning: missing field 'at_time' initializer [-Wmissing-field-initializers]
   524 |   ProbeCluster c{7, DataRate::KilobitsPerSec(2000), 5, DataSize::Bytes(3750)};
       |                                                                             ^
-/Users/danceone/job_interview/sm-wt-rec/tests/unit/cc/pacing_controller_test.cc:552:98: warning: missing field 'at_time' initializer [-Wmissing-field-initializers]
+/Users/danceone/job_interview/streaming_media/sm-wt-bench/tests/unit/cc/pacing_controller_test.cc:552:98: warning: missing field 'at_time' initializer [-Wmissing-field-initializers]
   552 |     pacer.AddProbeCluster(ProbeCluster{1, DataRate::KilobitsPerSec(900), 5, DataSize::Bytes(1688)});
       |                                                                                                  ^
-/Users/danceone/job_interview/sm-wt-rec/tests/e2e/rtp_receiver_e2e_test.cc:87:11: warning: variable 'frame_id' set but not used [-Wunused-but-set-variable]
+[ 77%] Built target sm_e2e_audio
+[ 77%] Building CXX object tests/CMakeFiles/sm_unit_audio.dir/unit/audio/aec3_state_test.cc.o
+[ 78%] Building CXX object tests/CMakeFiles/sm_unit_audio.dir/unit/audio/aec3_suppression_test.cc.o
+[ 78%] Building CXX object tests/CMakeFiles/sm_unit_p2p.dir/unit/p2p/p2p_transport_channel_test.cc.o
+[ 78%] Building CXX object tests/CMakeFiles/sm_unit_audio.dir/unit/audio/aec3_test.cc.o
+[ 78%] Building CXX object tests/CMakeFiles/sm_unit_cc.dir/unit/cc/probe_v2_test.cc.o
+[ 78%] Built target sm_unit_web
+[ 79%] Building CXX object tests/CMakeFiles/sm_unit_p2p.dir/unit/p2p/dtls_utils_test.cc.o
+[ 79%] Linking CXX static library libsm_rtp.a
+3 warnings generated.
+[ 79%] Building CXX object tests/CMakeFiles/sm_unit_cc.dir/unit/cc/robust_throughput_estimator_test.cc.o
+[ 79%] Built target sm_rtp
+[ 79%] Building CXX object tests/CMakeFiles/sm_unit_rtp.dir/unit/rtp/call_stats_test.cc.o
+[ 79%] Building CXX object tests/CMakeFiles/sm_unit_audio.dir/unit/audio/agc1_test.cc.o
+[ 79%] Building CXX object tests/CMakeFiles/sm_unit_p2p.dir/unit/p2p/packet_socket_test.cc.o
+[ 79%] Building CXX object tests/CMakeFiles/sm_unit_p2p.dir/unit/p2p/port_allocator_test.cc.o
+[ 80%] Building CXX object tests/CMakeFiles/sm_unit_rtp.dir/unit/rtp/h264_test.cc.o
+[ 80%] Building CXX object tests/CMakeFiles/sm_e2e_rtp.dir/e2e/cwnd_pushback_e2e_test.cc.o
+[ 80%] Building CXX object tests/CMakeFiles/sm_unit_audio.dir/unit/audio/agc1_vad_test.cc.o
+[ 80%] Building CXX object tests/CMakeFiles/sm_unit_audio.dir/unit/audio/agc2_rnn_vad_test.cc.o
+[ 81%] Building CXX object tests/CMakeFiles/sm_unit_cc.dir/unit/cc/task_queue_paced_sender_test.cc.o
+[ 82%] Building CXX object tests/CMakeFiles/sm_unit_audio.dir/unit/audio/agc2_test.cc.o
+[ 82%] Building CXX object tests/CMakeFiles/sm_unit_p2p.dir/unit/p2p/port_test.cc.o
+[ 82%] Building CXX object bench/CMakeFiles/sm_bench.dir/core_bench.cc.o
+[ 82%] Building CXX object tests/CMakeFiles/sm_unit_audio.dir/unit/audio/agc_manager_test.cc.o
+[ 82%] Building CXX object tests/CMakeFiles/sm_unit_cc.dir/unit/cc/transport_feedback_test.cc.o
+[ 82%] Building CXX object tests/CMakeFiles/sm_unit_rtp.dir/unit/rtp/libwebrtc_defaults_test.cc.o
+[ 82%] Building CXX object tests/CMakeFiles/sm_e2e_rtp.dir/e2e/rtp_receiver_e2e_test.cc.o
+[ 83%] Building CXX object tests/CMakeFiles/sm_unit_p2p.dir/unit/p2p/stun_request_test.cc.o
+[ 84%] Building CXX object bench/CMakeFiles/sm_bench.dir/loss_bench.cc.o
+[ 84%] Building CXX object tests/CMakeFiles/sm_unit_audio.dir/unit/audio/audio_mixer_test.cc.o
+[ 84%] Building CXX object examples/CMakeFiles/simulated_call.dir/simulated_call.cc.o
+/Users/danceone/job_interview/streaming_media/sm-wt-bench/tests/e2e/rtp_receiver_e2e_test.cc:87:11: warning: variable 'frame_id' set but not used [-Wunused-but-set-variable]
    87 |   int64_t frame_id = 0, last_render_ms = -1;
       |           ^
-[ 84%] Building CXX object bench/CMakeFiles/sm_bench.dir/loss_bench.cc.o
-[ 84%] Building CXX object tests/CMakeFiles/sm_unit_cc.dir/unit/cc/probe_v2_test.cc.o
-[ 84%] Building CXX object tests/CMakeFiles/sm_unit_p2p.dir/unit/p2p/tcp_port_test.cc.o
-[ 84%] Building CXX object examples/CMakeFiles/simulated_call.dir/simulated_call.cc.o
-[ 84%] Building CXX object tests/CMakeFiles/sm_e2e_rtp.dir/e2e/rtp_session_e2e_test.cc.o
-3 warnings generated.
-[ 84%] Building CXX object tests/CMakeFiles/sm_unit_rtp.dir/unit/rtp/rtcp_engine_test.cc.o
+[ 84%] Building CXX object tests/CMakeFiles/sm_unit_rtp.dir/unit/rtp/packet_router_test.cc.o
+[ 84%] Linking CXX executable sm_unit_cc.js
+[ 84%] Building CXX object bench/CMakeFiles/sm_bench.dir/timing_bench.cc.o
 1 warning generated.
-[ 84%] Building CXX object tests/CMakeFiles/sm_e2e_rtp.dir/e2e/video_adaptation_e2e_test.cc.o
-[ 84%] Building CXX object tests/CMakeFiles/sm_unit_audio.dir/unit/audio/audio_mixer_test.cc.o
-[ 84%] Building CXX object tests/CMakeFiles/sm_e2e_rtp.dir/e2e/video_send_controller_e2e_test.cc.o
-[ 85%] Building CXX object tests/CMakeFiles/sm_unit_rtp.dir/unit/rtp/rtcp_sdes_bye_test.cc.o
-/Users/danceone/job_interview/sm-wt-rec/tests/unit/rtp/rtcp_engine_test.cc:453:35: warning: missing field 'send_bitrate' initializer [-Wmissing-designated-field-initializers]
-  453 |   sender.SetSenderState({.ssrc = 7});
-      |                                   ^
-/Users/danceone/job_interview/sm-wt-rec/tests/unit/rtp/rtcp_engine_test.cc:482:35: warning: missing field 'send_bitrate' initializer [-Wmissing-designated-field-initializers]
-  482 |   sender.SetSenderState({.ssrc = 7});
-      |                                   ^
-/Users/danceone/job_interview/sm-wt-rec/tests/unit/rtp/rtcp_engine_test.cc:564:95: warning: missing field 'send_bitrate' initializer [-Wmissing-designated-field-initializers]
-  564 |   tx.SetSenderState({.ssrc = 0x3333, .packet_count = 1, .octet_count = 100, .rtp_timestamp = 0});
-      |                                                                                               ^
-[ 85%] Building CXX object bench/CMakeFiles/sm_bench.dir/timing_bench.cc.o
-/Users/danceone/job_interview/sm-wt-rec/tests/unit/rtp/rtcp_engine_test.cc:718:35: warning: missing field 'send_bitrate' initializer [-Wmissing-designated-field-initializers]
-  718 |   sender.SetSenderState({.ssrc = 7});
-      |                                   ^
-/Users/danceone/job_interview/sm-wt-rec/tests/unit/rtp/rtcp_engine_test.cc:775:90: warning: missing field 'blocks' initializer [-Wmissing-designated-field-initializers]
-  775 |   std::vector<std::vector<uint8_t>> packets = {timing::SerializeReceiverReport({.ssrc = 1}),
-      |                                                                                          ^
-[ 85%] Building CXX object tests/CMakeFiles/sm_unit_cc.dir/unit/cc/robust_throughput_estimator_test.cc.o
-/Users/danceone/job_interview/sm-wt-rec/tests/e2e/rtp_session_e2e_test.cc:117:11: warning: variable 'frame_id' set but not used [-Wunused-but-set-variable]
-  117 |   int64_t frame_id = 0, last_render = -1;
-      |           ^
+[ 85%] Building CXX object tests/CMakeFiles/sm_e2e_rtp.dir/e2e/rtp_sender_e2e_test.cc.o
+[ 85%] Building CXX object tests/CMakeFiles/sm_unit_p2p.dir/unit/p2p/stun_test.cc.o
+[ 85%] Building CXX object tests/CMakeFiles/sm_unit_audio.dir/unit/audio/clipping_predictor_test.cc.o
+[ 85%] Building CXX object testbench/CMakeFiles/sm_testbench_lib.dir/scenario.cc.o
 [ 85%] Building CXX object bench/CMakeFiles/sm_bench.dir/cc_bench.cc.o
 [ 85%] Linking CXX executable simulated_call.js
-[ 85%] Building CXX object tests/CMakeFiles/sm_unit_audio.dir/unit/audio/clipping_predictor_test.cc.o
-In file included from /Users/danceone/job_interview/sm-wt-rec/bench/cc_bench.cc:2:
-/Users/danceone/job_interview/sm-wt-rec/bench/../tests/e2e/cc_sims.h:198:75: warning: missing field 'rtx_ssrc' initializer [-Wmissing-field-initializers]
+[ 85%] Building CXX object tests/CMakeFiles/sm_unit_rtp.dir/unit/rtp/rtcp_engine_test.cc.o
+[ 85%] Building CXX object tests/CMakeFiles/sm_e2e_rtp.dir/e2e/rtp_session_e2e_test.cc.o
+In file included from /Users/danceone/job_interview/streaming_media/sm-wt-bench/bench/cc_bench.cc:2:
+/Users/danceone/job_interview/streaming_media/sm-wt-bench/bench/../tests/e2e/cc_sims.h:198:75: warning: missing field 'rtx_ssrc' initializer [-Wmissing-field-initializers]
   198 |       pacer.Enqueue({id, PacketPriority::kAudio, DataSize::Bytes(120), now});
       |                                                                           ^
-/Users/danceone/job_interview/sm-wt-rec/bench/../tests/e2e/cc_sims.h:221:78: warning: missing field 'rtx_ssrc' initializer [-Wmissing-field-initializers]
-  221 |           pacer.Enqueue({id, PacketPriorit[ 85%] Building CXX object testbench/CMakeFiles/sm_testbench_lib.dir/scenario.cc.o
-y::kVideo, DataSize::Bytes(ps), now});
+/Users/danceone/job_interview/streaming_media/sm-wt-bench/bench/../tests/e2e/cc_sims.h:221:78: warning: missing field 'rtx_ssrc' initializer [-Wmissing-field-initializers]
+  221 |           pacer.Enqueue({id, PacketPriority::kVideo, DataSize::Bytes(ps), now});
       |                                                                              ^
-1 warning generated.
-[ 85%] Building CXX object tests/CMakeFiles/sm_unit_p2p.dir/unit/p2p/tcp_socket_test.cc.o
-[ 86%] Building CXX object tests/CMakeFiles/sm_unit_cc.dir/unit/cc/task_queue_paced_sender_test.cc.o
-/Users/danceone/job_interview/sm-wt-rec/bench/cc_bench.cc:51:130: warning: missing field 'rtx_ssrc' initializer [-Wmissing-field-initializers]
+[ 85%] Building CXX object tests/CMakeFiles/sm_unit_audio.dir/unit/audio/dtx_level_mixer_test.cc.o
+/Users/danceone/job_interview/streaming_media/sm-wt-bench/bench/cc_bench.cc:51:130: warning: missing field 'rtx_ssrc' initializer [-Wmissing-field-initializers]
    51 |     for (int i = 0; i < 10; ++i) p.Enqueue({id++, static_cast<PacketPriority>(i % 4), DataSize::Bytes(1200), Timestamp::Micros(t)});
       |                                                                                                                                  ^
-[ 86%] Building CXX object bench/CMakeFiles/sm_bench.dir/audio_bench.cc.o
-5 warnings generated.
-[ 86%] Building CXX object tests/CMakeFiles/sm_unit_audio.dir/unit/audio/dtx_level_mixer_test.cc.o
-[ 86%] Building CXX object tests/CMakeFiles/sm_unit_rtp.dir/unit/rtp/rtp_receiver_test.cc.o
-[ 87%] Linking CXX executable sm_e2e_rtp.js
-[ 87%] Building CXX object bench/CMakeFiles/sm_bench.dir/video_bench.cc.o
+[ 85%] Building CXX object testbench/CMakeFiles/sm_testbench_lib.dir/call.cc.o
+[ 85%] Building CXX object bench/CMakeFiles/sm_bench.dir/audio_bench.cc.o
+[ 85%] Built target sm_unit_cc
+[ 85%] Building CXX object tests/CMakeFiles/sm_unit_p2p.dir/unit/p2p/tcp_port_test.cc.o
+[ 86%] Building CXX object tests/CMakeFiles/sm_unit_audio.dir/unit/audio/filters_test.cc.o
+/Users/danceone/job_interview/streaming_media/sm-wt-bench/tests/unit/rtp/rtcp_engine_test.cc:453:35: warning: missing field 'send_bitrate' initializer [-Wmissing-designated-field-initializers]
+  453 |   sender.SetSenderState({.ssrc = 7});
+      |                                   ^
+/Users/danceone/job_interview/streaming_media/sm-wt-bench/tests/unit/rtp/rtcp_engine_test.cc:482:35: warning: missing field 'send_bitrate' initializer [-Wmissing-designated-field-initializers]
+  482 |   sender.SetSenderState({.ssrc = 7});
+      |                                   ^
+/Users/danceone/job_interview/streaming_media/sm-wt-bench/tests/unit/rtp/rtcp_engine_test.cc:564:95: warning: missing field 'send_bitrate' initializer [-Wmissing-designated-field-initializers]
+  564 |   tx.SetSenderState({.ssrc = 0x3333, .packet_count = 1, .octet_count = 100, .rtp_timestamp = 0});
+      |                                                                                               ^
+[ 86%] Building CXX object tests/CMakeFiles/sm_unit_audio.dir/unit/audio/hpf_test.cc.o
+/Users/danceone/job_interview/streaming_media/sm-wt-bench/tests/unit/rtp/rtcp_engine_test.cc:718:35: warning: missing field 'send_bitrate' initializer [-Wmissing-designated-field-initializers]
+  718 |   sender.SetSenderState({.ssrc = 7});
+      |                                   ^
+/Users/danceone/job_interview/streaming_media/sm-wt-bench/tests/unit/rtp/rtcp_engine_test.cc:775:90: warning: missing field 'blocks' initializer [-Wmissing-designated-field-initializers]
+  775 |   std::vector<std::vector<uint8_t>> packets = {timing::SerializeReceiverReport({.ssrc = 1}),
+      |                                                                                          ^
+/Users/danceone/job_interview/streaming_media/sm-wt-bench/tests/e2e/rtp_session_e2e_test.cc:117:11: warning: variable 'frame_id' set but not used [-Wunused-but-set-variable]
+  117 |   int64_t frame_id = 0, last_render = -1;
+      |           ^
 3 warnings generated.
-[ 88%] Building CXX object tests/CMakeFiles/sm_unit_audio.dir/unit/audio/filters_test.cc.o
-In file included from /Users/danceone/job_interview/sm-wt-rec/bench/audio_bench.cc:5:
-/Users/danceone/job_interview/sm-wt-rec/bench/../tests/e2e/mixer_sims.h:144:80: warning: missing field 'csrcs' initializer [-Wmissing-designated-field-initializers]
+[ 86%] Building CXX object bench/CMakeFiles/sm_bench.dir/video_bench.cc.o
+[ 86%] Building CXX object testbench/CMakeFiles/sm_testbench_lib.dir/sfu.cc.o
+In file included from /Users/danceone/job_interview/streaming_media/sm-wt-bench/bench/audio_bench.cc:5:
+/Users/danceone/job_interview/streaming_media/sm-wt-bench/bench/../tests/e2e/mixer_sims.h:144:80: warning: missing field 'csrcs' initializer [-Wmissing-designated-field-initializers]
   144 |     audio_frame->packet_infos = {{.ssrc = ssrc_, .rtp_timestamp = rtp_timestamp}};
       |                                                                                ^
-[ 89%] Building CXX object bench/CMakeFiles/sm_bench.dir/sync_bench.cc.o
-/Users/danceone/job_interview/sm-wt-rec/bench/audio_bench.cc:78:11: warning: variable 't' set but not used [-Wunused-but-set-variable]
+[ 86%] Built target simulated_call
+[ 86%] Building CXX object tests/CMakeFiles/sm_e2e_rtp.dir/e2e/video_adaptation_e2e_test.cc.o
+[ 86%] Building CXX object tests/CMakeFiles/sm_unit_audio.dir/unit/audio/ns_test.cc.o
+/Users/danceone/job_interview/streaming_media/sm-wt-bench/bench/audio_bench.cc:78:11: warning: variable 't' set but not used [-Wunused-but-set-variable]
    78 |   int64_t t = 0;
       |           ^
-[ 89%] Built target simulated_call
-[ 89%] Building CXX object testbench/CMakeFiles/sm_testbench_lib.dir/call.cc.o
-[ 89%] Building CXX object tests/CMakeFiles/sm_unit_cc.dir/unit/cc/transport_feedback_test.cc.o
-[ 89%] Building CXX object tests/CMakeFiles/sm_unit_rtp.dir/unit/rtp/rtp_sender_test.cc.o
-[ 89%] Building CXX object tests/CMakeFiles/sm_unit_audio.dir/unit/audio/hpf_test.cc.o
-[ 89%] Building CXX object tests/CMakeFiles/sm_unit_audio.dir/unit/audio/ns_test.cc.o
-[ 89%] Building CXX object bench/CMakeFiles/sm_bench.dir/rtp_bench.cc.o
-2 warnings generated.
-[ 89%] Building CXX object bench/CMakeFiles/sm_bench.dir/p2p_bench.cc.o
-/Users/danceone/job_interview/sm-wt-rec/tests/unit/rtp/rtp_sender_test.cc:183:54: warning: unsequenced modification and access to 'ts' [-Wunsequenced]
-  183 |     for (const Bytes* f : frames) s.SendAudio(*f, ts += 960, false, Timestamp::Millis(ts / 48));
-      |                                                      ^                                ~~
-[ 89%] Building CXX object testbench/CMakeFiles/sm_testbench_lib.dir/sfu.cc.o
-/Users/danceone/job_interview/sm-wt-rec/tests/unit/audio/ns_test.cc:214:10: warning: unused function 'HashBits' [-Wunused-function]
+[ 86%] Building CXX object tests/CMakeFiles/sm_unit_audio.dir/unit/audio/push_resampler_test.cc.o
+1 warning generated.
+[ 86%] Building CXX object tests/CMakeFiles/sm_e2e_rtp.dir/e2e/video_send_controller_e2e_test.cc.o
+[ 87%] Building CXX object bench/CMakeFiles/sm_bench.dir/sync_bench.cc.o
+/Users/danceone/job_interview/streaming_media/sm-wt-bench/tests/unit/audio/ns_test.cc:214:10: warning: unused function 'HashBits' [-Wunused-function]
   214 | uint64_t HashBits(const std::vector<float>& v) {
       |          ^~~~~~~~
-[ 89%] Built target sm_e2e_rtp
-[ 89%] Building CXX object tests/CMakeFiles/sm_unit_rtp.dir/unit/rtp/send_side_controller_test.cc.o
-[ 89%] Linking CXX executable sm_unit_cc.js
+5 warnings generated.
+[ 87%] Building CXX object tests/CMakeFiles/sm_unit_p2p.dir/unit/p2p/tcp_socket_test.cc.o
+[ 88%] Building CXX object tests/CMakeFiles/sm_unit_rtp.dir/unit/rtp/rtcp_sdes_bye_test.cc.o
+2 warnings generated.
+[ 88%] Building CXX object bench/CMakeFiles/sm_bench.dir/rtp_bench.cc.o
 1 warning generated.
-[ 89%] Building CXX object tests/CMakeFiles/sm_unit_audio.dir/unit/audio/push_resampler_test.cc.o
-[ 89%] Building CXX object tests/CMakeFiles/sm_unit_p2p.dir/unit/p2p/test_crypto.cc.o
-[ 89%] Building CXX object bench/CMakeFiles/sm_bench.dir/observability_bench.cc.o
-[ 90%] Building CXX object tests/CMakeFiles/sm_unit_p2p.dir/unit/p2p/test_crypto_test.cc.o
-[ 91%] Building CXX object tests/CMakeFiles/sm_unit_audio.dir/unit/audio/splitting_filter_test.cc.o
-[ 92%] Building CXX object testbench/CMakeFiles/sm_testbench_lib.dir/turn_detector.cc.o
-[ 92%] Building CXX object tests/CMakeFiles/sm_unit_rtp.dir/unit/rtp/session_multi_stream_test.cc.o
+[ 89%] Building CXX object tests/CMakeFiles/sm_unit_audio.dir/unit/audio/splitting_filter_test.cc.o
+[ 89%] Building CXX object bench/CMakeFiles/sm_bench.dir/p2p_bench.cc.o
+[ 90%] Building CXX object testbench/CMakeFiles/sm_testbench_lib.dir/turn_detector.cc.o
+[ 90%] Building CXX object tests/CMakeFiles/sm_unit_rtp.dir/unit/rtp/rtp_receiver_test.cc.o
+[ 90%] Building CXX object tests/CMakeFiles/sm_unit_p2p.dir/unit/p2p/test_crypto.cc.o
+[ 91%] Building CXX object tests/CMakeFiles/sm_unit_p2p.dir/unit/p2p/test_crypto_test.cc.o
+[ 91%] Building CXX object testbench/CMakeFiles/sm_testbench_lib.dir/ai_source.cc.o
+[ 91%] Linking CXX executable sm_unit_audio.js
+[ 92%] Linking CXX executable sm_e2e_rtp.js
+[ 92%] Building CXX object bench/CMakeFiles/sm_bench.dir/observability_bench.cc.o
 [ 92%] Building CXX object tests/CMakeFiles/sm_unit_p2p.dir/unit/p2p/turn_port_tcp_test.cc.o
-1 warning generated.
-[ 93%] Building CXX object tests/CMakeFiles/sm_unit_rtp.dir/unit/rtp/session_stats_test.cc.o
-[ 94%] Building CXX object bench/CMakeFiles/sm_bench.dir/__/tests/unit/p2p/test_crypto.cc.o
-[ 94%] Building CXX object testbench/CMakeFiles/sm_testbench_lib.dir/ai_source.cc.o
-[ 94%] Linking CXX executable sm_unit_audio.js
-[ 94%] Building CXX object tests/CMakeFiles/sm_unit_rtp.dir/unit/rtp/session_test.cc.o
-[ 94%] Built target sm_unit_cc
-[ 94%] Building CXX object tests/CMakeFiles/sm_unit_p2p.dir/unit/p2p/turn_port_test.cc.o
-[ 94%] Building CXX object testbench/CMakeFiles/sm_testbench_lib.dir/ice_transport.cc.o
-[ 94%] Building CXX object testbench/CMakeFiles/sm_testbench_lib.dir/ice_turn_tls.cc.o
-[ 94%] Building CXX object tests/CMakeFiles/sm_unit_rtp.dir/unit/rtp/simulcast_send_controller_test.cc.o
-[ 94%] Linking CXX executable sm_bench.js
-[ 94%] Building CXX object tests/CMakeFiles/sm_unit_rtp.dir/unit/rtp/sps_vui_rewriter_test.cc.o
-[ 94%] Building CXX object tests/CMakeFiles/sm_unit_rtp.dir/unit/rtp/video_send_controller_test.cc.o
-In file included from /Users/danceone/job_interview/sm-wt-rec/tests/unit/p2p/turn_port_test.cc:8:
-/Users/danceone/job_interview/sm-wt-rec/tests/unit/p2p/turn_fixture.h:68:11: warning: unused function 'TimeToGetAlternateTurnCandidate' [-Wunused-function]
+[ 92%] Building CXX object tests/CMakeFiles/sm_unit_p2p.dir/unit/p2p/turn_port_test.cc.o
+[ 93%] Building CXX object bench/CMakeFiles/sm_bench.dir/__/tests/unit/p2p/test_crypto.cc.o
+[ 93%] Building CXX object tests/CMakeFiles/sm_unit_rtp.dir/unit/rtp/rtp_sender_test.cc.o
+[ 93%] Building CXX object testbench/CMakeFiles/sm_testbench_lib.dir/ice_transport.cc.o
+/Users/danceone/job_interview/streaming_media/sm-wt-bench/tests/unit/rtp/rtp_sender_test.cc:183:54: warning: unsequenced modification and access to 'ts' [-Wunsequenced]
+  183 |     for (const Bytes* f : frames) s.SendAudio(*f, ts += 960, false, Timestamp::Millis(ts / 48));
+      |                                                      ^                                ~~
+[ 93%] Building CXX object tests/CMakeFiles/sm_unit_rtp.dir/unit/rtp/send_side_controller_test.cc.o
+[ 93%] Building CXX object tests/CMakeFiles/sm_unit_rtp.dir/unit/rtp/session_multi_stream_test.cc.o
+[ 93%] Built target sm_e2e_rtp
+[ 93%] Building CXX object testbench/CMakeFiles/sm_testbench_lib.dir/ice_turn_tls.cc.o
+[ 94%] Building CXX object tests/CMakeFiles/sm_unit_rtp.dir/unit/rtp/session_stats_test.cc.o
+In file included from /Users/danceone/job_interview/streaming_media/sm-wt-bench/tests/unit/p2p/turn_port_test.cc:8:
+/Users/danceone/job_interview/streaming_media/sm-wt-bench/tests/unit/p2p/turn_fixture.h:68:11: warning: unused function 'TimeToGetAlternateTurnCandidate' [-Wunused-function]
    68 | TimeDelta TimeToGetAlternateTurnCandidate(ProtocolType proto) {
       |           ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 [ 94%] Built target sm_unit_audio
+[ 94%] Building CXX object tests/CMakeFiles/sm_unit_rtp.dir/unit/rtp/session_test.cc.o
+[ 94%] Linking CXX executable sm_bench.js
+[ 94%] Building CXX object tests/CMakeFiles/sm_unit_rtp.dir/unit/rtp/simulcast_send_controller_test.cc.o
+1 warning generated.
+[ 94%] Building CXX object tests/CMakeFiles/sm_unit_rtp.dir/unit/rtp/sps_vui_rewriter_test.cc.o
 [ 94%] Linking CXX static library libsm_testbench_lib.a
 [ 94%] Built target sm_testbench_lib
+[ 94%] Building CXX object tests/CMakeFiles/sm_unit_rtp.dir/unit/rtp/video_send_controller_test.cc.o
 [ 95%] Building CXX object testbench/CMakeFiles/sm_testbench.dir/sm_testbench_main.cc.o
-[ 95%] Building CXX object web/CMakeFiles/sm_web.dir/sm_web.cc.o
 [ 95%] Building CXX object testbench/CMakeFiles/sm_unit_testbench.dir/__/tests/unit/testbench/av_sync_rtcp_test.cc.o
+[ 95%] Building CXX object web/CMakeFiles/sm_web.dir/sm_web.cc.o
 [ 96%] Building CXX object testbench/CMakeFiles/sm_unit_testbench.dir/__/tests/unit/testbench/testbench_metrics_test.cc.o
-[ 96%] Building CXX object testbench/CMakeFiles/sm_unit_testbench.dir/__/tests/unit/testbench/opus_decoder_test.cc.o
-[ 96%] Building CXX object testbench/CMakeFiles/sm_unit_testbench.dir/__/tests/unit/testbench/opus_encoder_test.cc.o
-[ 96%] Building CXX object testbench/CMakeFiles/sm_unit_testbench.dir/__/tests/unit/testbench/encoder_model_test.cc.o
 1 warning generated.
 [ 96%] Linking CXX executable sm_unit_p2p.js
-[ 97%] Linking CXX executable sm_unit_rtp.js
-[ 97%] Built target sm_bench
-[ 97%] Building CXX object testbench/CMakeFiles/sm_unit_testbench.dir/__/tests/unit/testbench/rtcp_seed_test.cc.o
-/Users/danceone/job_interview/sm-wt-rec/tests/unit/testbench/testbench_metrics_test.cc:199:61: warning: missing field 'ntp' initializer [-Wmissing-designated-field-initializers]
+[ 96%] Building CXX object testbench/CMakeFiles/sm_unit_testbench.dir/__/tests/unit/testbench/opus_encoder_test.cc.o
+[ 96%] Building CXX object testbench/CMakeFiles/sm_unit_testbench.dir/__/tests/unit/testbench/opus_decoder_test.cc.o
+[ 96%] Building CXX object testbench/CMakeFiles/sm_unit_testbench.dir/__/tests/unit/testbench/encoder_model_test.cc.o
+/Users/danceone/job_interview/streaming_media/sm-wt-bench/tests/unit/testbench/testbench_metrics_test.cc:199:61: warning: missing field 'ntp' initializer [-Wmissing-designated-field-initializers]
   199 |   timing::SenderReport sr{.ssrc = 9, .blocks = {{.ssrc = 1}}};
       |                                                             ^
-/Users/danceone/job_interview/sm-wt-rec/tests/unit/testbench/testbench_metrics_test.cc:208:81: warning: missing field 'ntp' initializer [-Wmissing-designated-field-initializers]
+/Users/danceone/job_interview/streaming_media/sm-wt-bench/tests/unit/testbench/testbench_metrics_test.cc:208:81: warning: missing field 'ntp' initializer [-Wmissing-designated-field-initializers]
   208 |   phase.OnRtcp(timing::SerializeSenderReport({.ssrc = 9, .blocks = {{.ssrc = 3}}}));
       |                                                                                 ^
-/Users/danceone/job_interview/sm-wt-rec/tests/unit/testbench/testbench_metrics_test.cc:567:15: warning: enumeration value 'kSync' not handled in switch [-Wswitch]
+/Users/danceone/job_interview/streaming_media/sm-wt-bench/tests/unit/testbench/testbench_metrics_test.cc:567:15: warning: enumeration value 'kSync' not handled in switch [-Wswitch]
   567 |       switch (r.kind) {
       |               ^~~~~~
+[ 96%] Linking CXX executable sm_testbench.js
+[ 97%] Linking CXX executable sm_web.js
+[ 97%] Building CXX object testbench/CMakeFiles/sm_unit_testbench.dir/__/tests/unit/testbench/rtcp_seed_test.cc.o
 [ 98%] Building CXX object testbench/CMakeFiles/sm_unit_testbench.dir/__/tests/unit/testbench/event_timing_test.cc.o
 [ 98%] Building CXX object testbench/CMakeFiles/sm_unit_testbench.dir/__/tests/unit/testbench/call_mode_test.cc.o
+[ 98%] Built target sm_bench
 [ 98%] Building CXX object testbench/CMakeFiles/sm_unit_testbench.dir/__/tests/unit/testbench/turn_detector_test.cc.o
-[ 98%] Linking CXX executable sm_testbench.js
 [ 98%] Building CXX object testbench/CMakeFiles/sm_unit_testbench.dir/__/tests/unit/testbench/ai_source_test.cc.o
-[ 99%] Linking CXX executable sm_web.js
-[ 99%] Building CXX object testbench/CMakeFiles/sm_unit_testbench.dir/__/tests/unit/testbench/ice_overhead_test.cc.o
+3 warnings generated.
+[ 98%] Building CXX object testbench/CMakeFiles/sm_unit_testbench.dir/__/tests/unit/testbench/ice_overhead_test.cc.o
+[ 99%] Linking CXX executable sm_unit_rtp.js
 [100%] Building CXX object testbench/CMakeFiles/sm_unit_testbench.dir/__/tests/unit/testbench/speech_pcm_test.cc.o
 [100%] Building CXX object testbench/CMakeFiles/sm_unit_testbench.dir/__/tests/unit/testbench/sfu_test.cc.o
-3 warnings generated.
 [100%] Built target sm_unit_p2p
-[100%] Built target sm_unit_rtp
 [100%] Linking CXX executable sm_unit_testbench.js
+[100%] Built target sm_unit_rtp
 [100%] Built target sm_web
 [100%] Built target sm_unit_testbench
 [100%] Built target sm_testbench

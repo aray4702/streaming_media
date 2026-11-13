@@ -1,27 +1,27 @@
 [ RUN  ] PcConnectionStats.BeforeConnecting
-[  OK  ] PcConnectionStats.BeforeConnecting (5.2 ms)
+[  OK  ] PcConnectionStats.BeforeConnecting (4.1 ms)
 [ RUN  ] PcConnectionStats.IceDtlsConnection
-[  OK  ] PcConnectionStats.IceDtlsConnection (3.2 ms)
+[  OK  ] PcConnectionStats.IceDtlsConnection (1.7 ms)
 [ RUN  ] PcConnectionStats.ThroughNatWithoutDtls
-[  OK  ] PcConnectionStats.ThroughNatWithoutDtls (0.2 ms)
+[  OK  ] PcConnectionStats.ThroughNatWithoutDtls (0.1 ms)
 [ RUN  ] PcDtlsSrtpTransport.SetTransportsAfterHandshakeCompleteWithRtcpMux
-[  OK  ] PcDtlsSrtpTransport.SetTransportsAfterHandshakeCompleteWithRtcpMux (1.4 ms)
+[  OK  ] PcDtlsSrtpTransport.SetTransportsAfterHandshakeCompleteWithRtcpMux (1.1 ms)
 [ RUN  ] PcDtlsSrtpTransport.SetTransportsAfterHandshakeCompleteWithoutRtcpMux
 [  OK  ] PcDtlsSrtpTransport.SetTransportsAfterHandshakeCompleteWithoutRtcpMux (1.0 ms)
 [ RUN  ] PcDtlsSrtpTransport.SetTransportsBeforeHandshakeCompleteWithRtcpMux
-[  OK  ] PcDtlsSrtpTransport.SetTransportsBeforeHandshakeCompleteWithRtcpMux (0.8 ms)
+[  OK  ] PcDtlsSrtpTransport.SetTransportsBeforeHandshakeCompleteWithRtcpMux (0.7 ms)
 [ RUN  ] PcDtlsSrtpTransport.SetTransportsBeforeHandshakeCompleteWithoutRtcpMux
 [  OK  ] PcDtlsSrtpTransport.SetTransportsBeforeHandshakeCompleteWithoutRtcpMux (1.0 ms)
 [ RUN  ] PcDtlsSrtpTransport.DtlsSrtpResetAfterDtlsTransportChange
-[  OK  ] PcDtlsSrtpTransport.DtlsSrtpResetAfterDtlsTransportChange (1.7 ms)
+[  OK  ] PcDtlsSrtpTransport.DtlsSrtpResetAfterDtlsTransportChange (1.6 ms)
 [ RUN  ] PcDtlsSrtpTransport.RtcpMuxEnabledAfterRtpTransportHandshakeComplete
-[  OK  ] PcDtlsSrtpTransport.RtcpMuxEnabledAfterRtpTransportHandshakeComplete (0.9 ms)
+[  OK  ] PcDtlsSrtpTransport.RtcpMuxEnabledAfterRtpTransportHandshakeComplete (0.8 ms)
 [ RUN  ] PcDtlsSrtpTransport.EncryptedHeaderExtensionIdUpdated
 [  OK  ] PcDtlsSrtpTransport.EncryptedHeaderExtensionIdUpdated (0.9 ms)
 [ RUN  ] PcDtlsSrtpTransport.WritableStateChangesAfterSrtpActivation
 [  OK  ] PcDtlsSrtpTransport.WritableStateChangesAfterSrtpActivation (0.8 ms)
 [ RUN  ] PcDtlsSrtpTransport.WritableStateRequiresRtpAndRtcpRecovery
-[  OK  ] PcDtlsSrtpTransport.WritableStateRequiresRtpAndRtcpRecovery (1.0 ms)
+[  OK  ] PcDtlsSrtpTransport.WritableStateRequiresRtpAndRtcpRecovery (1.1 ms)
 [ RUN  ] PcDtlsSrtpTransport.SignalReadyToSendFiredWithRtcpMux
 [  OK  ] PcDtlsSrtpTransport.SignalReadyToSendFiredWithRtcpMux (0.8 ms)
 [ RUN  ] PcDtlsSrtpTransport.SignalReadyToSendFiredWithoutRtcpMux
@@ -31,7 +31,7 @@
 [ RUN  ] PcDtlsSrtpTransport.KeysFollowTheDtlsRole
 [  OK  ] PcDtlsSrtpTransport.KeysFollowTheDtlsRole (0.8 ms)
 [ RUN  ] PcDtlsSrtpTransport.NoSrtpWithoutVerifiedDtls
-[sm E] /Users/danceone/job_interview/sm-wt-rec/src/pc/srtp_transport.cc:32: SrtpTransport: failed to send the packet because SRTP transport is inactive
+[sm E] /Users/danceone/job_interview/streaming_media/sm-wt-bench/src/pc/srtp_transport.cc:32: SrtpTransport: failed to send the packet because SRTP transport is inactive
 [  OK  ] PcDtlsSrtpTransport.NoSrtpWithoutVerifiedDtls (0.2 ms)
 [ RUN  ] PcDtlsSrtpTransport.MediaPathOverIce
 [  OK  ] PcDtlsSrtpTransport.MediaPathOverIce (1.1 ms)
@@ -58,37 +58,37 @@
 [ RUN  ] PcRtpTransport.DemuxesByMid
 [  OK  ] PcRtpTransport.DemuxesByMid (0.0 ms)
 [ RUN  ] PcSrtpTransport.SendAndRecvPacket_AES_CM_128_HMAC_SHA1_80
-[  OK  ] PcSrtpTransport.SendAndRecvPacket_AES_CM_128_HMAC_SHA1_80 (0.7 ms)
+[  OK  ] PcSrtpTransport.SendAndRecvPacket_AES_CM_128_HMAC_SHA1_80 (0.6 ms)
 [ RUN  ] PcSrtpTransport.SendAndRecvPacketWithHeaderExtension_AES_CM_128_HMAC_SHA1_80
-[  OK  ] PcSrtpTransport.SendAndRecvPacketWithHeaderExtension_AES_CM_128_HMAC_SHA1_80 (0.6 ms)
+[  OK  ] PcSrtpTransport.SendAndRecvPacketWithHeaderExtension_AES_CM_128_HMAC_SHA1_80 (0.7 ms)
 [ RUN  ] PcSrtpTransport.SendAndRecvPacket_AES_CM_128_HMAC_SHA1_32
 [  OK  ] PcSrtpTransport.SendAndRecvPacket_AES_CM_128_HMAC_SHA1_32 (0.6 ms)
 [ RUN  ] PcSrtpTransport.SendAndRecvPacketWithHeaderExtension_AES_CM_128_HMAC_SHA1_32
 [  OK  ] PcSrtpTransport.SendAndRecvPacketWithHeaderExtension_AES_CM_128_HMAC_SHA1_32 (0.6 ms)
 [ RUN  ] PcSrtpTransport.SendAndRecvPacket_kSrtpAeadAes128Gcm
-[  OK  ] PcSrtpTransport.SendAndRecvPacket_kSrtpAeadAes128Gcm (0.7 ms)
+[  OK  ] PcSrtpTransport.SendAndRecvPacket_kSrtpAeadAes128Gcm (0.6 ms)
 [ RUN  ] PcSrtpTransport.SendAndRecvPacketWithHeaderExtension_kSrtpAeadAes128Gcm
-[  OK  ] PcSrtpTransport.SendAndRecvPacketWithHeaderExtension_kSrtpAeadAes128Gcm (0.6 ms)
+[  OK  ] PcSrtpTransport.SendAndRecvPacketWithHeaderExtension_kSrtpAeadAes128Gcm (0.7 ms)
 [ RUN  ] PcSrtpTransport.SendAndRecvPacket_kSrtpAeadAes256Gcm
-[  OK  ] PcSrtpTransport.SendAndRecvPacket_kSrtpAeadAes256Gcm (0.6 ms)
+[  OK  ] PcSrtpTransport.SendAndRecvPacket_kSrtpAeadAes256Gcm (0.7 ms)
 [ RUN  ] PcSrtpTransport.SendAndRecvPacketWithHeaderExtension_kSrtpAeadAes256Gcm
-[  OK  ] PcSrtpTransport.SendAndRecvPacketWithHeaderExtension_kSrtpAeadAes256Gcm (0.6 ms)
+[  OK  ] PcSrtpTransport.SendAndRecvPacketWithHeaderExtension_kSrtpAeadAes256Gcm (0.7 ms)
 [ RUN  ] PcSrtpTransport.TestSetParamsKeyTooShort
 [  OK  ] PcSrtpTransport.TestSetParamsKeyTooShort (1.2 ms)
 [ RUN  ] PcSrtpTransport.RemoveSrtpReceiveStream
-[sm E] /Users/danceone/job_interview/sm-wt-rec/src/pc/srtp_transport.cc:67: SrtpTransport: failed to unprotect RTP packet: size=188, seqnum=1, SSRC=1, previous failure count: 0
+[sm E] /Users/danceone/job_interview/streaming_media/sm-wt-bench/src/pc/srtp_transport.cc:67: SrtpTransport: failed to unprotect RTP packet: size=188, seqnum=1, SSRC=1, previous failure count: 0
 [  OK  ] PcSrtpTransport.RemoveSrtpReceiveStream (0.6 ms)
 [ RUN  ] PcSrtpTransport.ReceiveStreamKeptByDefault
-[sm E] /Users/danceone/job_interview/sm-wt-rec/src/pc/srtp_transport.cc:67: SrtpTransport: failed to unprotect RTP packet: size=188, seqnum=1, SSRC=1, previous failure count: 0
+[sm E] /Users/danceone/job_interview/streaming_media/sm-wt-bench/src/pc/srtp_transport.cc:67: SrtpTransport: failed to unprotect RTP packet: size=188, seqnum=1, SSRC=1, previous failure count: 0
 [  OK  ] PcSrtpTransport.ReceiveStreamKeptByDefault (0.6 ms)
 [ RUN  ] PcSrtpTransport.InactiveSendsNothingAndDropsReceived
-[sm E] /Users/danceone/job_interview/sm-wt-rec/src/pc/srtp_transport.cc:32: SrtpTransport: failed to send the packet because SRTP transport is inactive
-[sm E] /Users/danceone/job_interview/sm-wt-rec/src/pc/srtp_transport.cc:46: SrtpTransport: failed to send the packet because SRTP transport is inactive
+[sm E] /Users/danceone/job_interview/streaming_media/sm-wt-bench/src/pc/srtp_transport.cc:32: SrtpTransport: failed to send the packet because SRTP transport is inactive
+[sm E] /Users/danceone/job_interview/streaming_media/sm-wt-bench/src/pc/srtp_transport.cc:46: SrtpTransport: failed to send the packet because SRTP transport is inactive
 [  OK  ] PcSrtpTransport.InactiveSendsNothingAndDropsReceived (0.0 ms)
 [ RUN  ] PcSrtpTransport.WritableAndOverheadFollowActivation
-[  OK  ] PcSrtpTransport.WritableAndOverheadFollowActivation (0.6 ms)
+[  OK  ] PcSrtpTransport.WritableAndOverheadFollowActivation (0.7 ms)
 [ RUN  ] PcSrtpTransport.RekeyActiveSessions
-[sm E] /Users/danceone/job_interview/sm-wt-rec/src/pc/srtp_transport.cc:67: SrtpTransport: failed to unprotect RTP packet: size=182, seqnum=2, SSRC=1, previous failure count: 0
-[  OK  ] PcSrtpTransport.RekeyActiveSessions (0.6 ms)
+[sm E] /Users/danceone/job_interview/streaming_media/sm-wt-bench/src/pc/srtp_transport.cc:67: SrtpTransport: failed to unprotect RTP packet: size=182, seqnum=2, SSRC=1, previous failure count: 0
+[  OK  ] PcSrtpTransport.RekeyActiveSessions (0.8 ms)
 
 43 tests run, 43 passed, 0 failed

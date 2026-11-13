@@ -1,5 +1,5 @@
 [ RUN  ] TlsMessageDigest.KnownDigests
-[  OK  ] TlsMessageDigest.KnownDigests (0.4 ms)
+[  OK  ] TlsMessageDigest.KnownDigests (0.3 ms)
 [ RUN  ] TlsMessageDigest.DigestIsReusableAfterFinish
 [  OK  ] TlsMessageDigest.DigestIsReusableAfterFinish (0.0 ms)
 [ RUN  ] TlsMessageDigest.Fips180
@@ -7,13 +7,13 @@
 [ RUN  ] TlsMessageDigest.HmacVectors
 [  OK  ] TlsMessageDigest.HmacVectors (0.0 ms)
 [ RUN  ] TlsCryptoRandom.Strings
-[  OK  ] TlsCryptoRandom.Strings (0.5 ms)
+[  OK  ] TlsCryptoRandom.Strings (0.1 ms)
 [ RUN  ] TlsCryptoRandom.TestModeIsRepeatable
 [  OK  ] TlsCryptoRandom.TestModeIsRepeatable (0.0 ms)
 [ RUN  ] TlsSslIdentity.CreatesAnEcdsaIdentityWithASha256Certificate
-[  OK  ] TlsSslIdentity.CreatesAnEcdsaIdentityWithASha256Certificate (0.8 ms)
+[  OK  ] TlsSslIdentity.CreatesAnEcdsaIdentityWithASha256Certificate (0.9 ms)
 [ RUN  ] TlsSslIdentity.RsaIdentity
-[  OK  ] TlsSslIdentity.RsaIdentity (221.6 ms)
+[  OK  ] TlsSslIdentity.RsaIdentity (175.0 ms)
 [ RUN  ] TlsSslIdentity.PemRoundTrip
 [  OK  ] TlsSslIdentity.PemRoundTrip (0.6 ms)
 [ RUN  ] TlsSslIdentity.CreateForTestTakesItsValidity
@@ -23,7 +23,7 @@
 [ RUN  ] TlsSslFingerprint.RejectsMalformedRfc4572
 [  OK  ] TlsSslFingerprint.RejectsMalformedRfc4572 (0.0 ms)
 [ RUN  ] TlsDtlsTransport.HandshakeVerifiesFingerprintsAndAgreesOnSrtp
-[  OK  ] TlsDtlsTransport.HandshakeVerifiesFingerprintsAndAgreesOnSrtp (3.0 ms)
+[  OK  ] TlsDtlsTransport.HandshakeVerifiesFingerprintsAndAgreesOnSrtp (2.8 ms)
 [ RUN  ] TlsDtlsTransport.ApplicationDataBothWays
 [  OK  ] TlsDtlsTransport.ApplicationDataBothWays (2.4 ms)
 [ RUN  ] TlsDtlsTransport.WrongFingerprintFails
@@ -31,13 +31,13 @@
 [ RUN  ] TlsDtlsTransport.FingerprintAfterTheHandshake
 [  OK  ] TlsDtlsTransport.FingerprintAfterTheHandshake (5.0 ms)
 [ RUN  ] TlsDtlsTransport.RetransmitsALostFlight
-[  OK  ] TlsDtlsTransport.RetransmitsALostFlight (2.4 ms)
+[  OK  ] TlsDtlsTransport.RetransmitsALostFlight (2.5 ms)
 [ RUN  ] TlsDtlsTransport.CapsAtDtls12AndPicksACommonProfile
-[  OK  ] TlsDtlsTransport.CapsAtDtls12AndPicksACommonProfile (2.3 ms)
+[  OK  ] TlsDtlsTransport.CapsAtDtls12AndPicksACommonProfile (2.4 ms)
 [ RUN  ] TlsDtlsTransport.MbedTlsSkipsGcmProfilesAndRefusesOnlyGcm
-[  OK  ] TlsDtlsTransport.MbedTlsSkipsGcmProfilesAndRefusesOnlyGcm (2.6 ms)
+[  OK  ] TlsDtlsTransport.MbedTlsSkipsGcmProfilesAndRefusesOnlyGcm (2.9 ms)
 [ RUN  ] TlsTlsStream.HandshakeAtTls13WithSniAndDataBothWays
-[  OK  ] TlsTlsStream.HandshakeAtTls13WithSniAndDataBothWays (1.7 ms)
+[  OK  ] TlsTlsStream.HandshakeAtTls13WithSniAndDataBothWays (1.8 ms)
 [ RUN  ] TlsTlsStream.Tls12WhenCapped
 [  OK  ] TlsTlsStream.Tls12WhenCapped (1.6 ms)
 [ RUN  ] TlsTlsStream.WriteBeforeHandshakeWouldBlock
@@ -45,7 +45,7 @@
 [ RUN  ] TlsTlsStream.AlpnAndCurvesPassedThrough
 [  OK  ] TlsTlsStream.AlpnAndCurvesPassedThrough (1.5 ms)
 [ RUN  ] TlsTlsStream.CurvesTheServerLacksFailTheHandshake
-[  OK  ] TlsTlsStream.CurvesTheServerLacksFailTheHandshake (0.4 ms)
+[  OK  ] TlsTlsStream.CurvesTheServerLacksFailTheHandshake (0.5 ms)
 [ RUN  ] TlsTlsStream.TransformAlpnProtocols
 [  OK  ] TlsTlsStream.TransformAlpnProtocols (0.0 ms)
 [ RUN  ] TlsTlsStream.UntrustedCertificateRefused
@@ -53,13 +53,13 @@
 [ RUN  ] TlsTlsStream.SystemRootsDoNotTrustASelfSignedCertificate
 [  OK  ] TlsTlsStream.SystemRootsDoNotTrustASelfSignedCertificate (2.7 ms)
 [ RUN  ] TlsTlsStream.UntrustedCertificateAcceptedWhenIgnoringBadCerts
-[  OK  ] TlsTlsStream.UntrustedCertificateAcceptedWhenIgnoringBadCerts (1.6 ms)
+[  OK  ] TlsTlsStream.UntrustedCertificateAcceptedWhenIgnoringBadCerts (1.7 ms)
 [ RUN  ] TlsTlsStream.HostNameMismatchFailsThePostConnectionCheck
 [  OK  ] TlsTlsStream.HostNameMismatchFailsThePostConnectionCheck (3.3 ms)
 [ RUN  ] TlsTlsStream.EmptyHostNameNeverMatches
-[  OK  ] TlsTlsStream.EmptyHostNameNeverMatches (1.7 ms)
+[  OK  ] TlsTlsStream.EmptyHostNameNeverMatches (1.6 ms)
 [ RUN  ] TlsTlsStream.CustomVerifierDecidesAnUntrustedChain
-[  OK  ] TlsTlsStream.CustomVerifierDecidesAnUntrustedChain (2.9 ms)
+[  OK  ] TlsTlsStream.CustomVerifierDecidesAnUntrustedChain (2.8 ms)
 [ RUN  ] TlsTlsStream.CustomVerifierNotAskedForATrustedChain
 [  OK  ] TlsTlsStream.CustomVerifierNotAskedForATrustedChain (1.6 ms)
 [ RUN  ] TlsTlsStream.PartialRecordWaitsForTheRest

@@ -11,21 +11,21 @@
 [ RUN  ] DcsctpSequenceNumbersTest.WrappedUnwrapping
 [  OK  ] DcsctpSequenceNumbersTest.WrappedUnwrapping (0.1 ms)
 [ RUN  ] DcsctpSequenceNumbersTest.WrapAroundAFewTimes
-[  OK  ] DcsctpSequenceNumbersTest.WrapAroundAFewTimes (18.1 ms)
+[  OK  ] DcsctpSequenceNumbersTest.WrapAroundAFewTimes (17.7 ms)
 [ RUN  ] DcsctpSequenceNumbersTest.IncrementIsSameAsWrapped
-[  OK  ] DcsctpSequenceNumbersTest.IncrementIsSameAsWrapped (10.5 ms)
+[  OK  ] DcsctpSequenceNumbersTest.IncrementIsSameAsWrapped (10.7 ms)
 [ RUN  ] DcsctpSequenceNumbersTest.UnwrappingLargerNumberIsAlwaysLarger
-[  OK  ] DcsctpSequenceNumbersTest.UnwrappingLargerNumberIsAlwaysLarger (48.8 ms)
+[  OK  ] DcsctpSequenceNumbersTest.UnwrappingLargerNumberIsAlwaysLarger (49.6 ms)
 [ RUN  ] DcsctpSequenceNumbersTest.UnwrappingSmallerNumberIsAlwaysSmaller
 [  OK  ] DcsctpSequenceNumbersTest.UnwrappingSmallerNumberIsAlwaysSmaller (50.4 ms)
 [ RUN  ] DcsctpSequenceNumbersTest.DifferenceIsAbsolute
 [  OK  ] DcsctpSequenceNumbersTest.DifferenceIsAbsolute (0.0 ms)
 [ RUN  ] DcsctpBoundedByteReaderTest.CanLoadData
-[  OK  ] DcsctpBoundedByteReaderTest.CanLoadData (0.3 ms)
+[  OK  ] DcsctpBoundedByteReaderTest.CanLoadData (0.2 ms)
 [ RUN  ] DcsctpBoundedByteWriterTest.CanWriteData
-[  OK  ] DcsctpBoundedByteWriterTest.CanWriteData (0.4 ms)
+[  OK  ] DcsctpBoundedByteWriterTest.CanWriteData (0.3 ms)
 [ RUN  ] DcsctpAbortChunkTest.FromCapture
-[  OK  ] DcsctpAbortChunkTest.FromCapture (0.3 ms)
+[  OK  ] DcsctpAbortChunkTest.FromCapture (0.2 ms)
 [ RUN  ] DcsctpAbortChunkTest.SerializeAndDeserialize
 [  OK  ] DcsctpAbortChunkTest.SerializeAndDeserialize (0.0 ms)
 [ RUN  ] DcsctpAbortChunkTest.SerializeAndDeserializeOneChar
@@ -55,9 +55,9 @@
 [ RUN  ] DcsctpHeartbeatAckChunkTest.SerializeAndDeserialize
 [  OK  ] DcsctpHeartbeatAckChunkTest.SerializeAndDeserialize (0.0 ms)
 [ RUN  ] DcsctpHeartbeatRequestChunkTest.FromCapture
-[  OK  ] DcsctpHeartbeatRequestChunkTest.FromCapture (0.0 ms)
+[  OK  ] DcsctpHeartbeatRequestChunkTest.FromCapture (0.1 ms)
 [ RUN  ] DcsctpHeartbeatRequestChunkTest.SerializeAndDeserialize
-[  OK  ] DcsctpHeartbeatRequestChunkTest.SerializeAndDeserialize (0.1 ms)
+[  OK  ] DcsctpHeartbeatRequestChunkTest.SerializeAndDeserialize (0.0 ms)
 [ RUN  ] DcsctpIDataChunkTest.AtBeginningFromCapture
 [  OK  ] DcsctpIDataChunkTest.AtBeginningFromCapture (0.0 ms)
 [ RUN  ] DcsctpIDataChunkTest.AtBeginningSerializeAndDeserialize
@@ -73,17 +73,17 @@
 [ RUN  ] DcsctpInitAckChunkTest.FromCapture
 [  OK  ] DcsctpInitAckChunkTest.FromCapture (0.1 ms)
 [ RUN  ] DcsctpInitAckChunkTest.SerializeAndDeserialize
-[  OK  ] DcsctpInitAckChunkTest.SerializeAndDeserialize (0.0 ms)
+[  OK  ] DcsctpInitAckChunkTest.SerializeAndDeserialize (0.1 ms)
 [ RUN  ] DcsctpInitChunkTest.FromCapture
 [  OK  ] DcsctpInitChunkTest.FromCapture (0.0 ms)
 [ RUN  ] DcsctpInitChunkTest.SerializeAndDeserialize
 [  OK  ] DcsctpInitChunkTest.SerializeAndDeserialize (0.0 ms)
 [ RUN  ] DcsctpReConfigChunkTest.FromCapture
-[  OK  ] DcsctpReConfigChunkTest.FromCapture (0.5 ms)
+[  OK  ] DcsctpReConfigChunkTest.FromCapture (0.1 ms)
 [ RUN  ] DcsctpReConfigChunkTest.SerializeAndDeserialize
-[  OK  ] DcsctpReConfigChunkTest.SerializeAndDeserialize (0.0 ms)
+[  OK  ] DcsctpReConfigChunkTest.SerializeAndDeserialize (0.1 ms)
 [ RUN  ] DcsctpSackChunkTest.FromCapture
-[  OK  ] DcsctpSackChunkTest.FromCapture (0.3 ms)
+[  OK  ] DcsctpSackChunkTest.FromCapture (0.2 ms)
 [ RUN  ] DcsctpSackChunkTest.SerializeAndDeserialize
 [  OK  ] DcsctpSackChunkTest.SerializeAndDeserialize (0.0 ms)
 [ RUN  ] DcsctpShutdownAckChunkTest.FromCapture
@@ -91,7 +91,7 @@
 [ RUN  ] DcsctpShutdownAckChunkTest.SerializeAndDeserialize
 [  OK  ] DcsctpShutdownAckChunkTest.SerializeAndDeserialize (0.0 ms)
 [ RUN  ] DcsctpShutdownChunkTest.FromCapture
-[  OK  ] DcsctpShutdownChunkTest.FromCapture (0.1 ms)
+[  OK  ] DcsctpShutdownChunkTest.FromCapture (0.0 ms)
 [ RUN  ] DcsctpShutdownChunkTest.SerializeAndDeserialize
 [  OK  ] DcsctpShutdownChunkTest.SerializeAndDeserialize (0.0 ms)
 [ RUN  ] DcsctpShutdownCompleteChunkTest.FromCapture
@@ -109,7 +109,7 @@
 [ RUN  ] DcsctpChunkValidatorsTest.RemovesInvalidGapAckBlockFromSack
 [  OK  ] DcsctpChunkValidatorsTest.RemovesInvalidGapAckBlockFromSack (0.0 ms)
 [ RUN  ] DcsctpChunkValidatorsTest.SortsGapAckBlocksInOrder
-[  OK  ] DcsctpChunkValidatorsTest.SortsGapAckBlocksInOrder (0.0 ms)
+[  OK  ] DcsctpChunkValidatorsTest.SortsGapAckBlocksInOrder (0.1 ms)
 [ RUN  ] DcsctpChunkValidatorsTest.MergesAdjacentBlocks
 [  OK  ] DcsctpChunkValidatorsTest.MergesAdjacentBlocks (0.0 ms)
 [ RUN  ] DcsctpChunkValidatorsTest.MergesOverlappingByOne
@@ -121,7 +121,9 @@
 [ RUN  ] DcsctpChunkValidatorsTest.MergesBlocksPartiallyOverlapping
 [  OK  ] DcsctpChunkValidatorsTest.MergesBlocksPartiallyOverlapping (0.0 ms)
 [ RUN  ] DcsctpCrc32Test.TestVectors
-[  OK  ] DcsctpCrc32Test.TestVectors (0.2 ms)
+[  OK  ] DcsctpCrc32Test.TestVectors (0.0 ms)
+[ RUN  ] DcsctpCrc32Test.MatchesBitwiseForAllLengthsAndAlignments
+[  OK  ] DcsctpCrc32Test.MatchesBitwiseForAllLengthsAndAlignments (1.2 ms)
 [ RUN  ] DcsctpCookieReceivedWhileShuttingDownCauseTest.SerializeAndDeserialize
 [  OK  ] DcsctpCookieReceivedWhileShuttingDownCauseTest.SerializeAndDeserialize (0.0 ms)
 [ RUN  ] DcsctpInvalidMandatoryParameterCauseTest.SerializeAndDeserialize
@@ -139,7 +141,7 @@
 [ RUN  ] DcsctpOutOfResourceErrorCauseTest.SerializeAndDeserialize
 [  OK  ] DcsctpOutOfResourceErrorCauseTest.SerializeAndDeserialize (0.0 ms)
 [ RUN  ] DcsctpProtocolViolationCauseTest.EmptyReason
-[  OK  ] DcsctpProtocolViolationCauseTest.EmptyReason (0.0 ms)
+[  OK  ] DcsctpProtocolViolationCauseTest.EmptyReason (0.2 ms)
 [ RUN  ] DcsctpProtocolViolationCauseTest.SetReason
 [  OK  ] DcsctpProtocolViolationCauseTest.SetReason (0.0 ms)
 [ RUN  ] DcsctpRestartOfAnAssociationWithNewAddressesCauseTest.SerializeAndDeserialize
@@ -153,7 +155,7 @@
 [ RUN  ] DcsctpUnresolvableAddressCauseTest.SerializeAndDeserialize
 [  OK  ] DcsctpUnresolvableAddressCauseTest.SerializeAndDeserialize (0.0 ms)
 [ RUN  ] DcsctpUserInitiatedAbortCauseTest.EmptyReason
-[  OK  ] DcsctpUserInitiatedAbortCauseTest.EmptyReason (0.0 ms)
+[  OK  ] DcsctpUserInitiatedAbortCauseTest.EmptyReason (0.1 ms)
 [ RUN  ] DcsctpUserInitiatedAbortCauseTest.SetReason
 [  OK  ] DcsctpUserInitiatedAbortCauseTest.SetReason (0.0 ms)
 [ RUN  ] DcsctpAddIncomingStreamsRequestParameterTest.SerializeAndDeserialize
@@ -167,7 +169,7 @@
 [ RUN  ] DcsctpOutgoingSSNResetRequestParameterTest.SerializeAndDeserialize
 [  OK  ] DcsctpOutgoingSSNResetRequestParameterTest.SerializeAndDeserialize (0.0 ms)
 [ RUN  ] DcsctpParameterTest.SerializeDeserializeParameter
-[  OK  ] DcsctpParameterTest.SerializeDeserializeParameter (0.0 ms)
+[  OK  ] DcsctpParameterTest.SerializeDeserializeParameter (0.1 ms)
 [ RUN  ] DcsctpReconfigurationResponseParameterTest.SerializeAndDeserializeFirstForm
 [  OK  ] DcsctpReconfigurationResponseParameterTest.SerializeAndDeserializeFirstForm (0.0 ms)
 [ RUN  ] DcsctpReconfigurationResponseParameterTest.SerializeAndDeserializeFirstFormSecondForm
@@ -187,7 +189,7 @@
 [ RUN  ] DcsctpZeroChecksumAcceptableChunkParameterTest.HasToString
 [  OK  ] DcsctpZeroChecksumAcceptableChunkParameterTest.HasToString (0.0 ms)
 [ RUN  ] DcsctpSctpPacketTest.DeserializeSimplePacketFromCapture
-[  OK  ] DcsctpSctpPacketTest.DeserializeSimplePacketFromCapture (0.3 ms)
+[  OK  ] DcsctpSctpPacketTest.DeserializeSimplePacketFromCapture (0.0 ms)
 [ RUN  ] DcsctpSctpPacketTest.DeserializePacketWithTwoChunks
 [  OK  ] DcsctpSctpPacketTest.DeserializePacketWithTwoChunks (0.0 ms)
 [ RUN  ] DcsctpSctpPacketTest.DeserializePacketWithWrongChecksum
@@ -223,4 +225,4 @@
 [ RUN  ] DcsctpTlvDataTest.CanHandleInvalidLengthSmallerThanFixedSize
 [  OK  ] DcsctpTlvDataTest.CanHandleInvalidLengthSmallerThanFixedSize (0.0 ms)
 
-112 tests run, 112 passed, 0 failed
+113 tests run, 113 passed, 0 failed

@@ -5,21 +5,21 @@
 [ RUN  ] DcsctpDataTrackerTest.Empty
 [  OK  ] DcsctpDataTrackerTest.Empty (2.8 ms)
 [ RUN  ] DcsctpDataTrackerTest.ObserverSingleInOrderPacket
-[  OK  ] DcsctpDataTrackerTest.ObserverSingleInOrderPacket (0.5 ms)
+[  OK  ] DcsctpDataTrackerTest.ObserverSingleInOrderPacket (1.2 ms)
 [ RUN  ] DcsctpDataTrackerTest.ObserverManyInOrderMovesCumulativeTsnAck
-[  OK  ] DcsctpDataTrackerTest.ObserverManyInOrderMovesCumulativeTsnAck (0.0 ms)
+[  OK  ] DcsctpDataTrackerTest.ObserverManyInOrderMovesCumulativeTsnAck (0.1 ms)
 [ RUN  ] DcsctpDataTrackerTest.ObserveOutOfOrderMovesCumulativeTsnAck
 [  OK  ] DcsctpDataTrackerTest.ObserveOutOfOrderMovesCumulativeTsnAck (0.2 ms)
 [ RUN  ] DcsctpDataTrackerTest.SingleGap
 [  OK  ] DcsctpDataTrackerTest.SingleGap (0.2 ms)
 [ RUN  ] DcsctpDataTrackerTest.ExampleFromRFC4960Section334
-[  OK  ] DcsctpDataTrackerTest.ExampleFromRFC4960Section334 (0.0 ms)
+[  OK  ] DcsctpDataTrackerTest.ExampleFromRFC4960Section334 (0.1 ms)
 [ RUN  ] DcsctpDataTrackerTest.AckAlreadyReceivedChunk
-[  OK  ] DcsctpDataTrackerTest.AckAlreadyReceivedChunk (0.4 ms)
+[  OK  ] DcsctpDataTrackerTest.AckAlreadyReceivedChunk (0.2 ms)
 [ RUN  ] DcsctpDataTrackerTest.DoubleSendRetransmittedChunk
-[  OK  ] DcsctpDataTrackerTest.DoubleSendRetransmittedChunk (0.0 ms)
+[  OK  ] DcsctpDataTrackerTest.DoubleSendRetransmittedChunk (0.1 ms)
 [ RUN  ] DcsctpDataTrackerTest.ForwardTsnSimple
-[  OK  ] DcsctpDataTrackerTest.ForwardTsnSimple (0.2 ms)
+[  OK  ] DcsctpDataTrackerTest.ForwardTsnSimple (0.1 ms)
 [ RUN  ] DcsctpDataTrackerTest.ForwardTsnSkipsFromGapBlock
 [  OK  ] DcsctpDataTrackerTest.ForwardTsnSkipsFromGapBlock (0.0 ms)
 [ RUN  ] DcsctpDataTrackerTest.ExampleFromRFC3758
@@ -33,7 +33,7 @@
 [ RUN  ] DcsctpDataTrackerTest.ForceShouldSendSackImmediately
 [  OK  ] DcsctpDataTrackerTest.ForceShouldSendSackImmediately (0.0 ms)
 [ RUN  ] DcsctpDataTrackerTest.WillAcceptValidTSNs
-[  OK  ] DcsctpDataTrackerTest.WillAcceptValidTSNs (11.1 ms)
+[  OK  ] DcsctpDataTrackerTest.WillAcceptValidTSNs (11.2 ms)
 [ RUN  ] DcsctpDataTrackerTest.WillNotAcceptInvalidTSNs
 [  OK  ] DcsctpDataTrackerTest.WillNotAcceptInvalidTSNs (0.0 ms)
 [ RUN  ] DcsctpDataTrackerTest.ReportSingleDuplicateTsns
@@ -45,17 +45,17 @@
 [ RUN  ] DcsctpDataTrackerTest.ClearsDuplicateTsnsAfterCreatingSack
 [  OK  ] DcsctpDataTrackerTest.ClearsDuplicateTsnsAfterCreatingSack (0.0 ms)
 [ RUN  ] DcsctpDataTrackerTest.LimitsNumberOfDuplicatesReported
-[  OK  ] DcsctpDataTrackerTest.LimitsNumberOfDuplicatesReported (0.0 ms)
+[  OK  ] DcsctpDataTrackerTest.LimitsNumberOfDuplicatesReported (0.1 ms)
 [ RUN  ] DcsctpDataTrackerTest.LimitsNumberOfGapAckBlocksReported
 [  OK  ] DcsctpDataTrackerTest.LimitsNumberOfGapAckBlocksReported (0.1 ms)
 [ RUN  ] DcsctpDataTrackerTest.SendsSackForFirstPacketObserved
 [  OK  ] DcsctpDataTrackerTest.SendsSackForFirstPacketObserved (0.0 ms)
 [ RUN  ] DcsctpDataTrackerTest.SendsSackEverySecondPacketWhenThereIsNoPacketLoss
-[  OK  ] DcsctpDataTrackerTest.SendsSackEverySecondPacketWhenThereIsNoPacketLoss (0.6 ms)
+[  OK  ] DcsctpDataTrackerTest.SendsSackEverySecondPacketWhenThereIsNoPacketLoss (0.5 ms)
 [ RUN  ] DcsctpDataTrackerTest.SendsSackEveryPacketOnPacketLoss
 [  OK  ] DcsctpDataTrackerTest.SendsSackEveryPacketOnPacketLoss (0.1 ms)
 [ RUN  ] DcsctpDataTrackerTest.SendsSackOnDuplicateDataChunks
-[  OK  ] DcsctpDataTrackerTest.SendsSackOnDuplicateDataChunks (0.1 ms)
+[  OK  ] DcsctpDataTrackerTest.SendsSackOnDuplicateDataChunks (0.0 ms)
 [ RUN  ] DcsctpDataTrackerTest.GapAckBlockAddSingleBlock
 [  OK  ] DcsctpDataTrackerTest.GapAckBlockAddSingleBlock (0.0 ms)
 [ RUN  ] DcsctpDataTrackerTest.GapAckBlockAddsAnother
@@ -97,9 +97,9 @@
 [ RUN  ] DcsctpDataTrackerTest.GapAckBlockRemoveeFarAfterAllBlocks
 [  OK  ] DcsctpDataTrackerTest.GapAckBlockRemoveeFarAfterAllBlocks (0.0 ms)
 [ RUN  ] DcsctpDataTrackerTest.HandoverEmpty
-[  OK  ] DcsctpDataTrackerTest.HandoverEmpty (0.2 ms)
+[  OK  ] DcsctpDataTrackerTest.HandoverEmpty (0.7 ms)
 [ RUN  ] DcsctpDataTrackerTest.HandoverWhileSendingSackEverySecondPacketWhenThereIsNoPacketLoss
-[  OK  ] DcsctpDataTrackerTest.HandoverWhileSendingSackEverySecondPacketWhenThereIsNoPacketLoss (0.1 ms)
+[  OK  ] DcsctpDataTrackerTest.HandoverWhileSendingSackEverySecondPacketWhenThereIsNoPacketLoss (0.0 ms)
 [ RUN  ] DcsctpDataTrackerTest.HandoverWhileSendingSackEveryPacketOnPacketLoss
 [  OK  ] DcsctpDataTrackerTest.HandoverWhileSendingSackEveryPacketOnPacketLoss (0.1 ms)
 [ RUN  ] DcsctpDataTrackerTest.DoesNotAcceptDataBeforeForwardTsn
@@ -115,7 +115,7 @@
 [ RUN  ] DcsctpDataTrackerTest.NotReadyForHandoverWhenHavingTsnGaps
 [  OK  ] DcsctpDataTrackerTest.NotReadyForHandoverWhenHavingTsnGaps (0.0 ms)
 [ RUN  ] DcsctpInterleavedReassemblyStreamsTest.AddUnorderedMessageReturnsCorrectSize
-[  OK  ] DcsctpInterleavedReassemblyStreamsTest.AddUnorderedMessageReturnsCorrectSize (3.2 ms)
+[  OK  ] DcsctpInterleavedReassemblyStreamsTest.AddUnorderedMessageReturnsCorrectSize (3.0 ms)
 [ RUN  ] DcsctpInterleavedReassemblyStreamsTest.AddSimpleOrderedMessageReturnsCorrectSize
 [  OK  ] DcsctpInterleavedReassemblyStreamsTest.AddSimpleOrderedMessageReturnsCorrectSize (0.1 ms)
 [ RUN  ] DcsctpInterleavedReassemblyStreamsTest.AddMoreComplexOrderedMessageReturnsCorrectSize
@@ -129,25 +129,25 @@
 [ RUN  ] DcsctpInterleavedReassemblyStreamsTest.DeleteOrderedMessageDelivesTwoReturnsCorrectSize
 [  OK  ] DcsctpInterleavedReassemblyStreamsTest.DeleteOrderedMessageDelivesTwoReturnsCorrectSize (0.1 ms)
 [ RUN  ] DcsctpInterleavedReassemblyStreamsTest.CanReassembleFastPathUnordered
-[  OK  ] DcsctpInterleavedReassemblyStreamsTest.CanReassembleFastPathUnordered (0.2 ms)
+[  OK  ] DcsctpInterleavedReassemblyStreamsTest.CanReassembleFastPathUnordered (0.3 ms)
 [ RUN  ] DcsctpInterleavedReassemblyStreamsTest.CanReassembleFastPathOrdered
-[  OK  ] DcsctpInterleavedReassemblyStreamsTest.CanReassembleFastPathOrdered (0.1 ms)
+[  OK  ] DcsctpInterleavedReassemblyStreamsTest.CanReassembleFastPathOrdered (0.0 ms)
 [ RUN  ] DcsctpInterleavedReassemblyStreamsTest.CanHandoverOrderedStreams
 [  OK  ] DcsctpInterleavedReassemblyStreamsTest.CanHandoverOrderedStreams (0.1 ms)
 [ RUN  ] DcsctpInterleavedReassemblyStreamsTest.CanHandoverUnorderedStreams
 [  OK  ] DcsctpInterleavedReassemblyStreamsTest.CanHandoverUnorderedStreams (0.0 ms)
 [ RUN  ] DcsctpReassemblyQueueTest.EmptyQueue
-[  OK  ] DcsctpReassemblyQueueTest.EmptyQueue (0.2 ms)
+[  OK  ] DcsctpReassemblyQueueTest.EmptyQueue (0.6 ms)
 [ RUN  ] DcsctpReassemblyQueueTest.SingleUnorderedChunkMessage
-[  OK  ] DcsctpReassemblyQueueTest.SingleUnorderedChunkMessage (0.7 ms)
+[  OK  ] DcsctpReassemblyQueueTest.SingleUnorderedChunkMessage (0.5 ms)
 [ RUN  ] DcsctpReassemblyQueueTest.LargeUnorderedChunkAllPermutations
-[  OK  ] DcsctpReassemblyQueueTest.LargeUnorderedChunkAllPermutations (1.3 ms)
+[  OK  ] DcsctpReassemblyQueueTest.LargeUnorderedChunkAllPermutations (1.1 ms)
 [ RUN  ] DcsctpReassemblyQueueTest.SingleOrderedChunkMessage
 [  OK  ] DcsctpReassemblyQueueTest.SingleOrderedChunkMessage (0.0 ms)
 [ RUN  ] DcsctpReassemblyQueueTest.ManySmallOrderedMessages
-[  OK  ] DcsctpReassemblyQueueTest.ManySmallOrderedMessages (1.9 ms)
+[  OK  ] DcsctpReassemblyQueueTest.ManySmallOrderedMessages (1.4 ms)
 [ RUN  ] DcsctpReassemblyQueueTest.RetransmissionInLargeOrdered
-[  OK  ] DcsctpReassemblyQueueTest.RetransmissionInLargeOrdered (0.2 ms)
+[  OK  ] DcsctpReassemblyQueueTest.RetransmissionInLargeOrdered (0.1 ms)
 [ RUN  ] DcsctpReassemblyQueueTest.ForwardTSNRemoveUnordered
 [  OK  ] DcsctpReassemblyQueueTest.ForwardTSNRemoveUnordered (0.1 ms)
 [ RUN  ] DcsctpReassemblyQueueTest.ForwardTSNRemoveOrdered
@@ -163,13 +163,13 @@
 [ RUN  ] DcsctpReassemblyQueueTest.SingleUnorderedChunkMessageInRfc8260
 [  OK  ] DcsctpReassemblyQueueTest.SingleUnorderedChunkMessageInRfc8260 (0.0 ms)
 [ RUN  ] DcsctpReassemblyQueueTest.TwoInterleavedChunks
-[  OK  ] DcsctpReassemblyQueueTest.TwoInterleavedChunks (0.3 ms)
+[  OK  ] DcsctpReassemblyQueueTest.TwoInterleavedChunks (0.4 ms)
 [ RUN  ] DcsctpReassemblyQueueTest.UnorderedInterleavedMessagesAllPermutations
-[  OK  ] DcsctpReassemblyQueueTest.UnorderedInterleavedMessagesAllPermutations (81.8 ms)
+[  OK  ] DcsctpReassemblyQueueTest.UnorderedInterleavedMessagesAllPermutations (59.7 ms)
 [ RUN  ] DcsctpReassemblyQueueTest.IForwardTSNRemoveALotOrdered
-[  OK  ] DcsctpReassemblyQueueTest.IForwardTSNRemoveALotOrdered (0.2 ms)
+[  OK  ] DcsctpReassemblyQueueTest.IForwardTSNRemoveALotOrdered (0.1 ms)
 [ RUN  ] DcsctpReassemblyQueueTest.AccountForwardTSNSizeInDeferredReset
-[  OK  ] DcsctpReassemblyQueueTest.AccountForwardTSNSizeInDeferredReset (0.3 ms)
+[  OK  ] DcsctpReassemblyQueueTest.AccountForwardTSNSizeInDeferredReset (0.2 ms)
 [ RUN  ] DcsctpTraditionalReassemblyStreamsTest.AddUnorderedMessageReturnsCorrectSize
 [  OK  ] DcsctpTraditionalReassemblyStreamsTest.AddUnorderedMessageReturnsCorrectSize (0.1 ms)
 [ RUN  ] DcsctpTraditionalReassemblyStreamsTest.AddSimpleOrderedMessageReturnsCorrectSize
@@ -187,9 +187,9 @@
 [ RUN  ] DcsctpTraditionalReassemblyStreamsTest.NoStreamsCanBeHandedOver
 [  OK  ] DcsctpTraditionalReassemblyStreamsTest.NoStreamsCanBeHandedOver (0.0 ms)
 [ RUN  ] DcsctpTraditionalReassemblyStreamsTest.OrderedStreamsCanBeHandedOverWhenNoUnassembledChunksExist
-[  OK  ] DcsctpTraditionalReassemblyStreamsTest.OrderedStreamsCanBeHandedOverWhenNoUnassembledChunksExist (0.1 ms)
+[  OK  ] DcsctpTraditionalReassemblyStreamsTest.OrderedStreamsCanBeHandedOverWhenNoUnassembledChunksExist (0.2 ms)
 [ RUN  ] DcsctpTraditionalReassemblyStreamsTest.UnorderedStreamsCanBeHandedOverWhenNoUnassembledChunksExist
-[  OK  ] DcsctpTraditionalReassemblyStreamsTest.UnorderedStreamsCanBeHandedOverWhenNoUnassembledChunksExist (0.0 ms)
+[  OK  ] DcsctpTraditionalReassemblyStreamsTest.UnorderedStreamsCanBeHandedOverWhenNoUnassembledChunksExist (0.1 ms)
 [ RUN  ] DcsctpTraditionalReassemblyStreamsTest.CanDeleteFirstOrderedMessage
 [  OK  ] DcsctpTraditionalReassemblyStreamsTest.CanDeleteFirstOrderedMessage (0.1 ms)
 [ RUN  ] DcsctpTraditionalReassemblyStreamsTest.CanReassembleFastPathUnordered
@@ -197,169 +197,169 @@
 [ RUN  ] DcsctpTraditionalReassemblyStreamsTest.CanReassembleFastPathOrdered
 [  OK  ] DcsctpTraditionalReassemblyStreamsTest.CanReassembleFastPathOrdered (0.0 ms)
 [ RUN  ] DcsctpDcSctpSocketTest.EstablishConnection
-[  OK  ] DcsctpDcSctpSocketTest.EstablishConnection (11.1 ms)
+[  OK  ] DcsctpDcSctpSocketTest.EstablishConnection (9.1 ms)
 [ RUN  ] DcsctpDcSctpSocketTest.EstablishConnectionWithSetupCollision
-[  OK  ] DcsctpDcSctpSocketTest.EstablishConnectionWithSetupCollision (1.1 ms)
+[  OK  ] DcsctpDcSctpSocketTest.EstablishConnectionWithSetupCollision (0.7 ms)
 [ RUN  ] DcsctpDcSctpSocketTest.ShuttingDownWhileEstablishingConnection
-[  OK  ] DcsctpDcSctpSocketTest.ShuttingDownWhileEstablishingConnection (0.9 ms)
+[  OK  ] DcsctpDcSctpSocketTest.ShuttingDownWhileEstablishingConnection (0.7 ms)
 [ RUN  ] DcsctpDcSctpSocketTest.EstablishSimultaneousConnection
-[  OK  ] DcsctpDcSctpSocketTest.EstablishSimultaneousConnection (0.5 ms)
+[  OK  ] DcsctpDcSctpSocketTest.EstablishSimultaneousConnection (0.4 ms)
 [ RUN  ] DcsctpDcSctpSocketTest.EstablishConnectionLostCookieAck
-[  OK  ] DcsctpDcSctpSocketTest.EstablishConnectionLostCookieAck (0.8 ms)
+[  OK  ] DcsctpDcSctpSocketTest.EstablishConnectionLostCookieAck (0.5 ms)
 [ RUN  ] DcsctpDcSctpSocketTest.ResendInitAndEstablishConnection
-[  OK  ] DcsctpDcSctpSocketTest.ResendInitAndEstablishConnection (0.5 ms)
+[  OK  ] DcsctpDcSctpSocketTest.ResendInitAndEstablishConnection (0.4 ms)
 [ RUN  ] DcsctpDcSctpSocketTest.ResendingInitTooManyTimesAborts
-[  OK  ] DcsctpDcSctpSocketTest.ResendingInitTooManyTimesAborts (0.6 ms)
+[  OK  ] DcsctpDcSctpSocketTest.ResendingInitTooManyTimesAborts (0.5 ms)
 [ RUN  ] DcsctpDcSctpSocketTest.ResendCookieEchoAndEstablishConnection
-[  OK  ] DcsctpDcSctpSocketTest.ResendCookieEchoAndEstablishConnection (0.6 ms)
+[  OK  ] DcsctpDcSctpSocketTest.ResendCookieEchoAndEstablishConnection (0.5 ms)
 [ RUN  ] DcsctpDcSctpSocketTest.ResendingCookieEchoTooManyTimesAborts
-[  OK  ] DcsctpDcSctpSocketTest.ResendingCookieEchoTooManyTimesAborts (0.7 ms)
+[  OK  ] DcsctpDcSctpSocketTest.ResendingCookieEchoTooManyTimesAborts (0.5 ms)
 [ RUN  ] DcsctpDcSctpSocketTest.DoesntSendMorePacketsUntilCookieAckHasBeenReceived
-[  OK  ] DcsctpDcSctpSocketTest.DoesntSendMorePacketsUntilCookieAckHasBeenReceived (11.7 ms)
+[  OK  ] DcsctpDcSctpSocketTest.DoesntSendMorePacketsUntilCookieAckHasBeenReceived (8.8 ms)
 [ RUN  ] DcsctpDcSctpSocketParametrizedTest.ShutdownConnection
-[  OK  ] DcsctpDcSctpSocketParametrizedTest.ShutdownConnection (1.6 ms)
+[  OK  ] DcsctpDcSctpSocketParametrizedTest.ShutdownConnection (1.4 ms)
 [ RUN  ] DcsctpDcSctpSocketTest.ShutdownTimerExpiresTooManyTimeClosesConnection
-[  OK  ] DcsctpDcSctpSocketTest.ShutdownTimerExpiresTooManyTimeClosesConnection (1.2 ms)
+[  OK  ] DcsctpDcSctpSocketTest.ShutdownTimerExpiresTooManyTimeClosesConnection (1.0 ms)
 [ RUN  ] DcsctpDcSctpSocketTest.T2ShutdownTimerExpiresResendsShutdownAck
 [  OK  ] DcsctpDcSctpSocketTest.T2ShutdownTimerExpiresResendsShutdownAck (0.6 ms)
 [ RUN  ] DcsctpDcSctpSocketTest.ShutdownResendsShutdownAckWhenInShutdownAckSent
-[  OK  ] DcsctpDcSctpSocketTest.ShutdownResendsShutdownAckWhenInShutdownAckSent (0.6 ms)
+[  OK  ] DcsctpDcSctpSocketTest.ShutdownResendsShutdownAckWhenInShutdownAckSent (0.5 ms)
 [ RUN  ] DcsctpDcSctpSocketTest.ShutdownIgnoredInShutdownReceived
-[  OK  ] DcsctpDcSctpSocketTest.ShutdownIgnoredInShutdownReceived (0.5 ms)
+[  OK  ] DcsctpDcSctpSocketTest.ShutdownIgnoredInShutdownReceived (0.4 ms)
 [ RUN  ] DcsctpDcSctpSocketTest.ShutdownIgnoredInShutdownPending
 [  OK  ] DcsctpDcSctpSocketTest.ShutdownIgnoredInShutdownPending (0.5 ms)
 [ RUN  ] DcsctpDcSctpSocketTest.EstablishConnectionWhileSendingData
-[  OK  ] DcsctpDcSctpSocketTest.EstablishConnectionWhileSendingData (0.6 ms)
+[  OK  ] DcsctpDcSctpSocketTest.EstablishConnectionWhileSendingData (0.5 ms)
 [ RUN  ] DcsctpDcSctpSocketTest.SendMessageAfterEstablished
-[  OK  ] DcsctpDcSctpSocketTest.SendMessageAfterEstablished (0.8 ms)
+[  OK  ] DcsctpDcSctpSocketTest.SendMessageAfterEstablished (0.7 ms)
 [ RUN  ] DcsctpDcSctpSocketTest.SendMessageAfterEstablishedInPullMode
-[  OK  ] DcsctpDcSctpSocketTest.SendMessageAfterEstablishedInPullMode (0.6 ms)
+[  OK  ] DcsctpDcSctpSocketTest.SendMessageAfterEstablishedInPullMode (0.5 ms)
 [ RUN  ] DcsctpDcSctpSocketParametrizedTest.TimeoutResendsPacket
-[  OK  ] DcsctpDcSctpSocketParametrizedTest.TimeoutResendsPacket (2.0 ms)
+[  OK  ] DcsctpDcSctpSocketParametrizedTest.TimeoutResendsPacket (1.7 ms)
 [ RUN  ] DcsctpDcSctpSocketParametrizedTest.SendALotOfBytesMissedSecondPacket
-[  OK  ] DcsctpDcSctpSocketParametrizedTest.SendALotOfBytesMissedSecondPacket (20.4 ms)
+[  OK  ] DcsctpDcSctpSocketParametrizedTest.SendALotOfBytesMissedSecondPacket (13.7 ms)
 [ RUN  ] DcsctpDcSctpSocketParametrizedTest.SendingHeartbeatAnswersWithAck
-[  OK  ] DcsctpDcSctpSocketParametrizedTest.SendingHeartbeatAnswersWithAck (1.8 ms)
+[  OK  ] DcsctpDcSctpSocketParametrizedTest.SendingHeartbeatAnswersWithAck (1.7 ms)
 [ RUN  ] DcsctpDcSctpSocketParametrizedTest.ExpectHeartbeatToBeSent
-[  OK  ] DcsctpDcSctpSocketParametrizedTest.ExpectHeartbeatToBeSent (2.6 ms)
+[  OK  ] DcsctpDcSctpSocketParametrizedTest.ExpectHeartbeatToBeSent (1.8 ms)
 [ RUN  ] DcsctpDcSctpSocketParametrizedTest.BothSidesSendHeartbeats
-[  OK  ] DcsctpDcSctpSocketParametrizedTest.BothSidesSendHeartbeats (0.8 ms)
+[  OK  ] DcsctpDcSctpSocketParametrizedTest.BothSidesSendHeartbeats (0.6 ms)
 [ RUN  ] DcsctpDcSctpSocketParametrizedTest.CloseConnectionAfterTooManyLostHeartbeats
-[  OK  ] DcsctpDcSctpSocketParametrizedTest.CloseConnectionAfterTooManyLostHeartbeats (2.6 ms)
+[  OK  ] DcsctpDcSctpSocketParametrizedTest.CloseConnectionAfterTooManyLostHeartbeats (1.9 ms)
 [ RUN  ] DcsctpDcSctpSocketParametrizedTest.RecoversAfterASuccessfulAck
-[  OK  ] DcsctpDcSctpSocketParametrizedTest.RecoversAfterASuccessfulAck (2.1 ms)
+[  OK  ] DcsctpDcSctpSocketParametrizedTest.RecoversAfterASuccessfulAck (1.7 ms)
 [ RUN  ] DcsctpDcSctpSocketParametrizedTest.ResetStream
-[  OK  ] DcsctpDcSctpSocketParametrizedTest.ResetStream (3.3 ms)
+[  OK  ] DcsctpDcSctpSocketParametrizedTest.ResetStream (3.2 ms)
 [ RUN  ] DcsctpDcSctpSocketTest.SendReconfigWhenStreamsReady
-[  OK  ] DcsctpDcSctpSocketTest.SendReconfigWhenStreamsReady (2.0 ms)
+[  OK  ] DcsctpDcSctpSocketTest.SendReconfigWhenStreamsReady (1.6 ms)
 [ RUN  ] DcsctpDcSctpSocketParametrizedTest.ResetStreamWillMakeChunksStartAtZeroSsn
-[  OK  ] DcsctpDcSctpSocketParametrizedTest.ResetStreamWillMakeChunksStartAtZeroSsn (4.6 ms)
+[  OK  ] DcsctpDcSctpSocketParametrizedTest.ResetStreamWillMakeChunksStartAtZeroSsn (3.4 ms)
 [ RUN  ] DcsctpDcSctpSocketParametrizedTest.ResetStreamWillOnlyResetTheRequestedStreams
-[  OK  ] DcsctpDcSctpSocketParametrizedTest.ResetStreamWillOnlyResetTheRequestedStreams (5.9 ms)
+[  OK  ] DcsctpDcSctpSocketParametrizedTest.ResetStreamWillOnlyResetTheRequestedStreams (4.3 ms)
 [ RUN  ] DcsctpDcSctpSocketParametrizedTest.OnePeerReconnects
-[  OK  ] DcsctpDcSctpSocketParametrizedTest.OnePeerReconnects (16.9 ms)
+[  OK  ] DcsctpDcSctpSocketParametrizedTest.OnePeerReconnects (13.4 ms)
 [ RUN  ] DcsctpDcSctpSocketParametrizedTest.SendMessageWithLimitedRtx
-[  OK  ] DcsctpDcSctpSocketParametrizedTest.SendMessageWithLimitedRtx (4.7 ms)
+[  OK  ] DcsctpDcSctpSocketParametrizedTest.SendMessageWithLimitedRtx (4.3 ms)
 [ RUN  ] DcsctpDcSctpSocketParametrizedTest.SendManyFragmentedMessagesWithLimitedRtx
-[  OK  ] DcsctpDcSctpSocketParametrizedTest.SendManyFragmentedMessagesWithLimitedRtx (7.8 ms)
+[  OK  ] DcsctpDcSctpSocketParametrizedTest.SendManyFragmentedMessagesWithLimitedRtx (6.2 ms)
 [ RUN  ] DcsctpDcSctpSocketParametrizedTest.ReceivingUnknownChunkRespondsWithError
-[  OK  ] DcsctpDcSctpSocketParametrizedTest.ReceivingUnknownChunkRespondsWithError (1.8 ms)
+[  OK  ] DcsctpDcSctpSocketParametrizedTest.ReceivingUnknownChunkRespondsWithError (1.5 ms)
 [ RUN  ] DcsctpDcSctpSocketParametrizedTest.ReceivingErrorChunkReportsAsCallback
-[  OK  ] DcsctpDcSctpSocketParametrizedTest.ReceivingErrorChunkReportsAsCallback (1.6 ms)
+[  OK  ] DcsctpDcSctpSocketParametrizedTest.ReceivingErrorChunkReportsAsCallback (1.5 ms)
 [ RUN  ] DcsctpDcSctpSocketTest.PassingHighWatermarkWillOnlyAcceptCumAckTsn
-[  OK  ] DcsctpDcSctpSocketTest.PassingHighWatermarkWillOnlyAcceptCumAckTsn (1.1 ms)
+[  OK  ] DcsctpDcSctpSocketTest.PassingHighWatermarkWillOnlyAcceptCumAckTsn (0.9 ms)
 [ RUN  ] DcsctpDcSctpSocketTest.SetMaxMessageSize
 [  OK  ] DcsctpDcSctpSocketTest.SetMaxMessageSize (0.0 ms)
 [ RUN  ] DcsctpDcSctpSocketParametrizedTest.SendManyMessages
-[  OK  ] DcsctpDcSctpSocketParametrizedTest.SendManyMessages (17.6 ms)
+[  OK  ] DcsctpDcSctpSocketParametrizedTest.SendManyMessages (13.8 ms)
 [ RUN  ] DcsctpDcSctpSocketParametrizedTest.SendsMessagesWithLowLifetime
-[  OK  ] DcsctpDcSctpSocketParametrizedTest.SendsMessagesWithLowLifetime (35.6 ms)
+[  OK  ] DcsctpDcSctpSocketParametrizedTest.SendsMessagesWithLowLifetime (52.4 ms)
 [ RUN  ] DcsctpDcSctpSocketParametrizedTest.DiscardsMessagesWithLowLifetimeIfMustBuffer
-[  OK  ] DcsctpDcSctpSocketParametrizedTest.DiscardsMessagesWithLowLifetimeIfMustBuffer (13.7 ms)
+[  OK  ] DcsctpDcSctpSocketParametrizedTest.DiscardsMessagesWithLowLifetimeIfMustBuffer (11.6 ms)
 [ RUN  ] DcsctpDcSctpSocketTest.RespectsPerStreamQueueLimit
-[  OK  ] DcsctpDcSctpSocketTest.RespectsPerStreamQueueLimit (0.4 ms)
+[  OK  ] DcsctpDcSctpSocketTest.RespectsPerStreamQueueLimit (1.1 ms)
 [ RUN  ] DcsctpDcSctpSocketParametrizedTest.HasReasonableBufferedAmountValues
-[  OK  ] DcsctpDcSctpSocketParametrizedTest.HasReasonableBufferedAmountValues (14.6 ms)
+[  OK  ] DcsctpDcSctpSocketParametrizedTest.HasReasonableBufferedAmountValues (11.0 ms)
 [ RUN  ] DcsctpDcSctpSocketTest.HasDefaultOnBufferedAmountLowValueZero
 [  OK  ] DcsctpDcSctpSocketTest.HasDefaultOnBufferedAmountLowValueZero (0.1 ms)
 [ RUN  ] DcsctpDcSctpSocketParametrizedTest.TriggersOnBufferedAmountLowWithDefaultValueZero
-[  OK  ] DcsctpDcSctpSocketParametrizedTest.TriggersOnBufferedAmountLowWithDefaultValueZero (2.5 ms)
+[  OK  ] DcsctpDcSctpSocketParametrizedTest.TriggersOnBufferedAmountLowWithDefaultValueZero (2.2 ms)
 [ RUN  ] DcsctpDcSctpSocketParametrizedTest.DoesntTriggerOnBufferedAmountLowIfBelowThreshold
-[  OK  ] DcsctpDcSctpSocketParametrizedTest.DoesntTriggerOnBufferedAmountLowIfBelowThreshold (2.6 ms)
+[  OK  ] DcsctpDcSctpSocketParametrizedTest.DoesntTriggerOnBufferedAmountLowIfBelowThreshold (2.1 ms)
 [ RUN  ] DcsctpDcSctpSocketParametrizedTest.TriggersOnBufferedAmountMultipleTimes
-[  OK  ] DcsctpDcSctpSocketParametrizedTest.TriggersOnBufferedAmountMultipleTimes (4.5 ms)
+[  OK  ] DcsctpDcSctpSocketParametrizedTest.TriggersOnBufferedAmountMultipleTimes (3.6 ms)
 [ RUN  ] DcsctpDcSctpSocketParametrizedTest.TriggersOnBufferedAmountLowOnlyWhenCrossingThreshold
-[  OK  ] DcsctpDcSctpSocketParametrizedTest.TriggersOnBufferedAmountLowOnlyWhenCrossingThreshold (9.9 ms)
+[  OK  ] DcsctpDcSctpSocketParametrizedTest.TriggersOnBufferedAmountLowOnlyWhenCrossingThreshold (8.2 ms)
 [ RUN  ] DcsctpDcSctpSocketParametrizedTest.DoesntTriggerOnTotalBufferAmountLowWhenBelow
-[  OK  ] DcsctpDcSctpSocketParametrizedTest.DoesntTriggerOnTotalBufferAmountLowWhenBelow (13.8 ms)
+[  OK  ] DcsctpDcSctpSocketParametrizedTest.DoesntTriggerOnTotalBufferAmountLowWhenBelow (11.0 ms)
 [ RUN  ] DcsctpDcSctpSocketParametrizedTest.TriggersOnTotalBufferAmountLowWhenCrossingThreshold
-[  OK  ] DcsctpDcSctpSocketParametrizedTest.TriggersOnTotalBufferAmountLowWhenCrossingThreshold (1451.1 ms)
+[  OK  ] DcsctpDcSctpSocketParametrizedTest.TriggersOnTotalBufferAmountLowWhenCrossingThreshold (1116.6 ms)
 [ RUN  ] DcsctpDcSctpSocketTest.InitialMetricsAreUnset
 [  OK  ] DcsctpDcSctpSocketTest.InitialMetricsAreUnset (0.1 ms)
 [ RUN  ] DcsctpDcSctpSocketTest.MessageInterleavingMetricsAreSet
-[  OK  ] DcsctpDcSctpSocketTest.MessageInterleavingMetricsAreSet (1.9 ms)
+[  OK  ] DcsctpDcSctpSocketTest.MessageInterleavingMetricsAreSet (1.7 ms)
 [ RUN  ] DcsctpDcSctpSocketTest.RxAndTxPacketMetricsIncrease
-[  OK  ] DcsctpDcSctpSocketTest.RxAndTxPacketMetricsIncrease (1.9 ms)
+[  OK  ] DcsctpDcSctpSocketTest.RxAndTxPacketMetricsIncrease (1.7 ms)
 [ RUN  ] DcsctpDcSctpSocketTest.RetransmissionMetricsAreSetForFastRetransmit
-[  OK  ] DcsctpDcSctpSocketTest.RetransmissionMetricsAreSetForFastRetransmit (2.4 ms)
+[  OK  ] DcsctpDcSctpSocketTest.RetransmissionMetricsAreSetForFastRetransmit (2.1 ms)
 [ RUN  ] DcsctpDcSctpSocketTest.RetransmissionMetricsAreSetForNormalRetransmit
-[  OK  ] DcsctpDcSctpSocketTest.RetransmissionMetricsAreSetForNormalRetransmit (0.8 ms)
+[  OK  ] DcsctpDcSctpSocketTest.RetransmissionMetricsAreSetForNormalRetransmit (0.6 ms)
 [ RUN  ] DcsctpDcSctpSocketParametrizedTest.UnackDataAlsoIncludesSendQueue
-[  OK  ] DcsctpDcSctpSocketParametrizedTest.UnackDataAlsoIncludesSendQueue (13.7 ms)
+[  OK  ] DcsctpDcSctpSocketParametrizedTest.UnackDataAlsoIncludesSendQueue (10.3 ms)
 [ RUN  ] DcsctpDcSctpSocketParametrizedTest.DoesntSendMoreThanMaxBurstPackets
-[  OK  ] DcsctpDcSctpSocketParametrizedTest.DoesntSendMoreThanMaxBurstPackets (18.1 ms)
+[  OK  ] DcsctpDcSctpSocketParametrizedTest.DoesntSendMoreThanMaxBurstPackets (10.8 ms)
 [ RUN  ] DcsctpDcSctpSocketTest.SendMessagesAfterHandover
-[  OK  ] DcsctpDcSctpSocketTest.SendMessagesAfterHandover (1.3 ms)
+[  OK  ] DcsctpDcSctpSocketTest.SendMessagesAfterHandover (1.2 ms)
 [ RUN  ] DcsctpDcSctpSocketTest.RetransmitsOutstandingDataDirectlyAfterHandover
-[  OK  ] DcsctpDcSctpSocketTest.RetransmitsOutstandingDataDirectlyAfterHandover (1.2 ms)
+[  OK  ] DcsctpDcSctpSocketTest.RetransmitsOutstandingDataDirectlyAfterHandover (1.1 ms)
 [ RUN  ] DcsctpDcSctpSocketTest.CanDetectDcsctpImplementation
 [  OK  ] DcsctpDcSctpSocketTest.CanDetectDcsctpImplementation (0.4 ms)
 [ RUN  ] DcsctpDcSctpSocketTest.BothCanDetectDcsctpImplementation
-[  OK  ] DcsctpDcSctpSocketTest.BothCanDetectDcsctpImplementation (0.8 ms)
+[  OK  ] DcsctpDcSctpSocketTest.BothCanDetectDcsctpImplementation (0.6 ms)
 [ RUN  ] DcsctpDcSctpSocketParametrizedTest.CanLoseFirstOrderedMessage
-[  OK  ] DcsctpDcSctpSocketParametrizedTest.CanLoseFirstOrderedMessage (3.0 ms)
+[  OK  ] DcsctpDcSctpSocketParametrizedTest.CanLoseFirstOrderedMessage (2.3 ms)
 [ RUN  ] DcsctpDcSctpSocketTest.ReceiveBothUnorderedAndOrderedWithSameTSN
-[  OK  ] DcsctpDcSctpSocketTest.ReceiveBothUnorderedAndOrderedWithSameTSN (0.7 ms)
+[  OK  ] DcsctpDcSctpSocketTest.ReceiveBothUnorderedAndOrderedWithSameTSN (0.6 ms)
 [ RUN  ] DcsctpDcSctpSocketTest.CloseTwoStreamsAtTheSameTime
-[  OK  ] DcsctpDcSctpSocketTest.CloseTwoStreamsAtTheSameTime (1.2 ms)
+[  OK  ] DcsctpDcSctpSocketTest.CloseTwoStreamsAtTheSameTime (1.0 ms)
 [ RUN  ] DcsctpDcSctpSocketTest.CloseThreeStreamsAtTheSameTime
-[  OK  ] DcsctpDcSctpSocketTest.CloseThreeStreamsAtTheSameTime (1.4 ms)
+[  OK  ] DcsctpDcSctpSocketTest.CloseThreeStreamsAtTheSameTime (1.2 ms)
 [ RUN  ] DcsctpDcSctpSocketTest.CloseStreamsWithPendingRequest
-[  OK  ] DcsctpDcSctpSocketTest.CloseStreamsWithPendingRequest (2.0 ms)
+[  OK  ] DcsctpDcSctpSocketTest.CloseStreamsWithPendingRequest (1.4 ms)
 [ RUN  ] DcsctpDcSctpSocketTest.StreamsHaveInitialPriority
 [  OK  ] DcsctpDcSctpSocketTest.StreamsHaveInitialPriority (0.1 ms)
 [ RUN  ] DcsctpDcSctpSocketTest.CanChangeStreamPriority
 [  OK  ] DcsctpDcSctpSocketTest.CanChangeStreamPriority (0.1 ms)
 [ RUN  ] DcsctpDcSctpSocketParametrizedTest.WillHandoverPriority
-[  OK  ] DcsctpDcSctpSocketParametrizedTest.WillHandoverPriority (1.4 ms)
+[  OK  ] DcsctpDcSctpSocketParametrizedTest.WillHandoverPriority (1.2 ms)
 [ RUN  ] DcsctpDcSctpSocketTest.ReconnectSocketWithPendingStreamReset
-[  OK  ] DcsctpDcSctpSocketTest.ReconnectSocketWithPendingStreamReset (1.0 ms)
+[  OK  ] DcsctpDcSctpSocketTest.ReconnectSocketWithPendingStreamReset (0.9 ms)
 [ RUN  ] DcsctpDcSctpSocketTest.SmallSentMessagesWithPrioWillArriveInSpecificOrder
-[  OK  ] DcsctpDcSctpSocketTest.SmallSentMessagesWithPrioWillArriveInSpecificOrder (1.2 ms)
+[  OK  ] DcsctpDcSctpSocketTest.SmallSentMessagesWithPrioWillArriveInSpecificOrder (1.0 ms)
 [ RUN  ] DcsctpDcSctpSocketTest.LargeSentMessagesWithPrioWillArriveInSpecificOrder
-[  OK  ] DcsctpDcSctpSocketTest.LargeSentMessagesWithPrioWillArriveInSpecificOrder (31.0 ms)
+[  OK  ] DcsctpDcSctpSocketTest.LargeSentMessagesWithPrioWillArriveInSpecificOrder (20.9 ms)
 [ RUN  ] DcsctpDcSctpSocketTest.MessageWithHigherPrioWillInterruptLowerPrioMessage
-[  OK  ] DcsctpDcSctpSocketTest.MessageWithHigherPrioWillInterruptLowerPrioMessage (13.8 ms)
+[  OK  ] DcsctpDcSctpSocketTest.MessageWithHigherPrioWillInterruptLowerPrioMessage (11.4 ms)
 [ RUN  ] DcsctpDcSctpSocketTest.LifecycleEventsAreGeneratedForAckedMessages
-[  OK  ] DcsctpDcSctpSocketTest.LifecycleEventsAreGeneratedForAckedMessages (20.2 ms)
+[  OK  ] DcsctpDcSctpSocketTest.LifecycleEventsAreGeneratedForAckedMessages (15.8 ms)
 [ RUN  ] DcsctpDcSctpSocketTest.LifecycleEventsForFailMaxRetransmissions
 [  OK  ] DcsctpDcSctpSocketTest.LifecycleEventsForFailMaxRetransmissions (1.9 ms)
 [ RUN  ] DcsctpDcSctpSocketTest.LifecycleEventsForExpiredMessageWithRetransmitLimit
-[  OK  ] DcsctpDcSctpSocketTest.LifecycleEventsForExpiredMessageWithRetransmitLimit (5.7 ms)
+[  OK  ] DcsctpDcSctpSocketTest.LifecycleEventsForExpiredMessageWithRetransmitLimit (4.5 ms)
 [ RUN  ] DcsctpDcSctpSocketTest.LifecycleEventsForExpiredMessageWithLifetimeLimit
 [  OK  ] DcsctpDcSctpSocketTest.LifecycleEventsForExpiredMessageWithLifetimeLimit (0.5 ms)
 [ RUN  ] DcsctpDcSctpSocketTest.DoesNotRetransmitExpiredMessageBehindUnacknowledgedReliableMessageOnRto
-[  OK  ] DcsctpDcSctpSocketTest.DoesNotRetransmitExpiredMessageBehindUnacknowledgedReliableMessageOnRto (1.1 ms)
+[  OK  ] DcsctpDcSctpSocketTest.DoesNotRetransmitExpiredMessageBehindUnacknowledgedReliableMessageOnRto (0.9 ms)
 [ RUN  ] DcsctpDcSctpSocketTest.DoesNotFastRetransmitExpiredMessageBehindUnacknowledgedReliableMessage
-[  OK  ] DcsctpDcSctpSocketTest.DoesNotFastRetransmitExpiredMessageBehindUnacknowledgedReliableMessage (1.7 ms)
+[  OK  ] DcsctpDcSctpSocketTest.DoesNotFastRetransmitExpiredMessageBehindUnacknowledgedReliableMessage (1.4 ms)
 [ RUN  ] DcsctpDcSctpSocketParametrizedTest.ExposesTheNumberOfNegotiatedStreams
-[  OK  ] DcsctpDcSctpSocketParametrizedTest.ExposesTheNumberOfNegotiatedStreams (5.0 ms)
+[  OK  ] DcsctpDcSctpSocketParametrizedTest.ExposesTheNumberOfNegotiatedStreams (1.0 ms)
 [ RUN  ] DcsctpDcSctpSocketTest.ResetStreamsDeferred
-[  OK  ] DcsctpDcSctpSocketTest.ResetStreamsDeferred (2.1 ms)
+[  OK  ] DcsctpDcSctpSocketTest.ResetStreamsDeferred (1.8 ms)
 [ RUN  ] DcsctpDcSctpSocketTest.ResetStreamsWithPausedSenderResumesWhenPerformed
-[  OK  ] DcsctpDcSctpSocketTest.ResetStreamsWithPausedSenderResumesWhenPerformed (1.0 ms)
+[  OK  ] DcsctpDcSctpSocketTest.ResetStreamsWithPausedSenderResumesWhenPerformed (0.9 ms)
 [ RUN  ] DcsctpDcSctpSocketParametrizedTest.ZeroChecksumMetricsAreSet
-[  OK  ] DcsctpDcSctpSocketParametrizedTest.ZeroChecksumMetricsAreSet (3.7 ms)
+[  OK  ] DcsctpDcSctpSocketParametrizedTest.ZeroChecksumMetricsAreSet (3.2 ms)
 [ RUN  ] DcsctpDcSctpSocketTest.AlwaysSendsInitWithNonZeroChecksum
 [  OK  ] DcsctpDcSctpSocketTest.AlwaysSendsInitWithNonZeroChecksum (0.1 ms)
 [ RUN  ] DcsctpDcSctpSocketTest.MaySendInitAckWithZeroChecksum
@@ -367,39 +367,39 @@
 [ RUN  ] DcsctpDcSctpSocketTest.AlwaysSendsCookieEchoWithNonZeroChecksum
 [  OK  ] DcsctpDcSctpSocketTest.AlwaysSendsCookieEchoWithNonZeroChecksum (0.3 ms)
 [ RUN  ] DcsctpDcSctpSocketTest.SendsCookieAckWithZeroChecksum
-[  OK  ] DcsctpDcSctpSocketTest.SendsCookieAckWithZeroChecksum (0.6 ms)
+[  OK  ] DcsctpDcSctpSocketTest.SendsCookieAckWithZeroChecksum (0.4 ms)
 [ RUN  ] DcsctpDcSctpSocketParametrizedTest.SendsDataWithZeroChecksum
-[  OK  ] DcsctpDcSctpSocketParametrizedTest.SendsDataWithZeroChecksum (2.0 ms)
+[  OK  ] DcsctpDcSctpSocketParametrizedTest.SendsDataWithZeroChecksum (1.8 ms)
 [ RUN  ] DcsctpDcSctpSocketParametrizedTest.AllPacketsAfterConnectHaveZeroChecksum
-[  OK  ] DcsctpDcSctpSocketParametrizedTest.AllPacketsAfterConnectHaveZeroChecksum (33.0 ms)
+[  OK  ] DcsctpDcSctpSocketParametrizedTest.AllPacketsAfterConnectHaveZeroChecksum (22.0 ms)
 [ RUN  ] DcsctpDcSctpSocketTest.HandlesForwardTsnOutOfOrderWithStreamResetting
-[  OK  ] DcsctpDcSctpSocketTest.HandlesForwardTsnOutOfOrderWithStreamResetting (1.5 ms)
+[  OK  ] DcsctpDcSctpSocketTest.HandlesForwardTsnOutOfOrderWithStreamResetting (1.9 ms)
 [ RUN  ] DcsctpDcSctpSocketTest.ResentInitHasSameParameters
 [  OK  ] DcsctpDcSctpSocketTest.ResentInitHasSameParameters (0.2 ms)
 [ RUN  ] DcsctpDcSctpSocketTest.ResentInitAckHasDifferentParameters
 [  OK  ] DcsctpDcSctpSocketTest.ResentInitAckHasDifferentParameters (0.3 ms)
 [ RUN  ] DcsctpDcSctpSocketTest.ConnectionCanContinueFromFirstInitAck
-[  OK  ] DcsctpDcSctpSocketTest.ConnectionCanContinueFromFirstInitAck (6.5 ms)
+[  OK  ] DcsctpDcSctpSocketTest.ConnectionCanContinueFromFirstInitAck (5.1 ms)
 [ RUN  ] DcsctpDcSctpSocketTest.ConnectionCanContinueFromSecondInitAck
-[  OK  ] DcsctpDcSctpSocketTest.ConnectionCanContinueFromSecondInitAck (6.4 ms)
+[  OK  ] DcsctpDcSctpSocketTest.ConnectionCanContinueFromSecondInitAck (5.3 ms)
 [ RUN  ] DcsctpDcSctpSocketParametrizedTest.LowCongestionWindowSetsIsackBit
-[  OK  ] DcsctpDcSctpSocketParametrizedTest.LowCongestionWindowSetsIsackBit (15.0 ms)
+[  OK  ] DcsctpDcSctpSocketParametrizedTest.LowCongestionWindowSetsIsackBit (12.1 ms)
 [ RUN  ] DcsctpDcSctpSocketParametrizedTest.ConnectSocketOutOfBand
-[  OK  ] DcsctpDcSctpSocketParametrizedTest.ConnectSocketOutOfBand (14.2 ms)
+[  OK  ] DcsctpDcSctpSocketParametrizedTest.ConnectSocketOutOfBand (11.7 ms)
 [ RUN  ] DcsctpDcSctpSocketParametrizedTest.ConnectSocketOutOfBandInvalidToken
 [  OK  ] DcsctpDcSctpSocketParametrizedTest.ConnectSocketOutOfBandInvalidToken (0.4 ms)
 [ RUN  ] DcsctpDcSctpSocketParametrizedTest.ConnectSocketOutOfBandWithPaddedToken
-[  OK  ] DcsctpDcSctpSocketParametrizedTest.ConnectSocketOutOfBandWithPaddedToken (14.4 ms)
+[  OK  ] DcsctpDcSctpSocketParametrizedTest.ConnectSocketOutOfBandWithPaddedToken (11.2 ms)
 [ RUN  ] DcsctpHeartbeatHandlerTest.HasRunningHeartbeatIntervalTimer
-[  OK  ] DcsctpHeartbeatHandlerTest.HasRunningHeartbeatIntervalTimer (1.2 ms)
+[  OK  ] DcsctpHeartbeatHandlerTest.HasRunningHeartbeatIntervalTimer (1.0 ms)
 [ RUN  ] DcsctpHeartbeatHandlerTest.RepliesToHeartbeatRequests
-[  OK  ] DcsctpHeartbeatHandlerTest.RepliesToHeartbeatRequests (0.3 ms)
+[  OK  ] DcsctpHeartbeatHandlerTest.RepliesToHeartbeatRequests (0.2 ms)
 [ RUN  ] DcsctpHeartbeatHandlerTest.SendsHeartbeatRequestsOnIdleChannel
 [  OK  ] DcsctpHeartbeatHandlerTest.SendsHeartbeatRequestsOnIdleChannel (0.2 ms)
 [ RUN  ] DcsctpHeartbeatHandlerTest.DoesntObserveInvalidHeartbeats
 [  OK  ] DcsctpHeartbeatHandlerTest.DoesntObserveInvalidHeartbeats (0.1 ms)
 [ RUN  ] DcsctpHeartbeatHandlerTest.IncreasesErrorIfNotAckedInTime
-[  OK  ] DcsctpHeartbeatHandlerTest.IncreasesErrorIfNotAckedInTime (0.2 ms)
+[  OK  ] DcsctpHeartbeatHandlerTest.IncreasesErrorIfNotAckedInTime (0.4 ms)
 [ RUN  ] DcsctpDisabledHeartbeatHandlerTest.IsReallyDisabled
 [  OK  ] DcsctpDisabledHeartbeatHandlerTest.IsReallyDisabled (0.1 ms)
 [ RUN  ] DcsctpPacketSenderTest.SendPacketCallsCallback
@@ -417,15 +417,15 @@
 [ RUN  ] DcsctpStreamResetHandlerTest.ResetStreamsNotDeferred
 [  OK  ] DcsctpStreamResetHandlerTest.ResetStreamsNotDeferred (0.2 ms)
 [ RUN  ] DcsctpStreamResetHandlerTest.ResetStreamsDeferred
-[  OK  ] DcsctpStreamResetHandlerTest.ResetStreamsDeferred (0.6 ms)
+[  OK  ] DcsctpStreamResetHandlerTest.ResetStreamsDeferred (1.0 ms)
 [ RUN  ] DcsctpStreamResetHandlerTest.ResetStreamsDeferredOnlySelectedStreams
-[  OK  ] DcsctpStreamResetHandlerTest.ResetStreamsDeferredOnlySelectedStreams (0.3 ms)
+[  OK  ] DcsctpStreamResetHandlerTest.ResetStreamsDeferredOnlySelectedStreams (0.4 ms)
 [ RUN  ] DcsctpStreamResetHandlerTest.ResetAllStreamsDeferred
 [  OK  ] DcsctpStreamResetHandlerTest.ResetAllStreamsDeferred (0.3 ms)
 [ RUN  ] DcsctpStreamResetHandlerTest.ResetStreamsDefersForwardTsn
 [  OK  ] DcsctpStreamResetHandlerTest.ResetStreamsDefersForwardTsn (0.3 ms)
 [ RUN  ] DcsctpStreamResetHandlerTest.SendOutgoingRequestDirectly
-[  OK  ] DcsctpStreamResetHandlerTest.SendOutgoingRequestDirectly (0.9 ms)
+[  OK  ] DcsctpStreamResetHandlerTest.SendOutgoingRequestDirectly (0.7 ms)
 [ RUN  ] DcsctpStreamResetHandlerTest.ResetMultipleStreamsInOneRequest
 [  OK  ] DcsctpStreamResetHandlerTest.ResetMultipleStreamsInOneRequest (0.2 ms)
 [ RUN  ] DcsctpStreamResetHandlerTest.SendOutgoingRequestDeferred
@@ -443,9 +443,9 @@
 [ RUN  ] DcsctpStreamResetHandlerTest.SendIncomingResetJustReturnsNothingPerformed
 [  OK  ] DcsctpStreamResetHandlerTest.SendIncomingResetJustReturnsNothingPerformed (0.1 ms)
 [ RUN  ] DcsctpStreamResetHandlerTest.SendSameRequestTwiceIsIdempotent
-[  OK  ] DcsctpStreamResetHandlerTest.SendSameRequestTwiceIsIdempotent (0.2 ms)
+[  OK  ] DcsctpStreamResetHandlerTest.SendSameRequestTwiceIsIdempotent (0.1 ms)
 [ RUN  ] DcsctpStreamResetHandlerTest.HandoverIsAllowedOnlyWhenNoStreamIsBeingOrWillBeReset
-[  OK  ] DcsctpStreamResetHandlerTest.HandoverIsAllowedOnlyWhenNoStreamIsBeingOrWillBeReset (0.4 ms)
+[  OK  ] DcsctpStreamResetHandlerTest.HandoverIsAllowedOnlyWhenNoStreamIsBeingOrWillBeReset (0.2 ms)
 [ RUN  ] DcsctpStreamResetHandlerTest.HandoverInInitialState
 [  OK  ] DcsctpStreamResetHandlerTest.HandoverInInitialState (0.1 ms)
 [ RUN  ] DcsctpStreamResetHandlerTest.HandoverAfterHavingResetOneStream
@@ -453,7 +453,7 @@
 [ RUN  ] DcsctpStreamResetHandlerTest.PerformCloseAfterOneFirstFailing
 [  OK  ] DcsctpStreamResetHandlerTest.PerformCloseAfterOneFirstFailing (0.2 ms)
 [ RUN  ] DcsctpStreamResetHandlerTest.ResetStreamsDeferredRetransmissionWithSameSeqNumSuccess
-[  OK  ] DcsctpStreamResetHandlerTest.ResetStreamsDeferredRetransmissionWithSameSeqNumSuccess (0.3 ms)
+[  OK  ] DcsctpStreamResetHandlerTest.ResetStreamsDeferredRetransmissionWithSameSeqNumSuccess (0.2 ms)
 [ RUN  ] DcsctpStreamResetHandlerTest.ResetStreamsDeferredWithNewSeqNumSuccess
 [  OK  ] DcsctpStreamResetHandlerTest.ResetStreamsDeferredWithNewSeqNumSuccess (0.2 ms)
 [ RUN  ] DcsctpStreamResetHandlerTest.ResetStreamsDeferredRetransmissionStillInProgress
@@ -461,7 +461,7 @@
 [ RUN  ] DcsctpStreamResetHandlerTest.ResetStreamsSuccessIdempotency
 [  OK  ] DcsctpStreamResetHandlerTest.ResetStreamsSuccessIdempotency (0.2 ms)
 [ RUN  ] DcsctpTransmissionControlBlockTest.LogsBasicInfoInToString
-[  OK  ] DcsctpTransmissionControlBlockTest.LogsBasicInfoInToString (0.4 ms)
+[  OK  ] DcsctpTransmissionControlBlockTest.LogsBasicInfoInToString (1.6 ms)
 [ RUN  ] DcsctpTransmissionControlBlockTest.LogsAllCapabilitiesInToSring
 [  OK  ] DcsctpTransmissionControlBlockTest.LogsAllCapabilitiesInToSring (0.1 ms)
 [ RUN  ] DcsctpTransmissionControlBlockTest.IsInitiallyHandoverReady
@@ -477,7 +477,7 @@
 [ RUN  ] DcsctpProcessTimeoutTest.CallbackMayRearmAndDelete
 [  OK  ] DcsctpProcessTimeoutTest.CallbackMayRearmAndDelete (0.0 ms)
 [ RUN  ] DcsctpProcessTimeoutTest.TwoSocketsConnectThroughLostInitAndExchangeAMessage
-[  OK  ] DcsctpProcessTimeoutTest.TwoSocketsConnectThroughLostInitAndExchangeAMessage (0.7 ms)
+[  OK  ] DcsctpProcessTimeoutTest.TwoSocketsConnectThroughLostInitAndExchangeAMessage (0.6 ms)
 [ RUN  ] DcsctpTimerTest.TimerIsInitiallyStopped
 [  OK  ] DcsctpTimerTest.TimerIsInitiallyStopped (0.0 ms)
 [ RUN  ] DcsctpTimerTest.TimerExpiresAtGivenTime
@@ -513,7 +513,7 @@
 [ RUN  ] DcsctpOutstandingDataTest.HasInitialState
 [  OK  ] DcsctpOutstandingDataTest.HasInitialState (0.0 ms)
 [ RUN  ] DcsctpOutstandingDataTest.InsertChunk
-[  OK  ] DcsctpOutstandingDataTest.InsertChunk (0.2 ms)
+[  OK  ] DcsctpOutstandingDataTest.InsertChunk (0.1 ms)
 [ RUN  ] DcsctpOutstandingDataTest.AcksSingleChunk
 [  OK  ] DcsctpOutstandingDataTest.AcksSingleChunk (0.0 ms)
 [ RUN  ] DcsctpOutstandingDataTest.AcksPreviousChunkDoesntUpdate
@@ -527,7 +527,7 @@
 [ RUN  ] DcsctpOutstandingDataTest.NacksThreeTimesResultsInAbandoning
 [  OK  ] DcsctpOutstandingDataTest.NacksThreeTimesResultsInAbandoning (0.2 ms)
 [ RUN  ] DcsctpOutstandingDataTest.NacksThreeTimesResultsInAbandoningWithPlaceholder
-[  OK  ] DcsctpOutstandingDataTest.NacksThreeTimesResultsInAbandoningWithPlaceholder (0.4 ms)
+[  OK  ] DcsctpOutstandingDataTest.NacksThreeTimesResultsInAbandoningWithPlaceholder (0.3 ms)
 [ RUN  ] DcsctpOutstandingDataTest.ExpiresChunkBeforeItIsInserted
 [  OK  ] DcsctpOutstandingDataTest.ExpiresChunkBeforeItIsInserted (0.1 ms)
 [ RUN  ] DcsctpOutstandingDataTest.CanGenerateForwardTsn
@@ -537,7 +537,7 @@
 [ RUN  ] DcsctpOutstandingDataTest.MeasureRTT
 [  OK  ] DcsctpOutstandingDataTest.MeasureRTT (0.0 ms)
 [ RUN  ] DcsctpOutstandingDataTest.MustRetransmitBeforeGettingNackedAgain
-[  OK  ] DcsctpOutstandingDataTest.MustRetransmitBeforeGettingNackedAgain (0.2 ms)
+[  OK  ] DcsctpOutstandingDataTest.MustRetransmitBeforeGettingNackedAgain (0.1 ms)
 [ RUN  ] DcsctpOutstandingDataTest.LifecyleReturnsAckedItemsInAckInfo
 [  OK  ] DcsctpOutstandingDataTest.LifecyleReturnsAckedItemsInAckInfo (0.0 ms)
 [ RUN  ] DcsctpOutstandingDataTest.LifecycleReturnsAbandonedNackedThreeTimes
@@ -551,15 +551,15 @@
 [ RUN  ] DcsctpOutstandingDataTest.FastRecoveryIncrementsNackCountWhenCumulativeTsnAdvances
 [  OK  ] DcsctpOutstandingDataTest.FastRecoveryIncrementsNackCountWhenCumulativeTsnAdvances (0.1 ms)
 [ RUN  ] DcsctpOutstandingDataTest.NackBetweenAckBlocksDoesNotAccessOutOfBounds
-[  OK  ] DcsctpOutstandingDataTest.NackBetweenAckBlocksDoesNotAccessOutOfBounds (2.3 ms)
+[  OK  ] DcsctpOutstandingDataTest.NackBetweenAckBlocksDoesNotAccessOutOfBounds (2.2 ms)
 [ RUN  ] DcsctpOutstandingDataTest.HandlesSacksWithOutOfBoundsTsns
-[  OK  ] DcsctpOutstandingDataTest.HandlesSacksWithOutOfBoundsTsns (3.4 ms)
+[  OK  ] DcsctpOutstandingDataTest.HandlesSacksWithOutOfBoundsTsns (3.3 ms)
 [ RUN  ] DcsctpOutstandingDataTest.RestoreFromStateOverridesDummyInitialTsn
 [  OK  ] DcsctpOutstandingDataTest.RestoreFromStateOverridesDummyInitialTsn (0.0 ms)
 [ RUN  ] DcsctpOutstandingDataTest.HandoverAndRestorePreservesRetransmissionCount
-[  OK  ] DcsctpOutstandingDataTest.HandoverAndRestorePreservesRetransmissionCount (0.2 ms)
+[  OK  ] DcsctpOutstandingDataTest.HandoverAndRestorePreservesRetransmissionCount (0.1 ms)
 [ RUN  ] DcsctpOutstandingDataTest.HandoverAndRestorePreservesAbandonedState
-[  OK  ] DcsctpOutstandingDataTest.HandoverAndRestorePreservesAbandonedState (0.1 ms)
+[  OK  ] DcsctpOutstandingDataTest.HandoverAndRestorePreservesAbandonedState (0.0 ms)
 [ RUN  ] DcsctpOutstandingDataTest.HandoverAndRestorePreservesNackedState
 [  OK  ] DcsctpOutstandingDataTest.HandoverAndRestorePreservesNackedState (0.0 ms)
 [ RUN  ] DcsctpOutstandingDataTest.ExpiresChunkBeforeRetransmittingWhenBehindNonExpiredChunk
@@ -567,17 +567,17 @@
 [ RUN  ] DcsctpOutstandingDataTest.ExpiresChunkOnNackAll
 [  OK  ] DcsctpOutstandingDataTest.ExpiresChunkOnNackAll (0.0 ms)
 [ RUN  ] DcsctpOutstandingDataTest.ExpiresChunkWhenNackedThreeTimes
-[  OK  ] DcsctpOutstandingDataTest.ExpiresChunkWhenNackedThreeTimes (0.1 ms)
+[  OK  ] DcsctpOutstandingDataTest.ExpiresChunkWhenNackedThreeTimes (0.2 ms)
 [ RUN  ] DcsctpOutstandingDataTest.ExpiredChunkDoesNotConsumeRetransmissionBudget
-[  OK  ] DcsctpOutstandingDataTest.ExpiredChunkDoesNotConsumeRetransmissionBudget (0.2 ms)
+[  OK  ] DcsctpOutstandingDataTest.ExpiredChunkDoesNotConsumeRetransmissionBudget (0.1 ms)
 [ RUN  ] DcsctpOutstandingDataTest.DoesNotExpireChunkBeforeExpiryTimestamp
 [  OK  ] DcsctpOutstandingDataTest.DoesNotExpireChunkBeforeExpiryTimestamp (0.0 ms)
 [ RUN  ] DcsctpOutstandingDataTest.ExpiresFastRetransmitLeftoverChunkOnNormalRetransmit
 [  OK  ] DcsctpOutstandingDataTest.ExpiresFastRetransmitLeftoverChunkOnNormalRetransmit (0.1 ms)
 [ RUN  ] DcsctpOutstandingDataTest.ExpiresChunkBeforeRetransmittingWithPlaceholder
-[  OK  ] DcsctpOutstandingDataTest.ExpiresChunkBeforeRetransmittingWithPlaceholder (0.1 ms)
+[  OK  ] DcsctpOutstandingDataTest.ExpiresChunkBeforeRetransmittingWithPlaceholder (0.0 ms)
 [ RUN  ] DcsctpOutstandingDataTest.ExpiresRestoredChunkBeforeRetransmitting
-[  OK  ] DcsctpOutstandingDataTest.ExpiresRestoredChunkBeforeRetransmitting (0.1 ms)
+[  OK  ] DcsctpOutstandingDataTest.ExpiresRestoredChunkBeforeRetransmitting (0.0 ms)
 [ RUN  ] DcsctpRetransmissionErrorCounterTest.HasInitialValue
 [  OK  ] DcsctpRetransmissionErrorCounterTest.HasInitialValue (0.0 ms)
 [ RUN  ] DcsctpRetransmissionErrorCounterTest.ReturnsFalseAtMaximumValue
@@ -589,73 +589,73 @@
 [ RUN  ] DcsctpRetransmissionErrorCounterTest.ClearingCounter
 [  OK  ] DcsctpRetransmissionErrorCounterTest.ClearingCounter (0.0 ms)
 [ RUN  ] DcsctpRetransmissionErrorCounterTest.CanBeLimitless
-[  OK  ] DcsctpRetransmissionErrorCounterTest.CanBeLimitless (0.3 ms)
+[  OK  ] DcsctpRetransmissionErrorCounterTest.CanBeLimitless (0.2 ms)
 [ RUN  ] DcsctpRetransmissionQueueTest.InitialAckedPrevTsn
-[  OK  ] DcsctpRetransmissionQueueTest.InitialAckedPrevTsn (0.4 ms)
+[  OK  ] DcsctpRetransmissionQueueTest.InitialAckedPrevTsn (0.3 ms)
 [ RUN  ] DcsctpRetransmissionQueueTest.SendOneChunk
-[  OK  ] DcsctpRetransmissionQueueTest.SendOneChunk (0.8 ms)
+[  OK  ] DcsctpRetransmissionQueueTest.SendOneChunk (0.3 ms)
 [ RUN  ] DcsctpRetransmissionQueueTest.SendOneChunkAndAck
 [  OK  ] DcsctpRetransmissionQueueTest.SendOneChunkAndAck (0.1 ms)
 [ RUN  ] DcsctpRetransmissionQueueTest.SendThreeChunksAndAckTwo
 [  OK  ] DcsctpRetransmissionQueueTest.SendThreeChunksAndAckTwo (0.1 ms)
 [ RUN  ] DcsctpRetransmissionQueueTest.AckWithGapBlocksFromRFC4960Section334
-[  OK  ] DcsctpRetransmissionQueueTest.AckWithGapBlocksFromRFC4960Section334 (0.2 ms)
+[  OK  ] DcsctpRetransmissionQueueTest.AckWithGapBlocksFromRFC4960Section334 (0.3 ms)
 [ RUN  ] DcsctpRetransmissionQueueTest.ResendPacketsWhenNackedThreeTimes
-[  OK  ] DcsctpRetransmissionQueueTest.ResendPacketsWhenNackedThreeTimes (1.3 ms)
+[  OK  ] DcsctpRetransmissionQueueTest.ResendPacketsWhenNackedThreeTimes (0.6 ms)
 [ RUN  ] DcsctpRetransmissionQueueTest.RestartsT3RtxOnRetransmitFirstOutstandingTSN
-[  OK  ] DcsctpRetransmissionQueueTest.RestartsT3RtxOnRetransmitFirstOutstandingTSN (0.6 ms)
+[  OK  ] DcsctpRetransmissionQueueTest.RestartsT3RtxOnRetransmitFirstOutstandingTSN (0.4 ms)
 [ RUN  ] DcsctpRetransmissionQueueTest.CanOnlyProduceTwoPacketsButWantsToSendThree
 [  OK  ] DcsctpRetransmissionQueueTest.CanOnlyProduceTwoPacketsButWantsToSendThree (0.2 ms)
 [ RUN  ] DcsctpRetransmissionQueueTest.RetransmitsOnT3Expiry
-[  OK  ] DcsctpRetransmissionQueueTest.RetransmitsOnT3Expiry (0.2 ms)
+[  OK  ] DcsctpRetransmissionQueueTest.RetransmitsOnT3Expiry (0.1 ms)
 [ RUN  ] DcsctpRetransmissionQueueTest.LimitedRetransmissionOnlyWithRfc3758Support
-[  OK  ] DcsctpRetransmissionQueueTest.LimitedRetransmissionOnlyWithRfc3758Support (0.3 ms)
+[  OK  ] DcsctpRetransmissionQueueTest.LimitedRetransmissionOnlyWithRfc3758Support (0.2 ms)
 [ RUN  ] DcsctpRetransmissionQueueTest.LimitsRetransmissionsAsUdp
-[  OK  ] DcsctpRetransmissionQueueTest.LimitsRetransmissionsAsUdp (0.2 ms)
+[  OK  ] DcsctpRetransmissionQueueTest.LimitsRetransmissionsAsUdp (0.1 ms)
 [ RUN  ] DcsctpRetransmissionQueueTest.LimitsRetransmissionsToThreeSends
-[  OK  ] DcsctpRetransmissionQueueTest.LimitsRetransmissionsToThreeSends (0.3 ms)
+[  OK  ] DcsctpRetransmissionQueueTest.LimitsRetransmissionsToThreeSends (0.2 ms)
 [ RUN  ] DcsctpRetransmissionQueueTest.RetransmitsWhenSendBufferIsFullT3Expiry
 [  OK  ] DcsctpRetransmissionQueueTest.RetransmitsWhenSendBufferIsFullT3Expiry (0.1 ms)
 [ RUN  ] DcsctpRetransmissionQueueTest.ProducesValidForwardTsn
-[  OK  ] DcsctpRetransmissionQueueTest.ProducesValidForwardTsn (0.4 ms)
+[  OK  ] DcsctpRetransmissionQueueTest.ProducesValidForwardTsn (0.9 ms)
 [ RUN  ] DcsctpRetransmissionQueueTest.ProducesValidForwardTsnWhenFullySent
-[  OK  ] DcsctpRetransmissionQueueTest.ProducesValidForwardTsnWhenFullySent (0.8 ms)
+[  OK  ] DcsctpRetransmissionQueueTest.ProducesValidForwardTsnWhenFullySent (0.3 ms)
 [ RUN  ] DcsctpRetransmissionQueueTest.ProducesValidIForwardTsn
-[  OK  ] DcsctpRetransmissionQueueTest.ProducesValidIForwardTsn (0.6 ms)
+[  OK  ] DcsctpRetransmissionQueueTest.ProducesValidIForwardTsn (0.4 ms)
 [ RUN  ] DcsctpRetransmissionQueueTest.MeasureRTT
 [  OK  ] DcsctpRetransmissionQueueTest.MeasureRTT (0.2 ms)
 [ RUN  ] DcsctpRetransmissionQueueTest.ValidateCumTsnAtRest
 [  OK  ] DcsctpRetransmissionQueueTest.ValidateCumTsnAtRest (0.1 ms)
 [ RUN  ] DcsctpRetransmissionQueueTest.ValidateCumTsnAckOnInflightData
-[  OK  ] DcsctpRetransmissionQueueTest.ValidateCumTsnAckOnInflightData (0.3 ms)
+[  OK  ] DcsctpRetransmissionQueueTest.ValidateCumTsnAckOnInflightData (0.2 ms)
 [ RUN  ] DcsctpRetransmissionQueueTest.HandleGapAckBlocksMatchingNoInflightData
-[  OK  ] DcsctpRetransmissionQueueTest.HandleGapAckBlocksMatchingNoInflightData (0.2 ms)
+[  OK  ] DcsctpRetransmissionQueueTest.HandleGapAckBlocksMatchingNoInflightData (0.1 ms)
 [ RUN  ] DcsctpRetransmissionQueueTest.HandleInvalidGapAckBlocks
 [  OK  ] DcsctpRetransmissionQueueTest.HandleInvalidGapAckBlocks (0.1 ms)
 [ RUN  ] DcsctpRetransmissionQueueTest.GapAckBlocksDoNotMoveCumTsnAck
 [  OK  ] DcsctpRetransmissionQueueTest.GapAckBlocksDoNotMoveCumTsnAck (0.2 ms)
 [ RUN  ] DcsctpRetransmissionQueueTest.StaysWithinAvailableSize
-[  OK  ] DcsctpRetransmissionQueueTest.StaysWithinAvailableSize (0.3 ms)
+[  OK  ] DcsctpRetransmissionQueueTest.StaysWithinAvailableSize (0.1 ms)
 [ RUN  ] DcsctpRetransmissionQueueTest.AccountsNackedAbandonedChunksAsNotOutstanding
-[  OK  ] DcsctpRetransmissionQueueTest.AccountsNackedAbandonedChunksAsNotOutstanding (0.5 ms)
+[  OK  ] DcsctpRetransmissionQueueTest.AccountsNackedAbandonedChunksAsNotOutstanding (0.6 ms)
 [ RUN  ] DcsctpRetransmissionQueueTest.ExpireFromSendQueueWhenPartiallySent
-[  OK  ] DcsctpRetransmissionQueueTest.ExpireFromSendQueueWhenPartiallySent (0.4 ms)
+[  OK  ] DcsctpRetransmissionQueueTest.ExpireFromSendQueueWhenPartiallySent (0.3 ms)
 [ RUN  ] DcsctpRetransmissionQueueTest.ExpireCorrectMessageFromSendQueue
-[  OK  ] DcsctpRetransmissionQueueTest.ExpireCorrectMessageFromSendQueue (0.7 ms)
+[  OK  ] DcsctpRetransmissionQueueTest.ExpireCorrectMessageFromSendQueue (0.4 ms)
 [ RUN  ] DcsctpRetransmissionQueueTest.LimitsRetransmissionsOnlyWhenNackedThreeTimes
-[  OK  ] DcsctpRetransmissionQueueTest.LimitsRetransmissionsOnlyWhenNackedThreeTimes (0.3 ms)
+[  OK  ] DcsctpRetransmissionQueueTest.LimitsRetransmissionsOnlyWhenNackedThreeTimes (0.2 ms)
 [ RUN  ] DcsctpRetransmissionQueueTest.AbandonsRtxLimit2WhenNackedNineTimes
 [  OK  ] DcsctpRetransmissionQueueTest.AbandonsRtxLimit2WhenNackedNineTimes (0.5 ms)
 [ RUN  ] DcsctpRetransmissionQueueTest.CwndRecoversWhenAcking
-[  OK  ] DcsctpRetransmissionQueueTest.CwndRecoversWhenAcking (0.2 ms)
+[  OK  ] DcsctpRetransmissionQueueTest.CwndRecoversWhenAcking (0.1 ms)
 [ RUN  ] DcsctpRetransmissionQueueTest.ReadyForHandoverWhenHasNoOutstandingData
 [  OK  ] DcsctpRetransmissionQueueTest.ReadyForHandoverWhenHasNoOutstandingData (0.1 ms)
 [ RUN  ] DcsctpRetransmissionQueueTest.ReadyForHandoverWhenNothingToRetransmit
-[  OK  ] DcsctpRetransmissionQueueTest.ReadyForHandoverWhenNothingToRetransmit (0.4 ms)
+[  OK  ] DcsctpRetransmissionQueueTest.ReadyForHandoverWhenNothingToRetransmit (0.8 ms)
 [ RUN  ] DcsctpRetransmissionQueueTest.HandoverTest
-[  OK  ] DcsctpRetransmissionQueueTest.HandoverTest (0.4 ms)
+[  OK  ] DcsctpRetransmissionQueueTest.HandoverTest (0.3 ms)
 [ RUN  ] DcsctpRetransmissionQueueTest.CanAlwaysSendOnePacket
-[  OK  ] DcsctpRetransmissionQueueTest.CanAlwaysSendOnePacket (1.0 ms)
+[  OK  ] DcsctpRetransmissionQueueTest.CanAlwaysSendOnePacket (0.5 ms)
 [ RUN  ] DcsctpRetransmissionQueueTest.UpdatesRwndFromSackAndUnackedPayloadBytes
 [  OK  ] DcsctpRetransmissionQueueTest.UpdatesRwndFromSackAndUnackedPayloadBytes (0.1 ms)
 [ RUN  ] DcsctpRetransmissionQueueTest.HandoverIncludesOutstandingData
@@ -675,7 +675,7 @@
 [ RUN  ] DcsctpRetransmissionTimeoutTest.WillNeverGoBelowMinimumRto
 [  OK  ] DcsctpRetransmissionTimeoutTest.WillNeverGoBelowMinimumRto (0.4 ms)
 [ RUN  ] DcsctpRetransmissionTimeoutTest.WillNeverGoAboveMaximumRto
-[  OK  ] DcsctpRetransmissionTimeoutTest.WillNeverGoAboveMaximumRto (0.8 ms)
+[  OK  ] DcsctpRetransmissionTimeoutTest.WillNeverGoAboveMaximumRto (0.9 ms)
 [ RUN  ] DcsctpRetransmissionTimeoutTest.CalculatesRtoForStableRtt
 [  OK  ] DcsctpRetransmissionTimeoutTest.CalculatesRtoForStableRtt (0.0 ms)
 [ RUN  ] DcsctpRetransmissionTimeoutTest.CalculatesRtoForUnstableRtt
@@ -691,41 +691,41 @@
 [ RUN  ] DcsctpRRSendQueueTest.EmptyBuffer
 [  OK  ] DcsctpRRSendQueueTest.EmptyBuffer (0.2 ms)
 [ RUN  ] DcsctpRRSendQueueTest.AddAndGetSingleChunk
-[  OK  ] DcsctpRRSendQueueTest.AddAndGetSingleChunk (0.2 ms)
+[  OK  ] DcsctpRRSendQueueTest.AddAndGetSingleChunk (0.3 ms)
 [ RUN  ] DcsctpRRSendQueueTest.CarveOutBeginningMiddleAndEnd
-[  OK  ] DcsctpRRSendQueueTest.CarveOutBeginningMiddleAndEnd (0.3 ms)
+[  OK  ] DcsctpRRSendQueueTest.CarveOutBeginningMiddleAndEnd (0.1 ms)
 [ RUN  ] DcsctpRRSendQueueTest.GetChunksFromTwoMessages
 [  OK  ] DcsctpRRSendQueueTest.GetChunksFromTwoMessages (0.1 ms)
 [ RUN  ] DcsctpRRSendQueueTest.BufferBecomesFullAndEmptied
-[  OK  ] DcsctpRRSendQueueTest.BufferBecomesFullAndEmptied (0.5 ms)
+[  OK  ] DcsctpRRSendQueueTest.BufferBecomesFullAndEmptied (0.2 ms)
 [ RUN  ] DcsctpRRSendQueueTest.DefaultsToOrderedSend
 [  OK  ] DcsctpRRSendQueueTest.DefaultsToOrderedSend (0.1 ms)
 [ RUN  ] DcsctpRRSendQueueTest.ProduceWithLifetimeExpiry
 [  OK  ] DcsctpRRSendQueueTest.ProduceWithLifetimeExpiry (0.3 ms)
 [ RUN  ] DcsctpRRSendQueueTest.DiscardPartialPackets
-[  OK  ] DcsctpRRSendQueueTest.DiscardPartialPackets (0.2 ms)
+[  OK  ] DcsctpRRSendQueueTest.DiscardPartialPackets (0.1 ms)
 [ RUN  ] DcsctpRRSendQueueTest.PrepareResetStreamsDiscardsStream
-[  OK  ] DcsctpRRSendQueueTest.PrepareResetStreamsDiscardsStream (0.2 ms)
+[  OK  ] DcsctpRRSendQueueTest.PrepareResetStreamsDiscardsStream (0.1 ms)
 [ RUN  ] DcsctpRRSendQueueTest.PrepareResetStreamsNotPartialPackets
 [  OK  ] DcsctpRRSendQueueTest.PrepareResetStreamsNotPartialPackets (0.1 ms)
 [ RUN  ] DcsctpRRSendQueueTest.EnqueuedItemsArePausedDuringStreamReset
 [  OK  ] DcsctpRRSendQueueTest.EnqueuedItemsArePausedDuringStreamReset (0.1 ms)
 [ RUN  ] DcsctpRRSendQueueTest.PausedStreamsStillSendPartialMessagesUntilEnd
-[  OK  ] DcsctpRRSendQueueTest.PausedStreamsStillSendPartialMessagesUntilEnd (0.2 ms)
+[  OK  ] DcsctpRRSendQueueTest.PausedStreamsStillSendPartialMessagesUntilEnd (0.1 ms)
 [ RUN  ] DcsctpRRSendQueueTest.CommittingResetsSSN
 [  OK  ] DcsctpRRSendQueueTest.CommittingResetsSSN (0.1 ms)
 [ RUN  ] DcsctpRRSendQueueTest.CommittingDoesNotResetMessageId
-[  OK  ] DcsctpRRSendQueueTest.CommittingDoesNotResetMessageId (0.2 ms)
+[  OK  ] DcsctpRRSendQueueTest.CommittingDoesNotResetMessageId (0.1 ms)
 [ RUN  ] DcsctpRRSendQueueTest.CommittingResetsSSNForPausedStreamsOnly
-[  OK  ] DcsctpRRSendQueueTest.CommittingResetsSSNForPausedStreamsOnly (0.3 ms)
+[  OK  ] DcsctpRRSendQueueTest.CommittingResetsSSNForPausedStreamsOnly (0.2 ms)
 [ RUN  ] DcsctpRRSendQueueTest.RollBackResumesSSN
 [  OK  ] DcsctpRRSendQueueTest.RollBackResumesSSN (0.2 ms)
 [ RUN  ] DcsctpRRSendQueueTest.ReturnsFragmentsForOneMessageBeforeMovingToNext
-[  OK  ] DcsctpRRSendQueueTest.ReturnsFragmentsForOneMessageBeforeMovingToNext (0.2 ms)
+[  OK  ] DcsctpRRSendQueueTest.ReturnsFragmentsForOneMessageBeforeMovingToNext (0.1 ms)
 [ RUN  ] DcsctpRRSendQueueTest.ReturnsAlsoSmallFragmentsBeforeMovingToNext
-[  OK  ] DcsctpRRSendQueueTest.ReturnsAlsoSmallFragmentsBeforeMovingToNext (0.2 ms)
+[  OK  ] DcsctpRRSendQueueTest.ReturnsAlsoSmallFragmentsBeforeMovingToNext (0.1 ms)
 [ RUN  ] DcsctpRRSendQueueTest.WillCycleInRoundRobinFashionBetweenStreams
-[  OK  ] DcsctpRRSendQueueTest.WillCycleInRoundRobinFashionBetweenStreams (0.4 ms)
+[  OK  ] DcsctpRRSendQueueTest.WillCycleInRoundRobinFashionBetweenStreams (0.3 ms)
 [ RUN  ] DcsctpRRSendQueueTest.DoesntTriggerOnBufferedAmountLowWhenSetToZero
 [  OK  ] DcsctpRRSendQueueTest.DoesntTriggerOnBufferedAmountLowWhenSetToZero (0.0 ms)
 [ RUN  ] DcsctpRRSendQueueTest.TriggersOnBufferedAmountAtZeroLowWhenSent
@@ -735,9 +735,9 @@
 [ RUN  ] DcsctpRRSendQueueTest.OnlyTriggersWhenTransitioningFromAboveToBelowOrEqual
 [  OK  ] DcsctpRRSendQueueTest.OnlyTriggersWhenTransitioningFromAboveToBelowOrEqual (0.1 ms)
 [ RUN  ] DcsctpRRSendQueueTest.WillTriggerOnBufferedAmountLowSetAboveZero
-[  OK  ] DcsctpRRSendQueueTest.WillTriggerOnBufferedAmountLowSetAboveZero (0.2 ms)
+[  OK  ] DcsctpRRSendQueueTest.WillTriggerOnBufferedAmountLowSetAboveZero (0.1 ms)
 [ RUN  ] DcsctpRRSendQueueTest.WillRetriggerOnBufferedAmountLowSetAboveZero
-[  OK  ] DcsctpRRSendQueueTest.WillRetriggerOnBufferedAmountLowSetAboveZero (0.2 ms)
+[  OK  ] DcsctpRRSendQueueTest.WillRetriggerOnBufferedAmountLowSetAboveZero (0.1 ms)
 [ RUN  ] DcsctpRRSendQueueTest.TriggersOnBufferedAmountLowOnThresholdChanged
 [  OK  ] DcsctpRRSendQueueTest.TriggersOnBufferedAmountLowOnThresholdChanged (0.1 ms)
 [ RUN  ] DcsctpRRSendQueueTest.OnTotalBufferedAmountLowDoesNotTriggerOnBufferFillingUp
@@ -745,19 +745,19 @@
 [ RUN  ] DcsctpRRSendQueueTest.TriggersOnTotalBufferedAmountLowWhenCrossing
 [  OK  ] DcsctpRRSendQueueTest.TriggersOnTotalBufferedAmountLowWhenCrossing (0.1 ms)
 [ RUN  ] DcsctpRRSendQueueTest.WillStayInAStreamAsLongAsThatMessageIsSending
-[  OK  ] DcsctpRRSendQueueTest.WillStayInAStreamAsLongAsThatMessageIsSending (0.4 ms)
+[  OK  ] DcsctpRRSendQueueTest.WillStayInAStreamAsLongAsThatMessageIsSending (0.2 ms)
 [ RUN  ] DcsctpRRSendQueueTest.StreamsHaveInitialPriority
 [  OK  ] DcsctpRRSendQueueTest.StreamsHaveInitialPriority (0.1 ms)
 [ RUN  ] DcsctpRRSendQueueTest.CanChangeStreamPriority
-[  OK  ] DcsctpRRSendQueueTest.CanChangeStreamPriority (0.1 ms)
+[  OK  ] DcsctpRRSendQueueTest.CanChangeStreamPriority (0.0 ms)
 [ RUN  ] DcsctpRRSendQueueTest.WillHandoverPriority
 [  OK  ] DcsctpRRSendQueueTest.WillHandoverPriority (0.1 ms)
 [ RUN  ] DcsctpRRSendQueueTest.RestoreFromHandoverStateQueuedMessages
-[  OK  ] DcsctpRRSendQueueTest.RestoreFromHandoverStateQueuedMessages (0.3 ms)
+[  OK  ] DcsctpRRSendQueueTest.RestoreFromHandoverStateQueuedMessages (0.2 ms)
 [ RUN  ] DcsctpRRSendQueueTest.HandoverPartiallySentMessage
-[  OK  ] DcsctpRRSendQueueTest.HandoverPartiallySentMessage (0.2 ms)
+[  OK  ] DcsctpRRSendQueueTest.HandoverPartiallySentMessage (0.1 ms)
 [ RUN  ] DcsctpRRSendQueueTest.WillSendMessagesByPrio
-[  OK  ] DcsctpRRSendQueueTest.WillSendMessagesByPrio (0.3 ms)
+[  OK  ] DcsctpRRSendQueueTest.WillSendMessagesByPrio (0.2 ms)
 [ RUN  ] DcsctpRRSendQueueTest.WillSendLifecycleExpireWhenExpiredInSendQueue
 [  OK  ] DcsctpRRSendQueueTest.WillSendLifecycleExpireWhenExpiredInSendQueue (0.1 ms)
 [ RUN  ] DcsctpRRSendQueueTest.WillSendLifecycleExpireWhenDiscardingDuringPause
@@ -769,37 +769,37 @@
 [ RUN  ] DcsctpStreamSchedulerTest.CanSetAndGetStreamProperties
 [  OK  ] DcsctpStreamSchedulerTest.CanSetAndGetStreamProperties (0.0 ms)
 [ RUN  ] DcsctpStreamSchedulerTest.CanProduceFromSingleStream
-[  OK  ] DcsctpStreamSchedulerTest.CanProduceFromSingleStream (1.3 ms)
+[  OK  ] DcsctpStreamSchedulerTest.CanProduceFromSingleStream (0.8 ms)
 [ RUN  ] DcsctpStreamSchedulerTest.WillRoundRobinBetweenStreams
-[  OK  ] DcsctpStreamSchedulerTest.WillRoundRobinBetweenStreams (0.3 ms)
+[  OK  ] DcsctpStreamSchedulerTest.WillRoundRobinBetweenStreams (0.2 ms)
 [ RUN  ] DcsctpStreamSchedulerTest.WillRoundRobinOnlyWhenFinishedProducingChunk
-[  OK  ] DcsctpStreamSchedulerTest.WillRoundRobinOnlyWhenFinishedProducingChunk (0.4 ms)
+[  OK  ] DcsctpStreamSchedulerTest.WillRoundRobinOnlyWhenFinishedProducingChunk (0.2 ms)
 [ RUN  ] DcsctpStreamSchedulerTest.StreamsCanBeMadeInactive
 [  OK  ] DcsctpStreamSchedulerTest.StreamsCanBeMadeInactive (0.1 ms)
 [ RUN  ] DcsctpStreamSchedulerTest.SingleStreamCanBeResumed
-[  OK  ] DcsctpStreamSchedulerTest.SingleStreamCanBeResumed (0.3 ms)
+[  OK  ] DcsctpStreamSchedulerTest.SingleStreamCanBeResumed (0.1 ms)
 [ RUN  ] DcsctpStreamSchedulerTest.WillRoundRobinWithPausedStream
-[  OK  ] DcsctpStreamSchedulerTest.WillRoundRobinWithPausedStream (0.4 ms)
+[  OK  ] DcsctpStreamSchedulerTest.WillRoundRobinWithPausedStream (0.2 ms)
 [ RUN  ] DcsctpStreamSchedulerTest.WillDistributeRoundRobinPacketsEvenlyTwoStreams
-[  OK  ] DcsctpStreamSchedulerTest.WillDistributeRoundRobinPacketsEvenlyTwoStreams (0.3 ms)
+[  OK  ] DcsctpStreamSchedulerTest.WillDistributeRoundRobinPacketsEvenlyTwoStreams (0.2 ms)
 [ RUN  ] DcsctpStreamSchedulerTest.WillDistributeEvenlyWithPausedAndAddedStreams
-[  OK  ] DcsctpStreamSchedulerTest.WillDistributeEvenlyWithPausedAndAddedStreams (1.4 ms)
+[  OK  ] DcsctpStreamSchedulerTest.WillDistributeEvenlyWithPausedAndAddedStreams (0.9 ms)
 [ RUN  ] DcsctpStreamSchedulerTest.WillDoFairQueuingWithSamePriority
-[  OK  ] DcsctpStreamSchedulerTest.WillDoFairQueuingWithSamePriority (0.3 ms)
+[  OK  ] DcsctpStreamSchedulerTest.WillDoFairQueuingWithSamePriority (0.2 ms)
 [ RUN  ] DcsctpStreamSchedulerTest.WillDoWeightedFairQueuingSameSizeDifferentPriority
-[  OK  ] DcsctpStreamSchedulerTest.WillDoWeightedFairQueuingSameSizeDifferentPriority (0.4 ms)
+[  OK  ] DcsctpStreamSchedulerTest.WillDoWeightedFairQueuingSameSizeDifferentPriority (0.3 ms)
 [ RUN  ] DcsctpStreamSchedulerTest.WillDoWeightedFairQueuingDifferentSizeAndPriority
-[  OK  ] DcsctpStreamSchedulerTest.WillDoWeightedFairQueuingDifferentSizeAndPriority (0.4 ms)
+[  OK  ] DcsctpStreamSchedulerTest.WillDoWeightedFairQueuingDifferentSizeAndPriority (0.3 ms)
 [ RUN  ] DcsctpStreamSchedulerTest.WillDistributeWFQPacketsInTwoStreamsByPriority
-[  OK  ] DcsctpStreamSchedulerTest.WillDistributeWFQPacketsInTwoStreamsByPriority (0.4 ms)
+[  OK  ] DcsctpStreamSchedulerTest.WillDistributeWFQPacketsInTwoStreamsByPriority (0.3 ms)
 [ RUN  ] DcsctpStreamSchedulerTest.WillDistributeWFQPacketsInFourStreamsByPriority
-[  OK  ] DcsctpStreamSchedulerTest.WillDistributeWFQPacketsInFourStreamsByPriority (1.5 ms)
+[  OK  ] DcsctpStreamSchedulerTest.WillDistributeWFQPacketsInFourStreamsByPriority (0.9 ms)
 [ RUN  ] DcsctpStreamSchedulerTest.WillDistributeFromTwoStreamsFairly
-[  OK  ] DcsctpStreamSchedulerTest.WillDistributeFromTwoStreamsFairly (2.7 ms)
+[  OK  ] DcsctpStreamSchedulerTest.WillDistributeFromTwoStreamsFairly (1.4 ms)
 [ RUN  ] DcsctpStreamSchedulerTest.WillDistributeFromFourStreamsFairly
-[  OK  ] DcsctpStreamSchedulerTest.WillDistributeFromFourStreamsFairly (6.2 ms)
+[  OK  ] DcsctpStreamSchedulerTest.WillDistributeFromFourStreamsFairly (1.5 ms)
 [ RUN  ] DcsctpStreamSchedulerTest.SendLargeMessageWithSmallMtu
-[  OK  ] DcsctpStreamSchedulerTest.SendLargeMessageWithSmallMtu (0.2 ms)
+[  OK  ] DcsctpStreamSchedulerTest.SendLargeMessageWithSmallMtu (0.1 ms)
 [ RUN  ] DcsctpStreamSchedulerTest.SendLargeMessageWithLargeMtu
 [  OK  ] DcsctpStreamSchedulerTest.SendLargeMessageWithLargeMtu (0.1 ms)
 

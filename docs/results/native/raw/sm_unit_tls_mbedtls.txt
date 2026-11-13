@@ -1,5 +1,5 @@
 [ RUN  ] TlsMessageDigest.KnownDigests
-[  OK  ] TlsMessageDigest.KnownDigests (0.3 ms)
+[  OK  ] TlsMessageDigest.KnownDigests (0.5 ms)
 [ RUN  ] TlsMessageDigest.DigestIsReusableAfterFinish
 [  OK  ] TlsMessageDigest.DigestIsReusableAfterFinish (0.0 ms)
 [ RUN  ] TlsMessageDigest.Fips180
@@ -7,53 +7,53 @@
 [ RUN  ] TlsMessageDigest.HmacVectors
 [  OK  ] TlsMessageDigest.HmacVectors (0.0 ms)
 [ RUN  ] TlsCryptoRandom.Strings
-[  OK  ] TlsCryptoRandom.Strings (0.5 ms)
+[  OK  ] TlsCryptoRandom.Strings (0.2 ms)
 [ RUN  ] TlsCryptoRandom.TestModeIsRepeatable
 [  OK  ] TlsCryptoRandom.TestModeIsRepeatable (0.0 ms)
 [ RUN  ] TlsSslIdentity.CreatesAnEcdsaIdentityWithASha256Certificate
 [  OK  ] TlsSslIdentity.CreatesAnEcdsaIdentityWithASha256Certificate (0.9 ms)
 [ RUN  ] TlsSslIdentity.RsaIdentity
-[  OK  ] TlsSslIdentity.RsaIdentity (107.1 ms)
+[  OK  ] TlsSslIdentity.RsaIdentity (255.9 ms)
 [ RUN  ] TlsSslIdentity.PemRoundTrip
 [  OK  ] TlsSslIdentity.PemRoundTrip (0.6 ms)
 [ RUN  ] TlsSslIdentity.CreateForTestTakesItsValidity
 [  OK  ] TlsSslIdentity.CreateForTestTakesItsValidity (0.2 ms)
 [ RUN  ] TlsSslFingerprint.FromIdentityAndRfc4572
-[  OK  ] TlsSslFingerprint.FromIdentityAndRfc4572 (0.4 ms)
+[  OK  ] TlsSslFingerprint.FromIdentityAndRfc4572 (0.3 ms)
 [ RUN  ] TlsSslFingerprint.RejectsMalformedRfc4572
 [  OK  ] TlsSslFingerprint.RejectsMalformedRfc4572 (0.0 ms)
 [ RUN  ] TlsDtlsTransport.HandshakeVerifiesFingerprintsAndAgreesOnSrtp
-[  OK  ] TlsDtlsTransport.HandshakeVerifiesFingerprintsAndAgreesOnSrtp (3.1 ms)
+[  OK  ] TlsDtlsTransport.HandshakeVerifiesFingerprintsAndAgreesOnSrtp (2.8 ms)
 [ RUN  ] TlsDtlsTransport.ApplicationDataBothWays
 [  OK  ] TlsDtlsTransport.ApplicationDataBothWays (2.4 ms)
 [ RUN  ] TlsDtlsTransport.WrongFingerprintFails
 [  OK  ] TlsDtlsTransport.WrongFingerprintFails (1.0 ms)
 [ RUN  ] TlsDtlsTransport.FingerprintAfterTheHandshake
-[  OK  ] TlsDtlsTransport.FingerprintAfterTheHandshake (4.9 ms)
+[  OK  ] TlsDtlsTransport.FingerprintAfterTheHandshake (5.2 ms)
 [ RUN  ] TlsDtlsTransport.RetransmitsALostFlight
 [  OK  ] TlsDtlsTransport.RetransmitsALostFlight (2.4 ms)
 [ RUN  ] TlsDtlsTransport.CapsAtDtls12AndPicksACommonProfile
-[  OK  ] TlsDtlsTransport.CapsAtDtls12AndPicksACommonProfile (2.3 ms)
+[  OK  ] TlsDtlsTransport.CapsAtDtls12AndPicksACommonProfile (2.4 ms)
 [ RUN  ] TlsDtlsTransport.MbedTlsSkipsGcmProfilesAndRefusesOnlyGcm
-[  OK  ] TlsDtlsTransport.MbedTlsSkipsGcmProfilesAndRefusesOnlyGcm (2.5 ms)
+[  OK  ] TlsDtlsTransport.MbedTlsSkipsGcmProfilesAndRefusesOnlyGcm (2.6 ms)
 [ RUN  ] TlsTlsStream.HandshakeAtTls13WithSniAndDataBothWays
 [  OK  ] TlsTlsStream.HandshakeAtTls13WithSniAndDataBothWays (1.8 ms)
 [ RUN  ] TlsTlsStream.Tls12WhenCapped
-[  OK  ] TlsTlsStream.Tls12WhenCapped (1.7 ms)
+[  OK  ] TlsTlsStream.Tls12WhenCapped (1.8 ms)
 [ RUN  ] TlsTlsStream.WriteBeforeHandshakeWouldBlock
 [  OK  ] TlsTlsStream.WriteBeforeHandshakeWouldBlock (0.4 ms)
 [ RUN  ] TlsTlsStream.AlpnAndCurvesPassedThrough
-[  OK  ] TlsTlsStream.AlpnAndCurvesPassedThrough (1.6 ms)
+[  OK  ] TlsTlsStream.AlpnAndCurvesPassedThrough (1.5 ms)
 [ RUN  ] TlsTlsStream.CurvesTheServerLacksFailTheHandshake
-[  OK  ] TlsTlsStream.CurvesTheServerLacksFailTheHandshake (0.5 ms)
+[  OK  ] TlsTlsStream.CurvesTheServerLacksFailTheHandshake (0.4 ms)
 [ RUN  ] TlsTlsStream.TransformAlpnProtocols
 [  OK  ] TlsTlsStream.TransformAlpnProtocols (0.0 ms)
 [ RUN  ] TlsTlsStream.UntrustedCertificateRefused
-[  OK  ] TlsTlsStream.UntrustedCertificateRefused (1.2 ms)
+[  OK  ] TlsTlsStream.UntrustedCertificateRefused (1.3 ms)
 [ RUN  ] TlsTlsStream.SystemRootsDoNotTrustASelfSignedCertificate
 [  OK  ] TlsTlsStream.SystemRootsDoNotTrustASelfSignedCertificate (2.8 ms)
 [ RUN  ] TlsTlsStream.UntrustedCertificateAcceptedWhenIgnoringBadCerts
-[  OK  ] TlsTlsStream.UntrustedCertificateAcceptedWhenIgnoringBadCerts (1.8 ms)
+[  OK  ] TlsTlsStream.UntrustedCertificateAcceptedWhenIgnoringBadCerts (1.7 ms)
 [ RUN  ] TlsTlsStream.HostNameMismatchFailsThePostConnectionCheck
 [  OK  ] TlsTlsStream.HostNameMismatchFailsThePostConnectionCheck (3.2 ms)
 [ RUN  ] TlsTlsStream.EmptyHostNameNeverMatches

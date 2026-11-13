@@ -3,7 +3,7 @@
 [ RUN  ] BitrateAdjuster.SmallStepsAddUpPastTolerance
 [  OK  ] BitrateAdjuster.SmallStepsAddUpPastTolerance (0.0 ms)
 [ RUN  ] BitrateAdjuster.OvershootLowersToMin
-[  OK  ] BitrateAdjuster.OvershootLowersToMin (0.3 ms)
+[  OK  ] BitrateAdjuster.OvershootLowersToMin (0.0 ms)
 [ RUN  ] BitrateAdjuster.UndershootRaisesToMaxOnly
 [  OK  ] BitrateAdjuster.UndershootRaisesToMaxOnly (0.0 ms)
 [ RUN  ] BitrateAdjuster.SmallUndershootKeepsRate
@@ -11,7 +11,7 @@
 [ RUN  ] BitrateAdjuster.WaitsForSecondAndThirtyFrames
 [  OK  ] BitrateAdjuster.WaitsForSecondAndThirtyFrames (0.0 ms)
 [ RUN  ] FrameCadenceAdapter.PassthroughDeliversEveryFrameAtOnce
-[  OK  ] FrameCadenceAdapter.PassthroughDeliversEveryFrameAtOnce (0.1 ms)
+[  OK  ] FrameCadenceAdapter.PassthroughDeliversEveryFrameAtOnce (0.0 ms)
 [ RUN  ] FrameCadenceAdapter.ZeroHertzOnlyForScreenshareWithMinFpsZero
 [  OK  ] FrameCadenceAdapter.ZeroHertzOnlyForScreenshareWithMinFpsZero (0.0 ms)
 [ RUN  ] FrameCadenceAdapter.DelaysAFrameOnePeriodThenRepeatsAtTheFrameRateUntilConverged
@@ -31,11 +31,11 @@
 [ RUN  ] FrameCadenceAdapter.FrameRateAboveOneMegahertzStillAdvancesTime
 [  OK  ] FrameCadenceAdapter.FrameRateAboveOneMegahertzStillAdvancesTime (0.1 ms)
 [ RUN  ] QualityConvergence.StaticThresholdsAsLibwebrtc
-[  OK  ] QualityConvergence.StaticThresholdsAsLibwebrtc (0.1 ms)
+[  OK  ] QualityConvergence.StaticThresholdsAsLibwebrtc (0.0 ms)
 [ RUN  ] QualityConvergence.DynamicDetectionOverRefreshFrames
 [  OK  ] QualityConvergence.DynamicDetectionOverRefreshFrames (0.0 ms)
 [ RUN  ] ResourceAdaptationProcessor.DisabledByDefault
-[  OK  ] ResourceAdaptationProcessor.DisabledByDefault (0.1 ms)
+[  OK  ] ResourceAdaptationProcessor.DisabledByDefault (0.0 ms)
 [ RUN  ] ResourceAdaptationProcessor.InsufficientInput
 [  OK  ] ResourceAdaptationProcessor.InsufficientInput (0.0 ms)
 [ RUN  ] ResourceAdaptationProcessor.OveruseTriggersRestrictingResolutionInMaintainFrameRate
@@ -89,7 +89,7 @@
 [ RUN  ] Simulcast.BandwidthAboveTotalMaxBitrateGivenToHighestStream
 [  OK  ] Simulcast.BandwidthAboveTotalMaxBitrateGivenToHighestStream (0.0 ms)
 [ RUN  ] Simulcast.GetConfig
-[  OK  ] Simulcast.GetConfig (0.1 ms)
+[  OK  ] Simulcast.GetConfig (0.0 ms)
 [ RUN  ] Simulcast.GetConfigH265
 [  OK  ] Simulcast.GetConfigH265 (0.0 ms)
 [ RUN  ] Simulcast.GetConfigWithBaseHeavyVP8TL3RateAllocation
@@ -213,17 +213,17 @@
 [ RUN  ] CodecFallback.InitializesMainEncoder
 [  OK  ] CodecFallback.InitializesMainEncoder (0.0 ms)
 [ RUN  ] CodecFallback.InitFailureUsesSoftware
-[  OK  ] CodecFallback.InitFailureUsesSoftware (0.1 ms)
+[  OK  ] CodecFallback.InitFailureUsesSoftware (0.0 ms)
 [ RUN  ] CodecFallback.SimulcastNotSupportedDoesNotFallBack
 [  OK  ] CodecFallback.SimulcastNotSupportedDoesNotFallBack (0.0 ms)
 [ RUN  ] CodecFallback.EncodeRequestsFallbackOnlyWithFallbackSoftware
-[  OK  ] CodecFallback.EncodeRequestsFallbackOnlyWithFallbackSoftware (0.4 ms)
+[  OK  ] CodecFallback.EncodeRequestsFallbackOnlyWithFallbackSoftware (0.0 ms)
 [ RUN  ] CodecFallback.FailedFallbackInitKeepsMainEncoder
 [  OK  ] CodecFallback.FailedFallbackInitKeepsMainEncoder (0.0 ms)
 [ RUN  ] CodecFallback.ReleaseAndReinitTriesMainAgain
 [  OK  ] CodecFallback.ReleaseAndReinitTriesMainAgain (0.0 ms)
 [ RUN  ] CodecFallback.ForcedFallbackByResolution
-[  OK  ] CodecFallback.ForcedFallbackByResolution (0.1 ms)
+[  OK  ] CodecFallback.ForcedFallbackByResolution (0.0 ms)
 [ RUN  ] CodecFallback.Vp8ForcedFallbackTrial
 [  OK  ] CodecFallback.Vp8ForcedFallbackTrial (0.0 ms)
 [ RUN  ] CodecFallback.EncoderInfoMerge
@@ -231,7 +231,7 @@
 [ RUN  ] DecoderFallback.InitializesHardwareDecoder
 [  OK  ] DecoderFallback.InitializesHardwareDecoder (0.0 ms)
 [ RUN  ] DecoderFallback.ConfigureFailureUsesSoftware
-[  OK  ] DecoderFallback.ConfigureFailureUsesSoftware (0.3 ms)
+[  OK  ] DecoderFallback.ConfigureFailureUsesSoftware (0.0 ms)
 [ RUN  ] DecoderFallback.FallbackRequestOnDecodeIsSticky
 [  OK  ] DecoderFallback.FallbackRequestOnDecodeIsSticky (0.0 ms)
 [ RUN  ] DecoderFallback.FailedFallbackInitKeepsHardware
@@ -263,7 +263,7 @@
 [ RUN  ] RenderFrames.OldFrameDroppedOnlyWhenOthersWait
 [  OK  ] RenderFrames.OldFrameDroppedOnlyWhenOthersWait (0.0 ms)
 [ RUN  ] RenderFrames.OutOfOrderAndFarFutureFramesDropped
-[  OK  ] RenderFrames.OutOfOrderAndFarFutureFramesDropped (0.1 ms)
+[  OK  ] RenderFrames.OutOfOrderAndFarFutureFramesDropped (0.0 ms)
 [ RUN  ] RenderFrames.InvalidRenderDelayBecomesTenMs
 [  OK  ] RenderFrames.InvalidRenderDelayBecomesTenMs (0.0 ms)
 [ RUN  ] QualityScaler.ThresholdsAndSignals
@@ -301,7 +301,7 @@
 [ RUN  ] VideoStreamAdapter.MaintainResolutionStepsFpsByTwoThirdsAndThreeHalves
 [  OK  ] VideoStreamAdapter.MaintainResolutionStepsFpsByTwoThirdsAndThreeHalves (0.0 ms)
 [ RUN  ] VideoStreamAdapter.BalancedLowersFpsThenResolutionAndRaisesFpsFirst
-[  OK  ] VideoStreamAdapter.BalancedLowersFpsThenResolutionAndRaisesFpsFirst (0.0 ms)
+[  OK  ] VideoStreamAdapter.BalancedLowersFpsThenResolutionAndRaisesFpsFirst (0.1 ms)
 [ RUN  ] VideoStreamAdapter.BalancedReachesItsLimit
 [  OK  ] VideoStreamAdapter.BalancedReachesItsLimit (0.0 ms)
 [ RUN  ] VideoStreamAdapter.PreferenceSwitchesAndDisabled

@@ -12,47 +12,47 @@
 [metric] without_sent_kbps=681.056
 [metric] with_in_flight_end=6713
 [metric] with_window_end=25772
-[  OK  ] E2E_CongestionWindowPushback.EncoderBacksOffWhenTheBottleneckFills (36.8 ms)
+[  OK  ] E2E_CongestionWindowPushback.EncoderBacksOffWhenTheBottleneckFills (36.1 ms)
 [ RUN  ] E2E_CongestionWindowPushback.PushbackHoldsAcrossTheFirstFeedbackAfterAnOutage
 [metric] ratio_before_up=1.3346e-12
 [metric] first_feedback_ms=19131
 [metric] max_ratio_after=1.42757e-10
-[  OK  ] E2E_CongestionWindowPushback.PushbackHoldsAcrossTheFirstFeedbackAfterAnOutage (18.6 ms)
+[  OK  ] E2E_CongestionWindowPushback.PushbackHoldsAcrossTheFirstFeedbackAfterAnOutage (18.7 ms)
 [ RUN  ] E2E_RtpReceiver.CleanLinkRendersEveryFrameWithoutRepairRequests
-[  OK  ] E2E_RtpReceiver.CleanLinkRendersEveryFrameWithoutRepairRequests (4.8 ms)
+[  OK  ] E2E_RtpReceiver.CleanLinkRendersEveryFrameWithoutRepairRequests (4.9 ms)
 [ RUN  ] E2E_RtpReceiver.NackAndRtxKeepFramesFlowingUnderRandomLoss
-[  OK  ] E2E_RtpReceiver.NackAndRtxKeepFramesFlowingUnderRandomLoss (30.9 ms)
+[  OK  ] E2E_RtpReceiver.NackAndRtxKeepFramesFlowingUnderRandomLoss (30.8 ms)
 [ RUN  ] E2E_RtpReceiver.OutageEndsWithAKeyframeRequestAndVideoResumes
-[  OK  ] E2E_RtpReceiver.OutageEndsWithAKeyframeRequestAndVideoResumes (5.4 ms)
+[  OK  ] E2E_RtpReceiver.OutageEndsWithAKeyframeRequestAndVideoResumes (5.3 ms)
 [ RUN  ] E2E_RtpSender.CleanLinkDeliversEveryPacketAsParsableBytes
-[  OK  ] E2E_RtpSender.CleanLinkDeliversEveryPacketAsParsableBytes (3.1 ms)
+[  OK  ] E2E_RtpSender.CleanLinkDeliversEveryPacketAsParsableBytes (2.9 ms)
 [ RUN  ] E2E_RtpSender.NackAndRtxRepairRandomLoss
-[  OK  ] E2E_RtpSender.NackAndRtxRepairRandomLoss (15.2 ms)
+[  OK  ] E2E_RtpSender.NackAndRtxRepairRandomLoss (14.0 ms)
 [ RUN  ] E2E_RtpSession.CleanCallDeliversAudioAndVideoBothWays
-[  OK  ] E2E_RtpSession.CleanCallDeliversAudioAndVideoBothWays (10.8 ms)
+[  OK  ] E2E_RtpSession.CleanCallDeliversAudioAndVideoBothWays (10.0 ms)
 [ RUN  ] E2E_RtpSession.LipSyncSetsMinimumPlayoutDelays
-[  OK  ] E2E_RtpSession.LipSyncSetsMinimumPlayoutDelays (32.5 ms)
+[  OK  ] E2E_RtpSession.LipSyncSetsMinimumPlayoutDelays (31.3 ms)
 [ RUN  ] E2E_RtpSession.LipSyncOffSendsNoAudioSrBesideVideo
-[  OK  ] E2E_RtpSession.LipSyncOffSendsNoAudioSrBesideVideo (10.0 ms)
+[  OK  ] E2E_RtpSession.LipSyncOffSendsNoAudioSrBesideVideo (9.5 ms)
 [ RUN  ] E2E_RtpSession.RoutesWithoutMidByPayloadTypeAndSsrc
-[  OK  ] E2E_RtpSession.RoutesWithoutMidByPayloadTypeAndSsrc (10.1 ms)
+[  OK  ] E2E_RtpSession.RoutesWithoutMidByPayloadTypeAndSsrc (9.7 ms)
 [ RUN  ] E2E_RtpSession.AudioRedIsUnwrappedThroughTheSession
-[  OK  ] E2E_RtpSession.AudioRedIsUnwrappedThroughTheSession (14.6 ms)
+[  OK  ] E2E_RtpSession.AudioRedIsUnwrappedThroughTheSession (13.8 ms)
 [ RUN  ] E2E_RtpSession.AudioNackResendsLostAudioAndItIsPlayed
-[  OK  ] E2E_RtpSession.AudioNackResendsLostAudioAndItIsPlayed (64.2 ms)
+[  OK  ] E2E_RtpSession.AudioNackResendsLostAudioAndItIsPlayed (61.4 ms)
 [ RUN  ] E2E_RtpSession.NackAndRtxRecoverLossThroughTheSession
-[  OK  ] E2E_RtpSession.NackAndRtxRecoverLossThroughTheSession (31.6 ms)
+[  OK  ] E2E_RtpSession.NackAndRtxRecoverLossThroughTheSession (30.6 ms)
 [ RUN  ] E2E_RtpSession.OutageIsRepairedByNackAndVideoResumes
-[  OK  ] E2E_RtpSession.OutageIsRepairedByNackAndVideoResumes (10.4 ms)
+[  OK  ] E2E_RtpSession.OutageIsRepairedByNackAndVideoResumes (10.0 ms)
 [ RUN  ] E2E_RtpSession.AudioAtAClockRateNetEqDoesNotRunAtIsDiscarded
-[  OK  ] E2E_RtpSession.AudioAtAClockRateNetEqDoesNotRunAtIsDiscarded (1.7 ms)
+[  OK  ] E2E_RtpSession.AudioAtAClockRateNetEqDoesNotRunAtIsDiscarded (1.6 ms)
 [ RUN  ] E2E_RtpSession.InfiniteTimeAndRttDoNotOverflow
 [  OK  ] E2E_RtpSession.InfiniteTimeAndRttDoNotOverflow (0.0 ms)
 [ RUN  ] E2E_VideoAdaptation.CpuOveruseConvergesToSustainableResolution
 [metric] cpu_final_width=960
 [metric] cpu_final_usage=0.63
 [metric] cpu_format_changes=1
-[  OK  ] E2E_VideoAdaptation.CpuOveruseConvergesToSustainableResolution (0.9 ms)
+[  OK  ] E2E_VideoAdaptation.CpuOveruseConvergesToSustainableResolution (0.5 ms)
 [ RUN  ] E2E_VideoAdaptation.BitrateLimitsHoldResolutionUntilTheTargetAllows
 [metric] width_at_90s=960
 [metric] final_width=1280
@@ -65,6 +65,6 @@
 [metric] kbps_before=2264.27
 [metric] kbps_after=413.955
 [metric] last_target_kbps=433.37
-[  OK  ] E2E_VideoSendController.EncoderFollowsTheTargetAfterACapacityDrop (16.7 ms)
+[  OK  ] E2E_VideoSendController.EncoderFollowsTheTargetAfterACapacityDrop (16.8 ms)
 
 20 tests run, 20 passed, 0 failed

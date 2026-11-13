@@ -1,7 +1,7 @@
 [ RUN  ] RtpToNtp.FitsLineAndHandlesWrap
-[  OK  ] RtpToNtp.FitsLineAndHandlesWrap (1.0 ms)
+[  OK  ] RtpToNtp.FitsLineAndHandlesWrap (0.1 ms)
 [ RUN  ] RtpToNtp.NeedsTwoMeasurementsAndAValidNtp
-[  OK  ] RtpToNtp.NeedsTwoMeasurementsAndAValidNtp (0.2 ms)
+[  OK  ] RtpToNtp.NeedsTwoMeasurementsAndAValidNtp (0.1 ms)
 [ RUN  ] RtpToNtp.ValidatesAgainstTheNewestReport
 [  OK  ] RtpToNtp.ValidatesAgainstTheNewestReport (0.0 ms)
 [ RUN  ] RtpToNtp.ClearsAfterThreeConsecutiveInvalidReports
@@ -31,15 +31,15 @@
 [ RUN  ] StreamSync.GroupPairsTheFirstAudioWithTheFirstVideoOnly
 [  OK  ] StreamSync.GroupPairsTheFirstAudioWithTheFirstVideoOnly (0.0 ms)
 [ RUN  ] StreamSync.EmptySyncGroupIsNeverPaired
-[  OK  ] StreamSync.EmptySyncGroupIsNeverPaired (0.1 ms)
+[  OK  ] StreamSync.EmptySyncGroupIsNeverPaired (0.0 ms)
 [ RUN  ] StreamSync.RemovingOrMovingAStreamReconfiguresItsGroups
 [  OK  ] StreamSync.RemovingOrMovingAStreamReconfiguresItsGroups (0.0 ms)
 [ RUN  ] CaptureTime.WireFormatAndInterpolation
-[  OK  ] CaptureTime.WireFormatAndInterpolation (0.7 ms)
+[  OK  ] CaptureTime.WireFormatAndInterpolation (0.2 ms)
 [ RUN  ] CaptureTime.SenderOmitsInterpolatableExtensions
 [  OK  ] CaptureTime.SenderOmitsInterpolatableExtensions (0.1 ms)
 [ RUN  ] CaptureTime.LatencyWithClockOffset
-[  OK  ] CaptureTime.LatencyWithClockOffset (0.5 ms)
+[  OK  ] CaptureTime.LatencyWithClockOffset (0.1 ms)
 [ RUN  ] CaptureTime.SenderRulesAsLibwebrtc
 [  OK  ] CaptureTime.SenderRulesAsLibwebrtc (0.0 ms)
 [ RUN  ] CaptureTime.InterpolatorRulesAsLibwebrtc
@@ -51,23 +51,23 @@
 [ RUN  ] CaptureTime.RemoteNtpTimeEstimator
 [  OK  ] CaptureTime.RemoteNtpTimeEstimator (0.0 ms)
 [ RUN  ] HeaderExtensions.OneAndTwoByteForms
-[  OK  ] HeaderExtensions.OneAndTwoByteForms (0.6 ms)
+[  OK  ] HeaderExtensions.OneAndTwoByteForms (0.4 ms)
 [ RUN  ] HeaderExtensions.ParseRulesAsLibwebrtc
 [  OK  ] HeaderExtensions.ParseRulesAsLibwebrtc (0.1 ms)
 [ RUN  ] HeaderExtensions.MapRegistrationAsLibwebrtc
-[  OK  ] HeaderExtensions.MapRegistrationAsLibwebrtc (0.6 ms)
+[  OK  ] HeaderExtensions.MapRegistrationAsLibwebrtc (0.3 ms)
 [ RUN  ] HeaderExtensions.AllocationAsLibwebrtc
-[  OK  ] HeaderExtensions.AllocationAsLibwebrtc (0.4 ms)
+[  OK  ] HeaderExtensions.AllocationAsLibwebrtc (0.3 ms)
 [ RUN  ] HeaderExtensions.TypedAccessors
 [  OK  ] HeaderExtensions.TypedAccessors (0.1 ms)
 [ RUN  ] HeaderExtensions.DemuxRules
 [  OK  ] HeaderExtensions.DemuxRules (0.3 ms)
 [ RUN  ] RtpDemuxer.UnknownMidDroppedEvenWithBoundSsrc
-[  OK  ] RtpDemuxer.UnknownMidDroppedEvenWithBoundSsrc (0.0 ms)
+[  OK  ] RtpDemuxer.UnknownMidDroppedEvenWithBoundSsrc (0.1 ms)
 [ RUN  ] RtpDemuxer.LatchedMidRoutesLaterPackets
 [  OK  ] RtpDemuxer.LatchedMidRoutesLaterPackets (0.1 ms)
 [ RUN  ] RtpDemuxer.RsidRules
-[  OK  ] RtpDemuxer.RsidRules (0.1 ms)
+[  OK  ] RtpDemuxer.RsidRules (0.2 ms)
 [ RUN  ] RtpDemuxer.SsrcBeforePayloadType
 [  OK  ] RtpDemuxer.SsrcBeforePayloadType (0.0 ms)
 [ RUN  ] RtpDemuxer.RepeatedPayloadTypeIsOneSink
@@ -75,7 +75,7 @@
 [ RUN  ] RtpDemuxer.ConflictingAndInvalidCriteria
 [  OK  ] RtpDemuxer.ConflictingAndInvalidCriteria (0.0 ms)
 [ RUN  ] RtpDemuxer.SsrcBindingsBounded
-[  OK  ] RtpDemuxer.SsrcBindingsBounded (4.8 ms)
+[  OK  ] RtpDemuxer.SsrcBindingsBounded (4.7 ms)
 [ RUN  ] HeaderExtensions.StringParsedAsLibwebrtc
 [  OK  ] HeaderExtensions.StringParsedAsLibwebrtc (0.0 ms)
 

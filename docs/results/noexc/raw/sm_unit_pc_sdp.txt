@@ -1,5 +1,5 @@
 [ RUN  ] PcMediaSession.TestCreateAudioOffer
-[  OK  ] PcMediaSession.TestCreateAudioOffer (2.8 ms)
+[  OK  ] PcMediaSession.TestCreateAudioOffer (3.2 ms)
 [ RUN  ] PcMediaSession.CreateAudioOfferEnablesReceiveNonSenderRtt
 [  OK  ] PcMediaSession.CreateAudioOfferEnablesReceiveNonSenderRtt (0.1 ms)
 [ RUN  ] PcMediaSession.TestCreateVideoOffer
@@ -13,13 +13,13 @@
 [ RUN  ] PcMediaSession.TestCreateImplicitSctpDataOffer
 [  OK  ] PcMediaSession.TestCreateImplicitSctpDataOffer (0.0 ms)
 [ RUN  ] PcMediaSession.ReOfferNoBundleGroupIfAllRejected
-[  OK  ] PcMediaSession.ReOfferNoBundleGroupIfAllRejected (0.1 ms)
+[  OK  ] PcMediaSession.ReOfferNoBundleGroupIfAllRejected (0.0 ms)
 [ RUN  ] PcMediaSession.ReAnswerNoBundleGroupIfAllRejected
 [  OK  ] PcMediaSession.ReAnswerNoBundleGroupIfAllRejected (0.1 ms)
 [ RUN  ] PcMediaSession.TestCreateSendOnlyOffer
 [  OK  ] PcMediaSession.TestCreateSendOnlyOffer (0.1 ms)
 [ RUN  ] PcMediaSession.TestCreateOfferContentOrder
-[  OK  ] PcMediaSession.TestCreateOfferContentOrder (0.1 ms)
+[  OK  ] PcMediaSession.TestCreateOfferContentOrder (0.0 ms)
 [ RUN  ] PcMediaSession.TestCreateAudioAnswer
 [  OK  ] PcMediaSession.TestCreateAudioAnswer (0.0 ms)
 [ RUN  ] PcMediaSession.TestCreateAudioAnswerWithNoCommonCodecs
@@ -31,7 +31,7 @@
 [ RUN  ] PcMediaSession.H264ProfileAndPacketizationModeMustMatch
 [  OK  ] PcMediaSession.H264ProfileAndPacketizationModeMustMatch (0.1 ms)
 [ RUN  ] PcMediaSession.CreateAnswerToSendReceiveOffer
-[  OK  ] PcMediaSession.CreateAnswerToSendReceiveOffer (0.1 ms)
+[  OK  ] PcMediaSession.CreateAnswerToSendReceiveOffer (0.0 ms)
 [ RUN  ] PcMediaSession.CreateAnswerToSendOnlyOffer
 [  OK  ] PcMediaSession.CreateAnswerToSendOnlyOffer (0.0 ms)
 [ RUN  ] PcMediaSession.CreateAnswerToRecvOnlyOffer
@@ -43,13 +43,13 @@
 [ RUN  ] PcMediaSession.TestCreateDataAnswerWithoutSctpmap
 [  OK  ] PcMediaSession.TestCreateDataAnswerWithoutSctpmap (0.0 ms)
 [ RUN  ] PcMediaSession.TestCreateDataAnswerMaxMessageSize
-[  OK  ] PcMediaSession.TestCreateDataAnswerMaxMessageSize (0.1 ms)
+[  OK  ] PcMediaSession.TestCreateDataAnswerMaxMessageSize (0.2 ms)
 [ RUN  ] PcMediaSession.TestCreateDataAnswerToDifferentOfferedProtos
 [  OK  ] PcMediaSession.TestCreateDataAnswerToDifferentOfferedProtos (0.1 ms)
 [ RUN  ] PcMediaSession.TestCreateVideoAnswerRtcpMux
 [  OK  ] PcMediaSession.TestCreateVideoAnswerRtcpMux (0.2 ms)
 [ RUN  ] PcMediaSession.TestCreateAudioAnswerToVideo
-[  OK  ] PcMediaSession.TestCreateAudioAnswerToVideo (0.0 ms)
+[  OK  ] PcMediaSession.TestCreateAudioAnswerToVideo (0.1 ms)
 [ RUN  ] PcMediaSession.TestVADEnableOption
 [  OK  ] PcMediaSession.TestVADEnableOption (0.1 ms)
 [ RUN  ] PcMediaSession.RtxSsrcsAndAptMapping
@@ -57,7 +57,7 @@
 [ RUN  ] PcMediaSession.RtxWithoutApt
 [  OK  ] PcMediaSession.RtxWithoutApt (0.1 ms)
 [ RUN  ] PcMediaSession.FilterOutRtxIfAptDoesntMatch
-[  OK  ] PcMediaSession.FilterOutRtxIfAptDoesntMatch (0.2 ms)
+[  OK  ] PcMediaSession.FilterOutRtxIfAptDoesntMatch (0.1 ms)
 [ RUN  ] PcMediaSession.H264LevelInAnswer
 [  OK  ] PcMediaSession.H264LevelInAnswer (0.2 ms)
 [ RUN  ] PcMediaSession.RtpExtensionIdsInOfferAndAnswer
@@ -89,7 +89,7 @@
 [ RUN  ] PcMediaSession.DefaultOfferMatchesLibwebrtc
 [  OK  ] PcMediaSession.DefaultOfferMatchesLibwebrtc (0.1 ms)
 [ RUN  ] PcMediaSession.OfferAnswerRoundTripThroughSdp
-[  OK  ] PcMediaSession.OfferAnswerRoundTripThroughSdp (0.5 ms)
+[  OK  ] PcMediaSession.OfferAnswerRoundTripThroughSdp (0.4 ms)
 [ RUN  ] PcMediaContentDescription.ExtmapAllowMixedDefaultValue
 [  OK  ] PcMediaContentDescription.ExtmapAllowMixedDefaultValue (0.0 ms)
 [ RUN  ] PcMediaContentDescription.SetExtmapAllowMixed
@@ -109,7 +109,7 @@
 [ RUN  ] PcJsepSessionDescription.CloneRollback
 [  OK  ] PcJsepSessionDescription.CloneRollback (0.0 ms)
 [ RUN  ] PcJsepSessionDescription.CloneWithCandidates
-[  OK  ] PcJsepSessionDescription.CloneWithCandidates (0.2 ms)
+[  OK  ] PcJsepSessionDescription.CloneWithCandidates (0.0 ms)
 [ RUN  ] PcJsepSessionDescription.CheckSessionDescription
 [  OK  ] PcJsepSessionDescription.CheckSessionDescription (0.0 ms)
 [ RUN  ] PcJsepSessionDescription.IsValidMLineIndex
@@ -189,7 +189,7 @@
 [ RUN  ] PcWebRtcSdp.DeserializeAndSerializeWithoutCandidates
 [  OK  ] PcWebRtcSdp.DeserializeAndSerializeWithoutCandidates (0.0 ms)
 [ RUN  ] PcWebRtcSdp.DeserializeSessionDescriptionWithoutCarriageReturn
-[  OK  ] PcWebRtcSdp.DeserializeSessionDescriptionWithoutCarriageReturn (0.1 ms)
+[  OK  ] PcWebRtcSdp.DeserializeSessionDescriptionWithoutCarriageReturn (0.0 ms)
 [ RUN  ] PcWebRtcSdp.DeserializeSessionDescriptionWithoutMline
 [  OK  ] PcWebRtcSdp.DeserializeSessionDescriptionWithoutMline (0.0 ms)
 [ RUN  ] PcWebRtcSdp.DeserializeSessionDescriptionWithoutEndLineBreak
@@ -211,7 +211,7 @@
 [ RUN  ] PcWebRtcSdp.DeserializeSessionDescriptionWithMediaLevelExtmap
 [  OK  ] PcWebRtcSdp.DeserializeSessionDescriptionWithMediaLevelExtmap (0.0 ms)
 [ RUN  ] PcWebRtcSdp.SessionLevelExtmapAndMixedUsage
-[  OK  ] PcWebRtcSdp.SessionLevelExtmapAndMixedUsage (0.0 ms)
+[  OK  ] PcWebRtcSdp.SessionLevelExtmapAndMixedUsage (0.1 ms)
 [ RUN  ] PcWebRtcSdp.ExtmapAllowMixedLevels
 [  OK  ] PcWebRtcSdp.ExtmapAllowMixedLevels (0.0 ms)
 [ RUN  ] PcWebRtcSdp.DirectionsRoundTrip
@@ -219,13 +219,13 @@
 [ RUN  ] PcWebRtcSdp.RejectedContentRoundTrip
 [  OK  ] PcWebRtcSdp.RejectedContentRoundTrip (0.0 ms)
 [ RUN  ] PcWebRtcSdp.BundleAndBundleOnly
-[  OK  ] PcWebRtcSdp.BundleAndBundleOnly (0.1 ms)
+[  OK  ] PcWebRtcSdp.BundleAndBundleOnly (0.0 ms)
 [ RUN  ] PcWebRtcSdp.RejectsInvalidCharactersInBundleGroup
 [  OK  ] PcWebRtcSdp.RejectsInvalidCharactersInBundleGroup (0.0 ms)
 [ RUN  ] PcWebRtcSdp.Bandwidth
 [  OK  ] PcWebRtcSdp.Bandwidth (0.0 ms)
 [ RUN  ] PcWebRtcSdp.IceOptionsUfragPwdAndIceLite
-[  OK  ] PcWebRtcSdp.IceOptionsUfragPwdAndIceLite (0.1 ms)
+[  OK  ] PcWebRtcSdp.IceOptionsUfragPwdAndIceLite (0.0 ms)
 [ RUN  ] PcWebRtcSdp.DtlsSetupAttribute
 [  OK  ] PcWebRtcSdp.DtlsSetupAttribute (0.0 ms)
 [ RUN  ] PcWebRtcSdp.SessionLevelFingerprintAppliesToEveryTransport
@@ -233,7 +233,7 @@
 [ RUN  ] PcWebRtcSdp.ConferenceFlagAndRemoteEstimate
 [  OK  ] PcWebRtcSdp.ConferenceFlagAndRemoteEstimate (0.0 ms)
 [ RUN  ] PcWebRtcSdp.SframeAndRtcpXr
-[  OK  ] PcWebRtcSdp.SframeAndRtcpXr (0.3 ms)
+[  OK  ] PcWebRtcSdp.SframeAndRtcpXr (0.0 ms)
 [ RUN  ] PcWebRtcSdp.RtcpFbAndFmtp
 [  OK  ] PcWebRtcSdp.RtcpFbAndFmtp (0.1 ms)
 [ RUN  ] PcWebRtcSdp.DeserializeVideoFmtpWithSpace
@@ -263,7 +263,7 @@
 [ RUN  ] PcWebRtcSdp.ParseConnectionDataWithHostnameConnectionAddress
 [  OK  ] PcWebRtcSdp.ParseConnectionDataWithHostnameConnectionAddress (0.0 ms)
 [ RUN  ] PcWebRtcSdp.HostnameCandidatesInSdp
-[  OK  ] PcWebRtcSdp.HostnameCandidatesInSdp (0.1 ms)
+[  OK  ] PcWebRtcSdp.HostnameCandidatesInSdp (0.0 ms)
 [ RUN  ] PcWebRtcSdp.CandidatesInSdp
 [  OK  ] PcWebRtcSdp.CandidatesInSdp (0.0 ms)
 [ RUN  ] PcCandidateParse.CandidateStrings

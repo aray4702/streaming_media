@@ -49,7 +49,7 @@
 [ RUN  ] SendSideBwe.V2UsesTheWindowedAckedRate
 [  OK  ] SendSideBwe.V2UsesTheWindowedAckedRate (0.0 ms)
 [ RUN  ] BitrateAllocator.MinimumsPrioritiesAndCaps
-[  OK  ] BitrateAllocator.MinimumsPrioritiesAndCaps (0.4 ms)
+[  OK  ] BitrateAllocator.MinimumsPrioritiesAndCaps (0.1 ms)
 [ RUN  ] BitrateAllocator.PausesLowPriorityAndResumesWithHysteresis
 [  OK  ] BitrateAllocator.PausesLowPriorityAndResumesWithHysteresis (0.0 ms)
 [ RUN  ] FrameDropper.OnTargetNoDropsOvershootDrops
@@ -67,7 +67,7 @@
 [ RUN  ] BitrateAllocatorV2.SharesTheRestEvenlyAboveTheMinimums
 [  OK  ] BitrateAllocatorV2.SharesTheRestEvenlyAboveTheMinimums (0.0 ms)
 [ RUN  ] BitrateAllocatorV2.TheRestFollowsBitratePriority
-[  OK  ] BitrateAllocatorV2.TheRestFollowsBitratePriority (0.1 ms)
+[  OK  ] BitrateAllocatorV2.TheRestFollowsBitratePriority (0.0 ms)
 [ RUN  ] BitrateAllocatorV2.AStreamAtItsMaximumLeavesTheRestToTheOthers
 [  OK  ] BitrateAllocatorV2.AStreamAtItsMaximumLeavesTheRestToTheOthers (0.0 ms)
 [ RUN  ] BitrateAllocatorV2.PriorityRateIsAllocatedBeforeTheProportionalShare
@@ -97,7 +97,7 @@
 [ RUN  ] DelayBwe.AdaptiveThresholdBounds
 [  OK  ] DelayBwe.AdaptiveThresholdBounds (0.0 ms)
 [ RUN  ] DelayBwe.EstimatorReactsToQueueBuildUp
-[  OK  ] DelayBwe.EstimatorReactsToQueueBuildUp (0.0 ms)
+[  OK  ] DelayBwe.EstimatorReactsToQueueBuildUp (0.1 ms)
 [ RUN  ] SendSideBwe.StartProbesAndRembCap
 [  OK  ] SendSideBwe.StartProbesAndRembCap (0.2 ms)
 [ RUN  ] DelayBweV2.InterArrivalDeltaGroupsAndDeltas
@@ -185,7 +185,7 @@
 [ RUN  ] DelayBweLibwebrtc.TestInitialOveruse
 [  OK  ] DelayBweLibwebrtc.TestInitialOveruse (0.0 ms)
 [ RUN  ] DelayBweLibwebrtc.TestTimestampPrecisionHandling
-[  OK  ] DelayBweLibwebrtc.TestTimestampPrecisionHandling (1.1 ms)
+[  OK  ] DelayBweLibwebrtc.TestTimestampPrecisionHandling (1.0 ms)
 [ RUN  ] EncoderOvershootDetector.NoDataGivesNoFactor
 [  OK  ] EncoderOvershootDetector.NoDataGivesNoFactor (0.0 ms)
 [ RUN  ] EncoderOvershootDetector.FramesOnTargetGiveFactorOne
@@ -267,7 +267,7 @@
 [ RUN  ] LossBweV2.AcknowledgedBitrateOnlyAffectsTheEstimateWhenAdditionalFeedbackIsGiven
 [  OK  ] LossBweV2.AcknowledgedBitrateOnlyAffectsTheEstimateWhenAdditionalFeedbackIsGiven (0.0 ms)
 [ RUN  ] LossBweV2.BandwidthEstimateIsCappedToBeTcpFairGivenTooHighLossRate
-[  OK  ] LossBweV2.BandwidthEstimateIsCappedToBeTcpFairGivenTooHighLossRate (0.4 ms)
+[  OK  ] LossBweV2.BandwidthEstimateIsCappedToBeTcpFairGivenTooHighLossRate (0.0 ms)
 [ RUN  ] LossBweV2.BandwidthEstimateCappedByTheDelayBasedEstimateWhenNetworkNormal
 [  OK  ] LossBweV2.BandwidthEstimateCappedByTheDelayBasedEstimateWhenNetworkNormal (0.0 ms)
 [ RUN  ] LossBweV2.UseAckedBitrateForEmergencyBackOff
@@ -305,11 +305,11 @@
 [ RUN  ] OveruseFrameDetector.OveruseAndRecover
 [  OK  ] OveruseFrameDetector.OveruseAndRecover (0.1 ms)
 [ RUN  ] OveruseFrameDetector.DoubleOveruseAndRecover
-[  OK  ] OveruseFrameDetector.DoubleOveruseAndRecover (0.3 ms)
+[  OK  ] OveruseFrameDetector.DoubleOveruseAndRecover (0.2 ms)
 [ RUN  ] OveruseFrameDetector.TriggerUnderuseWithMinProcessCount
 [  OK  ] OveruseFrameDetector.TriggerUnderuseWithMinProcessCount (0.1 ms)
 [ RUN  ] OveruseFrameDetector.ConstantOveruseGivesNoNormalUsage
-[  OK  ] OveruseFrameDetector.ConstantOveruseGivesNoNormalUsage (5.2 ms)
+[  OK  ] OveruseFrameDetector.ConstantOveruseGivesNoNormalUsage (4.4 ms)
 [ RUN  ] OveruseFrameDetector.ConsecutiveCountTriggersOveruse
 [  OK  ] OveruseFrameDetector.ConsecutiveCountTriggersOveruse (0.1 ms)
 [ RUN  ] OveruseFrameDetector.IncorrectConsecutiveCountTriggersNoOveruse
@@ -319,7 +319,7 @@
 [ RUN  ] OveruseFrameDetector.ResetAfterResolutionChange
 [  OK  ] OveruseFrameDetector.ResetAfterResolutionChange (0.0 ms)
 [ RUN  ] OveruseFrameDetector.ResetAfterFrameTimeout
-[  OK  ] OveruseFrameDetector.ResetAfterFrameTimeout (0.0 ms)
+[  OK  ] OveruseFrameDetector.ResetAfterFrameTimeout (0.1 ms)
 [ RUN  ] OveruseFrameDetector.MinFrameSamplesBeforeUpdating
 [  OK  ] OveruseFrameDetector.MinFrameSamplesBeforeUpdating (0.0 ms)
 [ RUN  ] OveruseFrameDetector.InitialProcessingUsage
@@ -355,19 +355,19 @@
 [ RUN  ] PacingController.BurstsKeepTheTargetRate
 [  OK  ] PacingController.BurstsKeepTheTargetRate (0.0 ms)
 [ RUN  ] PacingController.BurstIsCappedAtHighRates
-[  OK  ] PacingController.BurstIsCappedAtHighRates (0.0 ms)
+[  OK  ] PacingController.BurstIsCappedAtHighRates (0.1 ms)
 [ RUN  ] PacingController.RespectsPacingRate
 [  OK  ] PacingController.RespectsPacingRate (0.0 ms)
 [ RUN  ] PacingController.PriorityOrder
 [  OK  ] PacingController.PriorityOrder (0.0 ms)
 [ RUN  ] PacingController.AudioIsNotPacedButIsAccounted
-[  OK  ] PacingController.AudioIsNotPacedButIsAccounted (0.3 ms)
+[  OK  ] PacingController.AudioIsNotPacedButIsAccounted (0.0 ms)
 [ RUN  ] PacingController.IdleTimeIsNotBudget
 [  OK  ] PacingController.IdleTimeIsNotBudget (0.0 ms)
 [ RUN  ] PacingController.UncongestedPathDrainsWithinTheShortLimit
 [  OK  ] PacingController.UncongestedPathDrainsWithinTheShortLimit (0.1 ms)
 [ RUN  ] PacingController.QueueTimeLimitRaisesTheRate
-[  OK  ] PacingController.QueueTimeLimitRaisesTheRate (0.0 ms)
+[  OK  ] PacingController.QueueTimeLimitRaisesTheRate (0.1 ms)
 [ RUN  ] PacingController.QueueSizeDataLeavesOutTheRtpHeaders
 [  OK  ] PacingController.QueueSizeDataLeavesOutTheRtpHeaders (0.0 ms)
 [ RUN  ] PacingController.OneOldPacketDoesNotBoost
@@ -377,7 +377,7 @@
 [ RUN  ] PacingController.CongestedSendsOnlyKeepalives
 [  OK  ] PacingController.CongestedSendsOnlyKeepalives (0.0 ms)
 [ RUN  ] PacingController.DebtIsCapped
-[  OK  ] PacingController.DebtIsCapped (0.1 ms)
+[  OK  ] PacingController.DebtIsCapped (0.0 ms)
 [ RUN  ] PacingController.ProbeClusterTagsAndPads
 [  OK  ] PacingController.ProbeClusterTagsAndPads (0.0 ms)
 [ RUN  ] PacingController.PauseHoldsVideo
@@ -401,7 +401,7 @@
 [ RUN  ] PacingController.QueuedPacketsLeaveWithAudioWhenSaturated
 [  OK  ] PacingController.QueuedPacketsLeaveWithAudioWhenSaturated (0.1 ms)
 [ RUN  ] PacingController.PollingEveryMsWithoutTheSchedulingSendsBetweenAudioPackets
-[  OK  ] PacingController.PollingEveryMsWithoutTheSchedulingSendsBetweenAudioPackets (0.1 ms)
+[  OK  ] PacingController.PollingEveryMsWithoutTheSchedulingSendsBetweenAudioPackets (0.2 ms)
 [ RUN  ] PacingController.RatesArriveAsWholeBytesPerTimeWindow
 [  OK  ] PacingController.RatesArriveAsWholeBytesPerTimeWindow (0.0 ms)
 [ RUN  ] PacingController.FecFromThePacketSenderLeavesInTheSameProcessCall
@@ -423,7 +423,7 @@
 [ RUN  ] PrioritizedPacketQueue.SubtractsPausedTimeFromAverageQueueTime
 [  OK  ] PrioritizedPacketQueue.SubtractsPausedTimeFromAverageQueueTime (0.0 ms)
 [ RUN  ] PrioritizedPacketQueue.ReportsLeadingPacketEnqueueTime
-[  OK  ] PrioritizedPacketQueue.ReportsLeadingPacketEnqueueTime (0.2 ms)
+[  OK  ] PrioritizedPacketQueue.ReportsLeadingPacketEnqueueTime (0.0 ms)
 [ RUN  ] PrioritizedPacketQueue.PushAndPopUpdatesSizeInPacketsPerRtpPacketMediaType
 [  OK  ] PrioritizedPacketQueue.PushAndPopUpdatesSizeInPacketsPerRtpPacketMediaType (0.0 ms)
 [ RUN  ] PrioritizedPacketQueue.ClearsPackets
@@ -477,7 +477,7 @@
 [ RUN  ] AlrDetector.SubMillisecondGapsRoundToNearest
 [  OK  ] AlrDetector.SubMillisecondGapsRoundToNearest (0.0 ms)
 [ RUN  ] AlrDetector.IntervalBudget
-[  OK  ] AlrDetector.IntervalBudget (0.2 ms)
+[  OK  ] AlrDetector.IntervalBudget (0.0 ms)
 [ RUN  ] ProbeControllerV2.InitiatesProbingAfterSetBitrates
 [  OK  ] ProbeControllerV2.InitiatesProbingAfterSetBitrates (0.0 ms)
 [ RUN  ] ProbeControllerV2.InitiatesProbingWhenNetworkAvailable
@@ -509,7 +509,7 @@
 [ RUN  ] ProbeControllerV2.RecoveryProbeAfterAHoldBelowHalfTheDeliveredRate
 [  OK  ] ProbeControllerV2.RecoveryProbeAfterAHoldBelowHalfTheDeliveredRate (0.0 ms)
 [ RUN  ] ProbeControllerV2.RecoveryProbeNeverAboveTheDeliveredRate
-[  OK  ] ProbeControllerV2.RecoveryProbeNeverAboveTheDeliveredRate (0.3 ms)
+[  OK  ] ProbeControllerV2.RecoveryProbeNeverAboveTheDeliveredRate (0.0 ms)
 [ RUN  ] ProbeControllerV2.NoRecoveryProbeUnlessEnabledAsLibwebrtc
 [  OK  ] ProbeControllerV2.NoRecoveryProbeUnlessEnabledAsLibwebrtc (0.0 ms)
 [ RUN  ] ProbeControllerV2.RecoveryLevelIsTheDeliveredRateNotTheEstimate
@@ -599,7 +599,7 @@
 [ RUN  ] TaskQueuePacedSender.NoMinSleepTimeWhenProbing
 [  OK  ] TaskQueuePacedSender.NoMinSleepTimeWhenProbing (0.0 ms)
 [ RUN  ] TaskQueuePacedSender.PacketBasedCoalescing
-[  OK  ] TaskQueuePacedSender.PacketBasedCoalescing (0.2 ms)
+[  OK  ] TaskQueuePacedSender.PacketBasedCoalescing (0.0 ms)
 [ RUN  ] TaskQueuePacedSender.FixedHoldBackHasPriorityOverPackets
 [  OK  ] TaskQueuePacedSender.FixedHoldBackHasPriorityOverPackets (0.0 ms)
 [ RUN  ] TaskQueuePacedSender.ProbingStopDuringSendLoop
@@ -607,9 +607,9 @@
 [ RUN  ] TaskQueuePacedSender.OldestPacketWaitTime
 [  OK  ] TaskQueuePacedSender.OldestPacketWaitTime (0.0 ms)
 [ RUN  ] TaskQueuePacedSender.Stats
-[  OK  ] TaskQueuePacedSender.Stats (0.1 ms)
+[  OK  ] TaskQueuePacedSender.Stats (0.0 ms)
 [ RUN  ] TaskQueuePacedSender.RateChangeAfterASendPacesTheNext
-[  OK  ] TaskQueuePacedSender.RateChangeAfterASendPacesTheNext (0.3 ms)
+[  OK  ] TaskQueuePacedSender.RateChangeAfterASendPacesTheNext (0.0 ms)
 [ RUN  ] TaskQueuePacedSender.HoldBackFollowsTheBoostedRate
 [  OK  ] TaskQueuePacedSender.HoldBackFollowsTheBoostedRate (0.3 ms)
 [ RUN  ] TaskQueuePacedSender.PaddingRateOnAnEmptyQueueWaitsForTheNextPacket
@@ -649,11 +649,11 @@
 [ RUN  ] TransportFeedbackV2.OldArrivalsAreCulledAfterTheBackWindow
 [  OK  ] TransportFeedbackV2.OldArrivalsAreCulledAfterTheBackWindow (0.0 ms)
 [ RUN  ] TransportFeedbackV2.IntervalFollowsFivePercentOfTheEstimate
-[  OK  ] TransportFeedbackV2.IntervalFollowsFivePercentOfTheEstimate (0.1 ms)
+[  OK  ] TransportFeedbackV2.IntervalFollowsFivePercentOfTheEstimate (0.0 ms)
 [ RUN  ] TransportFeedback.PacketReportedReceivedTwiceIsIgnored
 [  OK  ] TransportFeedback.PacketReportedReceivedTwiceIsIgnored (0.0 ms)
 [ RUN  ] TransportFeedbackAdapter.HistoryKeepsSixtySecondsNotACount
-[  OK  ] TransportFeedbackAdapter.HistoryKeepsSixtySecondsNotACount (0.7 ms)
+[  OK  ] TransportFeedbackAdapter.HistoryKeepsSixtySecondsNotACount (0.4 ms)
 [ RUN  ] TransportFeedbackAdapter.SendTimeIsWholeMilliseconds
 [  OK  ] TransportFeedbackAdapter.SendTimeIsWholeMilliseconds (0.0 ms)
 [ RUN  ] TransportFeedbackAdapter.SendTimeIsRoundedToTheNearestMillisecond

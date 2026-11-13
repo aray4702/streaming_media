@@ -7,9 +7,9 @@
 [ RUN  ] AudioFrameOperations.MuteBeginMonoShort
 [  OK  ] AudioFrameOperations.MuteBeginMonoShort (0.1 ms)
 [ RUN  ] AudioFrameOperations.MuteBeginStereoLong
-[  OK  ] AudioFrameOperations.MuteBeginStereoLong (0.1 ms)
+[  OK  ] AudioFrameOperations.MuteBeginStereoLong (0.2 ms)
 [ RUN  ] AudioFrameOperations.MuteBeginStereoShort
-[  OK  ] AudioFrameOperations.MuteBeginStereoShort (0.1 ms)
+[  OK  ] AudioFrameOperations.MuteBeginStereoShort (0.2 ms)
 [ RUN  ] AudioFrameOperations.MuteEndMonoLong
 [  OK  ] AudioFrameOperations.MuteEndMonoLong (0.1 ms)
 [ RUN  ] AudioFrameOperations.MuteEndMonoShort
@@ -39,11 +39,11 @@
 [ RUN  ] Histogram.PercentilesAreApproximatelyRight
 [  OK  ] Histogram.PercentilesAreApproximatelyRight (0.2 ms)
 [ RUN  ] Histogram.Merge
-[  OK  ] Histogram.Merge (0.0 ms)
+[  OK  ] Histogram.Merge (0.1 ms)
 [ RUN  ] Metrics.RegistryJsonAndPrometheus
 [  OK  ] Metrics.RegistryJsonAndPrometheus (0.4 ms)
 [ RUN  ] EventLog.RingBufferAndCallback
-[  OK  ] EventLog.RingBufferAndCallback (0.1 ms)
+[  OK  ] EventLog.RingBufferAndCallback (0.2 ms)
 [ RUN  ] Fft.ComplexRoundTripAndTone
 [  OK  ] Fft.ComplexRoundTripAndTone (0.2 ms)
 [ RUN  ] Fft.RealMatchesComplex
@@ -73,7 +73,7 @@
 [ RUN  ] RateTracker.Test60FPS
 [  OK  ] RateTracker.Test60FPS (0.0 ms)
 [ RUN  ] RateTracker.Basics
-[  OK  ] RateTracker.Basics (0.1 ms)
+[  OK  ] RateTracker.Basics (0.2 ms)
 [ RUN  ] RateTracker.LongPeriodBetweenSamples
 [  OK  ] RateTracker.LongPeriodBetweenSamples (0.0 ms)
 [ RUN  ] RateTracker.Rolloff
@@ -125,7 +125,7 @@
 [ RUN  ] Nat.Filters
 [  OK  ] Nat.Filters (0.2 ms)
 [ RUN  ] Nat.UnsolicitedInboundIsDropped
-[  OK  ] Nat.UnsolicitedInboundIsDropped (0.0 ms)
+[  OK  ] Nat.UnsolicitedInboundIsDropped (0.1 ms)
 [ RUN  ] Nat.PortsAreHandedOutInOrder
 [  OK  ] Nat.PortsAreHandedOutInOrder (0.1 ms)
 [ RUN  ] Nat.BindingsNeverExpireByDefault

@@ -2,69 +2,69 @@
 [metric] hum_attenuation_db=67.17
 [metric] dc_out=1.1751e-05
 [metric] speech_level_change_db=-0.221525
-[  OK  ] E2E_HighPassFilter.LibwebrtcHpfAsLibwebrtc (512.9 ms)
+[  OK  ] E2E_HighPassFilter.LibwebrtcHpfAsLibwebrtc (502.5 ms)
 [ RUN  ] E2E_Apm.DefaultChainIsLibwebrtcs
-[  OK  ] E2E_Apm.DefaultChainIsLibwebrtcs (298.7 ms)
+[  OK  ] E2E_Apm.DefaultChainIsLibwebrtcs (233.5 ms)
 [ RUN  ] E2E_Apm.CallRunsAgc1NotAgc2AsLibwebrtc
 [  OK  ] E2E_Apm.CallRunsAgc1NotAgc2AsLibwebrtc (0.0 ms)
 [ RUN  ] E2E_Vad.DetectsSpeechAfterNoiseSuppression
 [metric] vad_recall=0.996914
 [metric] vad_fpr=0
-[  OK  ] E2E_Vad.DetectsSpeechAfterNoiseSuppression (233.2 ms)
+[  OK  ] E2E_Vad.DetectsSpeechAfterNoiseSuppression (229.4 ms)
 [ RUN  ] E2E_NoiseSuppressor.LibwebrtcNsAsLibwebrtc
 [metric] snr_improvement_db=-0.132565
 [metric] noise_attenuation_db=17.9413
 [metric] speech_level_change_db=-2.94268
 [metric] delay_ms=6
-[  OK  ] E2E_NoiseSuppressor.LibwebrtcNsAsLibwebrtc (726.5 ms)
+[  OK  ] E2E_NoiseSuppressor.LibwebrtcNsAsLibwebrtc (676.1 ms)
 [ RUN  ] E2E_GainControl.Agc2LiftsQuietTalkerAsLibwebrtc
 [metric] quiet_talker_in_dbfs=-32.3248
 [metric] quiet_talker_out_dbfs=-21.0293
 [metric] loud_talker_change_db=-1.04672
 [metric] noise_in_pauses_dbfs=-62.8698
 [metric] peak_dbfs=0
-[  OK  ] E2E_GainControl.Agc2LiftsQuietTalkerAsLibwebrtc (753.1 ms)
+[  OK  ] E2E_GainControl.Agc2LiftsQuietTalkerAsLibwebrtc (616.6 ms)
 [ RUN  ] E2E_GainControl.Agc1LiftsQuietTalkerAsLibwebrtc
 [metric] quiet_talker_in_dbfs=-32.3248
 [metric] quiet_talker_out_dbfs=-20.5699
 [metric] loud_talker_change_db=-3.2352
 [metric] noise_in_pauses_dbfs=-63.032
 [metric] peak_dbfs=0
-[  OK  ] E2E_GainControl.Agc1LiftsQuietTalkerAsLibwebrtc (509.5 ms)
+[  OK  ] E2E_GainControl.Agc1LiftsQuietTalkerAsLibwebrtc (505.9 ms)
 [ RUN  ] E2E_EchoDelay.Aec3FollowsAudioRouteChangeAsLibwebrtc
 [metric] erle_1_3_db=33.1684
 [metric] erle_6_12_db=50.1361
 [metric] erle_12_14_db=8.03359
 [metric] erle_18_24_db=48.978
-[  OK  ] E2E_EchoDelay.Aec3FollowsAudioRouteChangeAsLibwebrtc (712.7 ms)
+[  OK  ] E2E_EchoDelay.Aec3FollowsAudioRouteChangeAsLibwebrtc (699.3 ms)
 [ RUN  ] E2E_EchoCanceller.Aec3FullDuplexCallAsLibwebrtc
 [metric] call_erle_db=67.0336
 [metric] call_double_talk_near_level_change_db=-5.37918
 [metric] call_double_talk_near_snr_db=-0.17568
-[  OK  ] E2E_EchoCanceller.Aec3FullDuplexCallAsLibwebrtc (990.1 ms)
+[  OK  ] E2E_EchoCanceller.Aec3FullDuplexCallAsLibwebrtc (965.7 ms)
 [ RUN  ] E2E_EchoCanceller.BargeInEarlyWithoutEchoPathAsLibwebrtc
 [metric] barge_in_early_level_first_db=-41.6516
 [metric] barge_in_early_level_rest_db=-17.3416
 [metric] barge_in_early_detected=4
 [metric] barge_in_early_mean_ms=895
 [metric] barge_in_early_worst_ms=1540
-[  OK  ] E2E_EchoCanceller.BargeInEarlyWithoutEchoPathAsLibwebrtc (419.8 ms)
+[  OK  ] E2E_EchoCanceller.BargeInEarlyWithoutEchoPathAsLibwebrtc (397.1 ms)
 [ RUN  ] E2E_EchoCanceller.BargeInAfterTransparentModeWithoutEchoPathAsLibwebrtc
 [metric] barge_in_late_level_first_db=-0.930682
 [metric] barge_in_late_detected=5
 [metric] barge_in_late_worst_ms=210
-[  OK  ] E2E_EchoCanceller.BargeInAfterTransparentModeWithoutEchoPathAsLibwebrtc (1054.4 ms)
+[  OK  ] E2E_EchoCanceller.BargeInAfterTransparentModeWithoutEchoPathAsLibwebrtc (986.5 ms)
 [ RUN  ] E2E_TransientSuppressor.KeyboardDuringCall
 [metric] click_attenuation_in_pauses_db=15.2911
-[  OK  ] E2E_TransientSuppressor.KeyboardDuringCall (258.8 ms)
+[  OK  ] E2E_TransientSuppressor.KeyboardDuringCall (255.3 ms)
 [ RUN  ] E2E_AudioLevel.ExtensionByteTracksSpeechAndSilence
 [metric] speech_level_dbov=25.4598
 [metric] noise_level_dbov=54.0401
-[  OK  ] E2E_AudioLevel.ExtensionByteTracksSpeechAndSilence (32.0 ms)
+[  OK  ] E2E_AudioLevel.ExtensionByteTracksSpeechAndSilence (31.9 ms)
 [ RUN  ] E2E_Resampler.DeviceToProcessingToPlayout
 [metric] chain_44k_16k_48k_snr_db=86.882
 [metric] hpf_1khz_amplitude=0.382301
-[  OK  ] E2E_Resampler.DeviceToProcessingToPlayout (9.3 ms)
+[  OK  ] E2E_Resampler.DeviceToProcessingToPlayout (9.2 ms)
 [ RUN  ] E2E_AudioMixer.FiveTalkersNoClippingAndEveryTalkerHeard
 five talkers: plain sum 790 flat-topped runs (13049 samples at the rails), mixer 2 (177); mixer peak 32768; limited 816 of 1000 mixes
   talker 0 (amp 0.9): correlation with the mix 0.559
@@ -72,11 +72,11 @@ five talkers: plain sum 790 flat-topped runs (13049 samples at the rails), mixer
   talker 2 (amp 0.7): correlation with the mix 0.439
   talker 3 (amp 0.6): correlation with the mix 0.373
   talker 4 (amp 0.5): correlation with the mix 0.324
-[  OK  ] E2E_AudioMixer.FiveTalkersNoClippingAndEveryTalkerHeard (1769.7 ms)
+[  OK  ] E2E_AudioMixer.FiveTalkersNoClippingAndEveryTalkerHeard (1485.6 ms)
 [ RUN  ] E2E_AudioMixer.JoinLeaveMuteAndMixRate
 join/leave: 4773 frames mixed, 851 limited mixes, 3 flat-topped runs, 147 samples at the rails
-[  OK  ] E2E_AudioMixer.JoinLeaveMuteAndMixRate (436.8 ms)
+[  OK  ] E2E_AudioMixer.JoinLeaveMuteAndMixRate (408.5 ms)
 [ RUN  ] E2E_AudioMixer.StereoMixKeepsTheStereoTalker
-[  OK  ] E2E_AudioMixer.StereoMixKeepsTheStereoTalker (381.0 ms)
+[  OK  ] E2E_AudioMixer.StereoMixKeepsTheStereoTalker (361.4 ms)
 
 17 tests run, 17 passed, 0 failed
